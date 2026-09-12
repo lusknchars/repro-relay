@@ -47,6 +47,10 @@ open 'target/debug/bundle/macos/Repro Relay.app'
 
 For desktop development, run `make api` and then `make desktop` in a second terminal. Tauri starts Vite itself. The webview uses the same local Rust API. Packet export opens a native save dialog. The current desktop is a client for a separately running API; it does not yet bundle Hermes, Plow, Latch, or a local runner. It is not signed, notarized, self-contained, or ready for an app store.
 
+The desktop checks its local service at startup. If unavailable, it shows setup commands and a connection retry. It remembers window size and position and includes a native **Workspace** menu. Keyboard commands are `Cmd/Ctrl+Shift+N` for a report, `Cmd/Ctrl+K` to find a case, and `Cmd/Ctrl+,` for connections. The same shortcuts work in the web workspace. They leave an open report dialog in control of focus.
+
+Shared shadcn controls include shortcut tooltips, button press feedback, and explicit pending labels for investigation actions. GSAP introduces changed panels, results, and confirmations with short transitions. Reduced motion disables those transitions, including when the setting changes while the app is open.
+
 ## Check
 
 ```sh

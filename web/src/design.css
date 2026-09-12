@@ -65,10 +65,30 @@
   color-scheme: dark;
 }
 body { letter-spacing: -.25px; }
+.desktop-startup { min-height:100vh; padding:32px; display:flex; flex-direction:column; background:var(--canvas); color:var(--ink); }
+.desktop-startup header { display:flex; align-items:center; justify-content:space-between; }
+.desktop-wordmark { display:flex; align-items:center; gap:10px; font-size:20px; font-weight:600; }
+.desktop-wordmark svg { color:var(--brand); }
+.desktop-startup-card { width:100%; max-width:580px; margin:auto; padding:40px; background:var(--surface); border:1px solid var(--border); border-radius:14px; }
+.desktop-eyebrow { display:flex; gap:9px; align-items:center; color:var(--accent-text); font-size:11px; }
+.desktop-startup h1 { font-size:26px; line-height:1.4; margin:22px 0 16px; letter-spacing:-1px; }
+.desktop-startup p, .desktop-setup { font-size:12px; line-height:1.9; color:var(--muted); }
+.desktop-setup { padding-left:20px; margin:24px 0 14px; }
+.desktop-command { display:flex; gap:10px; align-items:center; justify-content:space-between; padding:16px; border:1px solid var(--border); background:var(--surface-soft); border-radius:8px; }
+.desktop-command pre { margin:0; font-size:12px; line-height:1.8; }
+.desktop-setup-note { margin:18px 0 24px; }
+.desktop-startup small { display:block; font-size:10px; line-height:1.8; color:var(--muted); margin-top:20px; }
+.desktop-startup footer { margin-top:32px; text-align:center; font-size:10px; color:var(--muted); }
+.shortcut-tooltip { z-index:80; display:flex; align-items:center; gap:12px; padding:9px 12px; border-radius:6px; background:var(--ink); color:var(--surface); font-size:11px; box-shadow:0 4px 12px #0002; animation:notice-in 140ms ease-out; }
+.tooltip-arrow { fill:var(--ink); }
+.shortcut-key { display:inline-flex; align-items:center; padding:2px 5px; border:1px solid currentColor; border-radius:3px; font-size:10px; opacity:.8; white-space:nowrap; }
+@media(max-width:600px) { .desktop-startup { padding:18px; }.desktop-startup-card { padding:24px; margin:40px auto; }.desktop-command { flex-wrap:wrap; } }
 input, textarea, select { accent-color: var(--brand); }
 pre, code, kbd { font-family: 'JetBrains Mono', monospace; }
-[data-slot='button'] { min-height: 38px; font-size: 12px; font-weight: 500; transition: background-color 160ms, border-color 160ms, box-shadow 160ms, transform 160ms; }
-[data-slot='button']:active:not(:disabled) { transform: translateY(1px); }
+[data-slot='button'] { min-height: 38px; font-size: 12px; font-weight: 500; transition: background-color 160ms, border-color 160ms, box-shadow 160ms, transform 120ms ease-out; }
+[data-slot='button']:active:not(:disabled) { transform: translateY(1px) scale(.975); }
+[data-slot='button'][aria-busy='true'] { opacity: .8; cursor: progress; }
+[data-slot='button'][aria-busy='true'] svg { opacity: .55; }
 [data-slot='button'][data-variant='default'] { box-shadow: inset 0 1px 0 #ffffff26, 0 3px 7px #19367b1a; }
 [data-slot='button'][data-variant='default']:hover:not(:disabled) { box-shadow: inset 0 1px 0 #ffffff26, 0 5px 14px #19367b30; }
 [data-slot='button'][data-variant='outline'] { border-color: var(--border); }
@@ -146,7 +166,7 @@ h1 { font-size: clamp(22px, 2vw, 30px); letter-spacing: -1.2px; line-height: 1.4
 .detail-tabs { gap: 26px; }
 .detail-tabs button { font-size: 11px; min-height: 45px; position: relative; transition: color 160ms; }
 .detail-tabs button[aria-selected='true'] { color: var(--accent-text); border-bottom-color: var(--brand); }
-.detail-body { animation: panel-in 180ms ease-out; outline-offset: -4px; }
+.detail-body { outline-offset: -4px; }
 .description-grid { gap: 26px; }
 .description-grid h3, .section-label h3 { font-size: 11px; }
 .description-grid p { font-size: 12px; line-height: 1.85; color: var(--ink); }
@@ -177,7 +197,7 @@ h1 { font-size: clamp(22px, 2vw, 30px); letter-spacing: -1.2px; line-height: 1.4
 .handoff-snapshot { animation: panel-in 180ms ease-out; }
 .context-inspector input { min-height: 40px; }
 .context-inspector button { white-space: normal; }
-.notice { animation: notice-in 200ms ease-out; font-size: 11px; }
+.notice { font-size: 11px; }
 .page-footer { font-size: 10px; line-height: 1.8; }
 .form-intro, .field small, .check-field { color: var(--muted); }
 .field { font-size: 12px; }
@@ -405,5 +425,6 @@ dialog::backdrop { background: #101d3b80; backdrop-filter: blur(6px); }
   .preview-document-heading h2 { font-size: 11px; }
 }
 @media(prefers-reduced-motion:reduce) {
+  [data-slot='button']:active:not(:disabled) { transform:none; }
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }

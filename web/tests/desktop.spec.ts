@@ -1,0 +1,55 @@
+import { test, expect } from '@playwright/test'
+
+test('desktop startup explains a missing service and recovers without restarting', async ({page}) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  // Only the desktop environment marker is simulated. No native window claims.
+  await page.addInitScript(() => Object.defineProperty(window, '__TAURI_INTERNALS__', {value:{}}))
+  let available = false
+  await page.route('http://127.0.0.1:8178/api/v1/**', async route => {
+    if (!available) return route.fulfill({status:503, contentType:'application/json', body:'{}'})
+    const response = await route.fetch({url:route.request().url().replace('8178','8180')})
+    await route.fulfill({response, headers:{...response.headers(), 'access-control-allow-origin':'*'}})
+  })
+  await page.goto('/')
+  await expect(page.getByRole('heading',{name:'Connect your local workspace.'})).toBeVisible()
+  await expect(page.getByText('make db\nmake api', {exact:true})).toBeVisible()
+  await expect(page.getByRole('button',{name:'New report',exact:true})).toHaveCount(0)
+  await page.screenshot({path:'test-results/workflow-artifacts/desktop-startup.png',fullPage:true,animations:'disabled'})
+  await page.getByRole('button',{name:'Switch to dark theme'}).click()
+  await page.screenshot({path:'test-results/workflow-artifacts/desktop-startup-dark.png',fullPage:true,animations:'disabled'})
+  available = true
+  await page.getByRole('button',{name:'Check connection',exact:true}).click()
+  await expect(page.getByRole('button',{name:'New report',exact:true})).toBeEnabled()
+  await expect(page.getByRole('heading',{name:'Connect your local workspace.'})).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('workspace shortcuts preserve dialog focus and reduced motion leaves panels readable', async ({page}) => {
+  const report = await page.request.post('/api/v1/cases', {data:{title:'Desktop interaction fixture',project:'Interaction tests',url:'https://example.com',description:'Controlled interface fixture',expected:'Review a report',build:'fixture-a'}})
+  expect(report.ok()).toBe(true)
+  const item = await report.json()
+  await page.goto(`/?case=${item.id}`)
+  await expect(page.getByRole('button',{name:'New report',exact:true})).toBeEnabled()
+  await page.keyboard.press('Control+,')
+  await expect(page.getByRole('heading',{name:'Connect the workflow.'})).toBeVisible()
+  await page.keyboard.press('Control+k')
+  await expect(page.getByRole('textbox',{name:'Search cases'})).toBeFocused()
+  await page.keyboard.press('Control+Shift+n')
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await page.keyboard.press('Control+k')
+  await expect(page.getByLabel('Report title')).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('textbox',{name:'Search cases'})).toBeFocused()
+  await page.getByRole('button',{name:'New report',exact:true}).hover()
+  await expect(page.getByRole('tooltip')).toContainText('Create a report')
+  await page.getByRole('tab',{name:'Agent context',exact:true}).click()
+  await page.emulateMedia({reducedMotion:'reduce'})
+  await expect(page.getByRole('tabpanel')).toHaveCSS('transform','none')
+  await expect(page.getByRole('tabpanel')).toHaveCSS('opacity','1')
+  await page.getByRole('tab',{name:'Repair packet',exact:true}).click()
+  await expect(page.getByRole('tabpanel')).toHaveCSS('transform','none')
+  await page.getByRole('tab',{name:'Agent context',exact:true}).click()
+  await expect(page.getByRole('region',{name:'Agent investigation'})).toBeVisible()
+  await page.screenshot({path:'test-results/workflow-artifacts/desktop-workspace.png',fullPage:true,animations:'disabled'})
+})

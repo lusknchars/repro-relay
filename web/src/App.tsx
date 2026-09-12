@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import {
   ArrowDownToLine, ArrowLeft, ArrowRight, BookOpen, Braces, Check, ChevronRight,
   CircleDot, Database, FileText, FlaskConical, GitBranch,
@@ -16,6 +16,9 @@ import { RunPanel } from './components/RunPanel'
 import { Badge } from './components/ui/badge'
 import { apiBase, message, request, requestAll } from './lib/api'
 import type { Case, CaseStatus, Health, Memory, Result } from './types'
+import { useTransition } from './lib/motion'
+import { useWorkspaceCommands, type WorkspaceCommand } from './lib/desktop'
+import { ShortcutHint } from './components/ShortcutHint'
 
 const labels: Record<CaseStatus, string> = {
   new: 'New report', reproduced: 'Reproduced', not_reproduced: 'Not reproduced',
@@ -33,6 +36,7 @@ function Modal({ title, close, children }: {title: string; close: () => void; ch
     const dialog = ref.current
     const trigger = document.activeElement
     dialog?.showModal()
+    dialog?.querySelector<HTMLElement>('input, textarea, select')?.focus()
     return () => {
       dialog?.close()
       if (trigger instanceof HTMLElement) queueMicrotask(() => { if (trigger.isConnected) trigger.focus() })
@@ -69,6 +73,19 @@ export default function App() {
   const [packet, setPacket] = useState('')
   const requestKey = useRef('')
   const selected = cases.find(item => item.id === selectedId)
+  const detailRef = useTransition<HTMLDivElement>([tab, selectedId, view, loading])
+  const noticeRef = useTransition<HTMLDivElement>([notice])
+  const searchRef = useRef<HTMLInputElement>(null)
+  const [focusSearch, setFocusSearch] = useState(0)
+  useEffect(() => { if (focusSearch) searchRef.current?.focus() }, [focusSearch])
+  useWorkspaceCommands(useCallback((command: WorkspaceCommand) => {
+    if (modal || busy || !health) return
+    if (command === 'new-report') {
+      setError('');setNotice('');requestKey.current=crypto.randomUUID();setModal('report')
+    } else if (command === 'find-case') {
+      setView('inbox');setShowCase(false);setFocusSearch(value=>value+1)
+    } else if (command === 'connections') setView('connections')
+  }, [modal, busy, health]))
   useEffect(()=>{
     if(!selectedId)return
     const url = new URL(window.location.href)
@@ -193,16 +210,16 @@ export default function App() {
       <header className="topbar"><div className="breadcrumbs">Workspace<ChevronRight size={14} /><strong>{view === 'inbox' ? 'Case inbox' : view === 'memory' ? 'Project memory' : 'Connections'}</strong></div>
         <div className="topbar-actions"><span className="local-badge"><FlaskConical size={14} />{isGuest ? 'Public beta' : 'Local workspace'}</span><ThemeToggle/></div></header>
       <div className="page-title"><div><h1>{view === 'inbox' ? 'Keep the next step in context.' : view === 'memory' ? 'What your team has learned.' : 'Connect the workflow.'}</h1><p>{view === 'inbox' ? 'Investigate the report, preserve what happened, and prepare the next agent.' : view === 'memory' ? 'Reviewed observations from this workspace, with their original evidence.' : 'The local workflow works now. Agent and channel connections come next.'}</p></div>
-        <Button onClick={() => openModal('report')} disabled={!health}><Plus />New report</Button></div>
+        <ShortcutHint label="Create a report" keys="Shift N"><Button onClick={() => openModal('report')} disabled={!health}><Plus />New report</Button></ShortcutHint></div>
       {isGuest && <BetaFeedback/>}
       {error && <div className="notice error" role="alert">{error}<Button variant="ghost" size="sm" onClick={() => void action(openWorkspace)}>Retry connection</Button></div>}
-      {notice && <div className="notice" role="status"><Check size={16} />{notice}</div>}
+      {notice && <div ref={noticeRef} className="notice" role="status"><Check size={16} />{notice}</div>}
       {loading ? <div className="loading" role="status"><span>Opening your workspace…</span><div className="workspace-skeleton" aria-hidden="true"><div/><div/><div/></div></div> : <>
       {view === 'inbox' && <>
         <div className="summary-strip"><span><strong>{cases.filter(item => item.status === 'new').length}</strong> awaiting an observation</span><span><strong>{cases.filter(item => item.status === 'reproduced').length}</strong> reproduced</span><span><strong>{memories.length}</strong> reviewed memories</span><span className="summary-end"><Radio size={14} />Observations are recorded by your team</span></div>
         <div className={`case-workspace ${showCase ? 'show-case' : 'show-inbox'}`}>
           <section className="inbox-panel" aria-label="Cases">
-            <div className="list-tools"><label className="search"><Search size={16}/><input aria-label="Search cases" placeholder="Find a case…" value={query} onChange={e => setQuery(e.target.value)} /></label>
+            <div className="list-tools"><label className="search"><Search size={16}/><input ref={searchRef} aria-label="Search cases" placeholder="Find a case…" value={query} onChange={e => setQuery(e.target.value)} /></label>
             <select aria-label="Filter cases by status" value={filter} onChange={e => setFilter(e.target.value)}><option value="all">All statuses</option>{Object.entries(labels).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></div>
             <div className="list-label"><span>Reports</span><span>{filtered.length}</span></div>
             {filtered.map(item => <button key={item.id} className={`case-row ${selectedId === item.id ? 'selected' : ''}`} onClick={() => {setSelectedId(item.id); setShowCase(true); setTab('evidence')}} aria-pressed={selectedId === item.id}>
@@ -219,7 +236,7 @@ export default function App() {
             }}>
             <EvidencePath item={selected} reviewed={!!selectedMemory} open={setTab}/>
             <TabsList className="detail-tabs" variant="line" aria-label="Case detail">{(['evidence', 'context', 'handoff', 'activity'] as const).map(value => <TabsTrigger key={value} value={value}>{value === 'evidence' ? 'Evidence' : value === 'context' ? 'Agent context' : value === 'handoff' ? 'Repair packet' : 'Activity'}{value === 'evidence' && <span>{selected.observations.length}</span>}</TabsTrigger>)}</TabsList>
-            <TabsContent className="detail-body" value={tab} key={`${selected.id}-${tab}`}>
+            <TabsContent ref={detailRef} className="detail-body" value={tab} key={`${selected.id}-${tab}`}>
             {tab === 'evidence' && <>
               <div className="description-grid"><div><h3>Reported behavior</h3><p>{selected.description}</p></div><div><h3>Expected behavior</h3><p>{selected.expected}</p></div></div>
               <a className="target-link" href={selected.url} target="_blank" rel="noreferrer"><Link2 size={15}/><span>{selected.url}</span><ArrowRight size={15}/></a>

@@ -8,6 +8,8 @@ React, TypeScript, Vite, Tailwind, and locally owned shadcn Button/Badge primiti
 
 Frontend Lab: https://github.com/lusknchars/frontend-lab, reference commit `1167099e04ca412f57fda657d28e19b0d8f933be`.
 
+The user confirmed shadcn/ui as the component library for desktop and web. `web/components.json` configures the existing React, Tailwind v4, Lucide, CSS-variable, and `@/` alias setup for selective registry additions. Tooltip and Kbd are adapted from the official shadcn Radix registry retrieved September 12. Their URLs and notices are in `THIRD_PARTY_NOTICES.md`. Existing Button, Badge, ReUI tabs, and timeline remain locally owned components.
+
 - `src/components/inspector-panel/InspectorPanel.tsx`: compact properties and native inputs.
 - `src/components/ui/button.tsx`: reusable variants and keyboard focus.
 - `src/components/ui/badge.tsx`: status and source-revision labels.
@@ -46,8 +48,11 @@ On mobile, the selected case and report list switch between focused views. “Al
 - The landing example lets a visitor change a sample build, see the outdated-context state, and reset it. It does not call an agent or claim real verification.
 - Detail tabs support arrow keys, Home, End, and named tab panels.
 - Native dialogs trap focus, close with Escape, and return focus to their trigger.
-- A single document entrance introduces the landing preview. Short transitions respond to tab, dialog, feedback, and build-example actions. There are no looping animations. Reduced motion disables transitions and animations.
+- GSAP 3.15.0 with `@gsap/react` 2.1.2 introduces case panels, changed run states, saved confirmations, and desktop connection states with a 220ms transform/opacity transition. The scoped hook reverts on state changes and unmount. It follows [GSAP's React lifecycle guidance](https://gsap.com/resources/React/) and responds to the device's reduced-motion setting while running. Focus and command dispatch never wait for animation completion.
+- Buttons use a 120ms press transition. Investigation controls report checking, starting, stopping, and reconciliation requests using text plus `aria-busy`; these labels do not imply remote completion. The landing, dialogs, tooltips, and build examples retain short CSS transitions. There are no looping animations. Reduced motion disables GSAP and CSS motion.
 - Keep loading, empty, error, disconnected, and stale states actionable and readable in both themes.
 - Run `make check` for the real workflow and guest tests. Guest coverage includes theme persistence, the interactive example, keyboard focus, reduced motion, and mobile inbox navigation. Inspect screenshots of light, dark, and mobile views.
 
 Button/Badge notices and font attribution are in `THIRD_PARTY_NOTICES.md`. No proprietary component code or reference artwork is included.
+
+The desktop startup view explains the separate local API/database requirement and provides retry and copyable setup commands. Tauri's native Workspace menu emits the same report, search, and connection commands used by web keyboard shortcuts. Window placement uses the official [Tauri window-state plugin](https://v2.tauri.app/plugin/window-state/), limited to size, position, and maximized state so a hidden window is not restored as hidden.

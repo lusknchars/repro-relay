@@ -21,6 +21,8 @@ Support or operations report
 
 The Tauri app is the developer control room. It uses the same React interface as the web client, with native packet export and external link opening. In local mode it connects to the loopback Rust API. In hosted mode it will connect to an authenticated remote runner.
 
+The current desktop checks the local API before opening the workspace, offers setup commands and retry when unavailable, and preserves window placement. Native Workspace menu commands open a report, focus case search, or open connections. Shared shadcn controls and GSAP state transitions keep these actions consistent with the web client. Backend/database bundling and authenticated remote connections remain separate milestones.
+
 Desktop progress:
 
 1. Implemented: detect API and configured runtime availability.

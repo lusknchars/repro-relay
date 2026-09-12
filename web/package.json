@@ -14,10 +14,12 @@
     "test:runner": "playwright test --config playwright.runner.config.ts"
   },
   "dependencies": {
+    "@gsap/react": "2.1.2",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-opener": "^2.5.5",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
+    "gsap": "3.15.0",
     "lucide-react": "1.45.0",
     "radix-ui": "1.6.7",
     "react": "19.3.0",

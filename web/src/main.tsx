@@ -4,11 +4,13 @@ import App from './App'
 import './styles.css'
 import './design.css'
 import { initializeTheme } from './components/ThemeToggle'
+import { DesktopStartup } from './components/DesktopStartup'
+import { TooltipProvider } from './components/ui/tooltip'
 
 initializeTheme()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode><App /></React.StrictMode>,
+  <React.StrictMode><TooltipProvider><DesktopStartup><App /></DesktopStartup></TooltipProvider></React.StrictMode>,
 )
 
 if ('__TAURI_INTERNALS__' in window) {
