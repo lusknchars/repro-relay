@@ -10,7 +10,7 @@ Implemented:
 - Deterministic investigator, repair, verifier, and update context views with source event IDs.
 - Persisted handoff snapshots bound to case revision, current build, worker assignment, and referenced memories. The server rejects outdated snapshots and records the reason.
 - Build updates preserve old observations and invalidate published memory. Concurrent writes use revision checks.
-- Tauri desktop shell with native packet export and external browser links. API and PostgreSQL run separately and must already be available.
+- Tauri desktop shell with native packet export and external browser links. The desktop client uses the same React case view as the web app; API and PostgreSQL run separately and must already be available. Client roles and the shared event contract are in [Client architecture](./CLIENT-ARCHITECTURE.md).
 - Hosted guest workspaces with opaque HttpOnly cookies, scoped database access, seven-day expiry, capacity limits, and usefulness feedback. A landing page introduces the synthetic sample report and current capabilities.
 - One deployment container serving the built React app and Rust API, Railway configuration, PostgreSQL TLS support, and graceful shutdown.
 

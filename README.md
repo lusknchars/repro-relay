@@ -2,7 +2,7 @@
 
 An engineering workspace that turns bug reports into evidence-backed agent handoffs, with local and hosted guest modes. Preserve what the team observed, give each role a focused context view, and reject handoffs that reference outdated builds, worker assignments, or revoked memory.
 
-This milestone records human observations and prepares agent context. Hermes execution, automatic fixes, and outbound channel delivery are not connected yet. The next release plan defines the two-day hackathon path through Plow Latch and the Plow phone-line plugin.
+This milestone records human observations and prepares agent context. Hermes execution, automatic fixes, and outbound channel delivery are not connected yet. The next release plan defines the two-day hackathon path through Plow Latch and the Plow phone-line plugin. The client relationship is documented in [Client architecture](docs/CLIENT-ARCHITECTURE.md).
 
 ## Run locally
 
@@ -39,7 +39,7 @@ make desktop-build
 open 'target/debug/bundle/macos/Repro Relay.app'
 ```
 
-For desktop development, run `make api` and then `make desktop` in a second terminal. Tauri starts Vite itself. The webview uses the same local Rust API. Packet export opens a native save dialog. This is a development app; it is not signed, notarized, self-contained, or ready for an app store.
+For desktop development, run `make api` and then `make desktop` in a second terminal. Tauri starts Vite itself. The webview uses the same local Rust API. Packet export opens a native save dialog. The current desktop is a client for a separately running API; it does not yet bundle Hermes, Plow, Latch, or a local runner. It is not signed, notarized, self-contained, or ready for an app store.
 
 ## Check
 
