@@ -2,7 +2,7 @@
 
 An engineering workspace that turns bug reports into evidence-backed agent handoffs, with local and hosted guest modes. Preserve what the team observed, give each role a focused context view, and reject handoffs that reference outdated builds, worker assignments, or revoked memory.
 
-This milestone records human observations and prepares agent context. Hermes execution, automatic fixes, and outbound channel delivery are not connected yet.
+This milestone records human observations and prepares agent context. Hermes execution, automatic fixes, and outbound channel delivery are not connected yet. The next release plan defines the two-day hackathon path through Plow Latch and the Plow phone-line plugin.
 
 ## Run locally
 

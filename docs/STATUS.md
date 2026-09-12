@@ -22,7 +22,7 @@ PostgreSQL stores each case aggregate as JSONB and the memory publication index 
 
 The earlier Python/SQLite prototype has been replaced. No SQLite migration is provided because it was an unfinished scaffold. Existing local SQLite files, if any, are left untouched and are not read by this build.
 
-Next: publish and verify the Railway beta, collect visitor feedback, then connect one bounded Hermes investigation against a controlled fixture application, persist real tool receipts and evidence, and produce a reviewed GitHub draft. Add external sends only after destination authorization and receipt reconciliation are implemented. Evaluate recurring workflow corrections after collecting real failed runs.
+Next: follow [the next release plan](./ROADMAP.md). The two-day target is the hackathon build and deployment window. Connect one bounded Hermes investigation through Plow Latch and the Plow phone-line plugin, persist real tool receipts, add correction-aware conclusions and reconciled owner delivery, then deploy and request verification. Keep the desktop app as the evidence and developer-control surface; do not build a custom terminal manager in this release.
 
 Validation commands and the repeatable browser flow are in README.md. Automated fixtures are separate from usage and from the local demo workspace.
 
