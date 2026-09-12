@@ -1,7 +1,10 @@
 import { useState } from 'react'
-import { ArrowRight, GitBranch, ShieldCheck, FileCheck2 } from 'lucide-react'
+import { ArrowRight, GitBranch, ShieldCheck, Fingerprint, Layers3 } from 'lucide-react'
 import { Button } from './ui/button'
+import { ThemeToggle } from './ThemeToggle'
+import { RelayPreview } from './RelayPreview'
 import { message, request } from '../lib/api'
+
 export function GuestGate({ready}: {ready:()=>Promise<void>}) {
   const [busy,setBusy]=useState(false)
   const [error,setError]=useState('')
@@ -12,9 +15,9 @@ export function GuestGate({ready}: {ready:()=>Promise<void>}) {
     finally{setBusy(false)}
   }
   return <main className="guest-landing">
-    <div className="guest-brand"><span className="brand-mark"><GitBranch size={23}/></span><strong>reprorelay</strong><span className="guest-pill">Public beta</span></div>
-    <div className="guest-layout"><section className="guest-copy"><h1>A bug report is only the beginning.</h1><p>Give the next agent a clear record of what happened, what changed, and what still needs checking.</p><Button size="lg" onClick={()=>void start()} disabled={busy}>{busy?'Opening your workspace…':'Try a test workspace'}<ArrowRight/></Button><small>No signup. Your workspace is separate from other visitors.</small>{error&&<p role="alert" className="form-error">{error}</p>}</section>
-    <section className="guest-preview" aria-label="What you can test"><div className="guest-preview-header"><FileCheck2/><strong>Try the handoff check</strong></div><ol><li>Start with the sample bug report.</li><li>Record an observation and prepare an agent handoff.</li><li>Change the build. See the old handoff get rejected.</li></ol><div className="guest-preview-note"><ShieldCheck size={18}/><span>Your original evidence stays attached.</span></div></section></div>
-    <div className="guest-details"><p>This beta tests evidence capture, memory, and handoff preparation. Browser agents and automatic repairs are not connected yet.</p><p>Use sample data. Your test workspace and feedback expire after 7 days. Clearing this browser's cookies loses access. Project maintainers can review stored feedback and test records.</p><a href="https://github.com/lusknchars/repro-relay" target="_blank" rel="noreferrer">Source and current progress</a></div>
+    <header className="guest-brand"><div className="brand-lockup"><span className="brand-mark"><GitBranch size={23}/></span><strong>repro<span className="brand-light">relay</span></strong></div><div className="guest-nav"><span className="guest-pill"><span className="online-dot"/>Public beta</span><ThemeToggle/></div></header>
+    <div className="guest-layout"><section className="guest-copy"><div className="guest-intro"><span className="intro-line"/>For the team behind the agents</div><h1>A bug report is only the beginning.</h1><p>Keep the evidence. Pass the context.<br/>Give the next agent a better place to start.</p><Button size="lg" className="guest-cta" onClick={()=>void start()} disabled={busy}>{busy?'Opening your workspace…':'Try a test workspace'}<ArrowRight/></Button><small>No signup. Your own workspace.<br/>A sample report to get you started.</small>{error&&<p role="alert" className="form-error">{error}</p>}</section><RelayPreview/></div>
+    <section className="guest-principles" aria-label="Inside the workspace"><article><Fingerprint size={22}/><h2>Evidence with a source.</h2><p>Keep what happened, who observed it, and which build they tested.</p></article><article><Layers3 size={22}/><h2>Memory with a review.</h2><p>Carry useful observations into the next investigation.</p></article><article><ShieldCheck size={22}/><h2>A check before the handoff.</h2><p>Catch changed builds and outdated context before the next step.</p></article></section>
+    <footer className="guest-details"><div><p>This beta tests evidence capture, memory, and handoff preparation. Browser agents and automatic repairs are not connected yet.</p><p>Use sample data. Workspaces and feedback expire after 7 days. Clearing cookies loses access. Project maintainers can review test records and feedback.</p></div><a href="https://github.com/lusknchars/repro-relay" target="_blank" rel="noreferrer">Source and current progress <ArrowRight size={14}/></a></footer>
   </main>
 }

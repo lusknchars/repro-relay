@@ -5,7 +5,7 @@ Updated September 12, 2026. The Rust and TypeScript workflow now includes a host
 Implemented:
 
 - Rust Axum API, Tokio, PostgreSQL migrations, durable cases and original observation history.
-- React, TypeScript, Vite, Tailwind, and Frontend Lab Button/Badge primitives. Compact case inspector adapted from the lab's composition.
+- React, TypeScript, Vite, Tailwind, and Frontend Lab Button/Badge primitives. JetBrains Mono, a blue navigation rail, persistent light/dark themes, interactive landing preview, state-derived evidence path, keyboard tabs, and focused mobile inbox/detail views. Motion respects the device setting.
 - New report, human-recorded observations, reviewed project memory, scoped exact-term retrieval, revocation, and Markdown exports.
 - Deterministic investigator, repair, verifier, and update context views with source event IDs.
 - Persisted handoff snapshots bound to case revision, current build, worker assignment, and referenced memories. The server rejects outdated snapshots and records the reason.
@@ -26,4 +26,4 @@ Next: publish and verify the Railway beta, collect visitor feedback, then connec
 
 Validation commands and the repeatable browser flow are in README.md. Automated fixtures are separate from usage and from the local demo workspace.
 
-Validation on September 12: `make check` passed Rust formatting, Clippy with warnings denied, eight isolated PostgreSQL integration tests, the production frontend build, and two Chromium tests covering the workflow and separate guest sessions, feedback, reload, and mobile width. The guest landing screenshot was visually inspected. The Linux deployment container passed health, static UI, guest-session isolation, CSRF, and feedback checks against an isolated PostgreSQL database; the feedback row was verified directly. Desktop packaging previously passed and the executable was launched. Native save-dialog interaction has not been exercised; the available desktop accessibility bridge denied access.
+Validation on September 12: `make check` passed Rust formatting, Clippy with warnings denied, eight isolated PostgreSQL integration tests, the production frontend build, and three Chromium tests covering the workflow, separate guest sessions, feedback, themes, interactive preview, keyboard tabs, dialog focus restoration, reduced motion, and mobile navigation. Light, dark, and mobile screenshots were visually inspected. The Linux deployment container passed health, static UI, guest-session isolation, CSRF, and feedback checks against an isolated PostgreSQL database; the feedback row was verified directly. Desktop packaging previously passed and the executable was launched. Native save-dialog interaction has not been exercised; the available desktop accessibility bridge denied access.
