@@ -1,8 +1,8 @@
 # Repro Relay
 
-An engineering workspace that turns bug reports into evidence-backed agent handoffs, with local and hosted guest modes. Preserve what the team observed, give each role a focused context view, and reject handoffs that reference outdated builds, worker assignments, or revoked memory.
+Repro Relay connects support and operations reports to agent investigation and developer review. Its web and desktop clients share cases, recorded evidence, project memory, and engineering handoffs.
 
-This milestone records human observations and prepares agent context. Hermes execution, automatic fixes, and outbound channel delivery are not connected yet. The next release plan defines the two-day hackathon path through Plow Latch and the Plow phone-line plugin. The client relationship is documented in [Client architecture](docs/CLIENT-ARCHITECTURE.md).
+The local API can submit, monitor, stop, and reconcile investigations on a configured Hermes runtime. Runs survive client reloads and retain agent answers as proposals for review. The adapter has passed protocol-fixture tests; live Hermes and Latch execution still need verification. Phone intake, outbound delivery, and automatic fixes remain planned. See [the release plan](docs/ROADMAP.md) and [client architecture](docs/CLIENT-ARCHITECTURE.md).
 
 ## Run locally
 
@@ -30,6 +30,12 @@ An evidence URL is a reference supplied by the recorder. The application has not
 
 `node scripts/seed-demo.mjs` adds two explicitly labeled fixture reports through the API for a quick walkthrough. It does not contact an external system.
 
+## Connect an investigator
+
+Run a dedicated Hermes gateway with its authenticated run API enabled. Pass `REPRO_HERMES_URL` and `REPRO_HERMES_KEY` to the Relay API process, then open a case's **Agent context** tab. Check the connection, select a time limit, and start the investigation. Both web and desktop read the same saved run. Case links retain selection across reloads.
+
+See [runner setup and recovery](docs/HERMES-RUNNER.md) for the required capabilities, endpoints, limits, and interruption behavior. Runtime credentials stay in the backend. Hosted guest workspaces cannot operate this runner. Time limits request a cooperative stop; token and spending limits must be configured in Hermes.
+
 ## Desktop
 
 With `make dev` running, open the built desktop application. To build it:
@@ -47,7 +53,7 @@ For desktop development, run `make api` and then `make desktop` in a second term
 make check
 ```
 
-This runs Rust formatting, Clippy, eight PostgreSQL integration tests, the frontend production build, and three browser tests covering the workflow, guest isolation, themes, keyboard interaction, and mobile navigation. SQLx creates isolated test databases. Browser tests use `relay_e2e` on the local PostgreSQL server, with the local workflow API at port 8180, Vite at 5180, and the guest service at 5190. They do not write into the development workspace. Test fixtures may remain in `relay_e2e` between runs.
+This runs Rust formatting, Clippy, PostgreSQL integration tests, the frontend production build, and browser tests covering the workflow, guest isolation, themes, keyboard interaction, mobile navigation, and the Hermes protocol fixture. SQLx creates isolated test databases. Browser tests use `relay_e2e` on the local PostgreSQL server. The workflow API uses port 8180, runner tests use API 8182 and fixture 8654, Vite uses 5180, and the guest service uses 5190. Tests do not write into the development workspace. Test fixtures may remain in `relay_e2e` between runs.
 
 The browser test covers intake, observation, memory review, export, stale handoff rejection, reload, and mobile overflow. Screenshots are saved under `web/test-results/` and excluded from Git. Desktop packaging is a separate `make desktop-build` check.
 

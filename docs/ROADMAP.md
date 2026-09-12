@@ -8,18 +8,19 @@ Repro Relay's next release is one agent that investigates a reported problem whi
 
 The two-day target is the hackathon build and deployment window. It is not a customer onboarding promise. The release must work after a maintainer connects the required accounts and approves access.
 
-The demo path is:
+The planned demo path is:
 
 ```text
-Owner sends a report on Plow
+Support or operations receives a customer report
+        -> Report enters Relay through web or Plow
         -> Hermes plans and clarifies
         -> Latch performs approved Mac/browser actions
         -> Relay records receipts, observations, and conclusions
         -> Desktop shows evidence and developer context
-        -> Owner receives a reconciled result on the same line
+        -> Responsible owner receives the result on an authorized channel
 ```
 
-The first supported workflow is a controlled web application bug. A business user can describe the symptom without knowing repositories or terminals. A developer can open the same case, inspect the action record, and continue in an existing terminal or coding agent. We will not build a general terminal manager during this release.
+The first supported workflow is a controlled web application bug. Phone access supports intake, clarification, approvals, and results. Business owners should not need to investigate bugs from a phone. A developer can open the same case, inspect its evidence, and continue in an existing terminal or coding agent. A custom terminal manager is outside this release.
 
 ## Agent behavior
 
@@ -31,7 +32,7 @@ Each run has an owner, authorized destinations, a current case revision, a build
 
 The current PostgreSQL model already preserves observations, revisions, reviewed memory, revocation, workspace scope, and versioned handoffs. The next change adds correction records and applicability metadata. Retrieval must return the source observation and its status. A revoked, superseded, or stale record cannot silently become agent instructions.
 
-Memory retrieval stays small and scoped by workspace and project. Context is cached by case revision and build, then invalidated when either changes. Semantic retrieval can be added later behind the same source-preserving contract.
+Memory retrieval stays small and scoped by workspace and project. Each implemented run freezes its source context and checks its revision, assignment, build, and memory validity before further execution. Shared context caching and semantic retrieval remain future work.
 
 ## Delivery and operations
 
@@ -43,12 +44,16 @@ Plow Latch is the approved Mac and browser access layer. `hermes-plugin-plow` is
 
 ## Two-day delivery order
 
+Implemented foundation: shared Tauri/web run controls, durable admission, remote status polling, cooperative stop, uncertain-dispatch reconciliation, and saved proposals with reported usage. Protocol-fixture tests cover these behaviors. See [runner setup and limits](HERMES-RUNNER.md). Live Hermes, Latch, and phone delivery are still acceptance gates.
+
 1. Connect Hermes to Plow and prove one inbound report, one approved Latch action, and one reply.
 2. Add a bounded runner that persists action receipts, observations, hypotheses, and conclusions while the job is active.
 3. Add correction-aware memory and owner delivery reconciliation, then exercise restart, timeout, stale revision, and duplicate-message cases.
 4. Connect the desktop case view to live run state, export the evidence-backed handoff, deploy, and run the fresh-install verification path.
 
 Cut first if time moves: broad integrations, a custom terminal, autonomous patching, semantic search, and dashboard polish. Keep the working report-to-evidence-to-owner loop.
+
+Use the additional two days discussed for maintainer controls, deployment recovery, measured cost per investigation, and fresh-install testing. This extends the delivery plan; it is not a claim that those features or a public deployment are complete.
 
 ## Acceptance checks
 
@@ -60,4 +65,3 @@ Cut first if time moves: broad integrations, a custom terminal, autonomous patch
 - A developer can inspect the evidence and continue from a terminal.
 - The owner receives a concise result with status, evidence links, and the next action.
 - Per-run usage and cost are visible to the maintainer.
-

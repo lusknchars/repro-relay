@@ -10,7 +10,8 @@
     "preview": "vite preview --host 127.0.0.1 --port 5178 --strictPort",
     "tauri": "tauri",
     "test:e2e": "playwright test",
-    "test:guest": "playwright test --config playwright.guest.config.ts"
+    "test:guest": "playwright test --config playwright.guest.config.ts",
+    "test:runner": "playwright test --config playwright.runner.config.ts"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",

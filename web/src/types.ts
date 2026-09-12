@@ -1,4 +1,11 @@
 export type Result = 'reproduced' | 'not_reproduced' | 'blocked' | 'needs_context'
+export type InvestigationRun = {
+  id:string; case_id:string; case_revision:number; owner_version:number; build:string; version:number;
+  status:string; detail:string; created_at:string; checked_at:string; deadline:string; max_seconds:number;
+  remote_id:string|null; output:string|null; stop_requested:boolean; context_stale:boolean; context:unknown;
+  usage:{input_tokens?:number;output_tokens?:number;total_tokens?:number;cost_usd?:number}|null;
+  events:{sequence:number;kind:string;at:string;detail:string}[];
+}
 export type CaseStatus = Result | 'new'
 export type Observation = {
   id: string; result: Result; observed: string; build: string; evidence_url: string;

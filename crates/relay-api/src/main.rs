@@ -20,6 +20,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .connect(&database)
         .await?;
     relay_api::initialize(&pool).await?;
+    let runner = relay_api::runs::Runner::from_env()?;
+    if hosted && runner.0.is_some() {
+        return Err("The guest beta cannot use a maintainer's Hermes runtime. Configure it on a local Relay server.".into());
+    }
+    let worker = tokio::spawn(relay_api::runs::worker(pool.clone(), runner.clone()));
     if hosted {
         let cleanup_pool = pool.clone();
         tokio::spawn(async move {
@@ -43,9 +48,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let listener = tokio::net::TcpListener::bind((address, port)).await?;
     tracing::info!(port, mode = hosting.mode(), "Repro Relay API ready");
-    axum::serve(listener, relay_api::app_with_hosting(pool, hosting))
+    axum::serve(listener, relay_api::app_with_runner(pool, hosting, runner))
         .with_graceful_shutdown(shutdown())
         .await?;
+    worker.abort();
     Ok(())
 }
 async fn shutdown() {

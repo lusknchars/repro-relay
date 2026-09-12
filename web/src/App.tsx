@@ -12,6 +12,7 @@ import { EvidencePath } from './components/EvidencePath'
 import { GuestGate } from './components/GuestGate'
 import { BetaFeedback } from './components/BetaFeedback'
 import { ContextPanel } from './components/ContextPanel'
+import { RunPanel } from './components/RunPanel'
 import { Badge } from './components/ui/badge'
 import { apiBase, message, request, requestAll } from './lib/api'
 import type { Case, CaseStatus, Health, Memory, Result } from './types'
@@ -52,7 +53,7 @@ export default function App() {
   const [cases, setCases] = useState<Case[]>([])
   const [memories, setMemories] = useState<Memory[]>([])
   const [health, setHealth] = useState<Health | null>(null)
-  const [selectedId, setSelectedId] = useState('')
+  const [selectedId, setSelectedId] = useState(()=>new URLSearchParams(window.location.search).get('case') || '')
   const [related, setRelated] = useState<Memory[]>([])
   const [view, setView] = useState<'inbox' | 'memory' | 'connections'>('inbox')
   const [tab, setTab] = useState<'evidence' | 'context' | 'handoff' | 'activity'>('evidence')
@@ -68,6 +69,12 @@ export default function App() {
   const [packet, setPacket] = useState('')
   const requestKey = useRef('')
   const selected = cases.find(item => item.id === selectedId)
+  useEffect(()=>{
+    if(!selectedId)return
+    const url = new URL(window.location.href)
+    url.searchParams.set('case',selectedId)
+    window.history.replaceState(null,'',url)
+  },[selectedId])
 
   async function refresh() {
     const [items, knowledge, status] = await Promise.all([
@@ -223,7 +230,7 @@ export default function App() {
               {related.length ? related.map(memory => <button className="related-row" key={memory.id} onClick={() => setSelectedId(memory.case_id)}><BookOpen size={16}/><div><strong>{memory.title}</strong><small>{memory.case_id} · Reviewed by {memory.reviewer}</small></div><ChevronRight size={15}/></button>) : <p className="muted-paragraph">No matching reviewed observations yet. Memory grows as your team reviews evidence.</p>}
               {selected.status === 'reproduced' && <div className="memory-prompt"><ShieldCheck size={22}/><div><strong>{selectedMemory ? 'This observation is in project memory.' : 'Useful for the next investigation?'}</strong><p>{selectedMemory ? `Reviewed by ${selectedMemory.reviewer}. New observations invalidate this memory.` : 'Review the evidence before making this observation available to future cases.'}</p></div>{!selectedMemory && <Button variant="outline" size="sm" onClick={() => openModal('review')}>Review for memory</Button>}</div>}
             </>}
-            {tab === 'context' && <ContextPanel key={selected.id} item={selected} refresh={refresh}/>}
+            {tab === 'context' && <>{'__TAURI_INTERNALS__' in window&&<a className="target-link" href={`http://127.0.0.1:8178/?case=${encodeURIComponent(selected.id)}`}><Link2 size={15}/>Open this case in your browser</a>}<RunPanel key={`run-${selected.id}`} item={selected} guest={isGuest}/><ContextPanel key={selected.id} item={selected} refresh={refresh}/></>}
             {tab === 'handoff' && <><div className="packet-intro"><FileText size={22}/><div><h3>A precise starting point for engineering.</h3><p>This export includes the report, recorded evidence, and related reviewed cases. Unknown repository and commit details stay explicit.</p></div></div><Button onClick={exportPacket} disabled={!packet}><ArrowDownToLine/>Export Markdown</Button><pre className="packet-preview">{packet || 'Loading repair packet…'}</pre></>}
             {tab === 'activity' && <CaseActivity events={selected.events}/>}
             </TabsContent>
@@ -238,7 +245,8 @@ export default function App() {
       </section>}
       {view === 'connections' && <section className="connections"><div className="connection-intro"><GitBranch size={26}/><div><h2>The foundation is ready for connections.</h2><p>Case storage, context preparation, freshness checks, and exports work locally. The integrations below are the next milestones.</p></div></div>{[
         ['Local workspace', 'Rust API, PostgreSQL history, reviewed memory, and versioned handoffs.', true],
-        ['Hermes + Plow Chat', 'Agent intake and browser investigation. Runtime connection is not implemented.', false],
+        ['Hermes run adapter', 'Start, monitor, stop, and reconcile a configured local Hermes run from Agent context. Check its live connection there.', !isGuest],
+        ['Plow Chat + Latch', 'Team intake, approved Mac/browser actions, and owner updates. Live integration is not exercised yet.', false],
         ['Mem0', 'Semantic retrieval adapter. Exact lookup already works without an API key.', false],
         ['GitHub', 'Reviewed issue creation. Export a Markdown packet manually today.', false],
         ['Slack', 'Case-linked engineering updates. Outbound delivery is not implemented.', false],

@@ -2,7 +2,7 @@
 
 Updated September 12, 2026.
 
-Repro Relay has one case model and three client adapters. The Rust backend owns state. Hermes owns agent execution. Plow Latch supplies approved Mac and browser actions. Clients never write conclusions directly; they submit commands and render the resulting events.
+The target architecture has one case model and three clients. The Rust backend owns state; a configured Hermes runtime owns execution. Web and Tauri currently share durable run controls and case review. Plow Latch actions and the phone adapter remain planned. Clients submit commands to the backend.
 
 ```text
 Support or operations report
@@ -21,18 +21,19 @@ Support or operations report
 
 The Tauri app is the developer control room. It uses the same React interface as the web client, with native packet export and external link opening. In local mode it connects to the loopback Rust API. In hosted mode it will connect to an authenticated remote runner.
 
-The desktop client should add local runner controls in this order:
+Desktop progress:
 
-1. Detect whether the local API and runner are reachable.
-2. Start, resume, cancel, and observe a run through the shared event stream.
-3. Open the case's working directory in the user's configured terminal or editor.
-4. Request an approved Latch operation and display its receipt.
+1. Implemented: detect API and configured runtime availability.
+2. Implemented: start, stop, reconcile, and read saved run state through three-second polling. Known remote IDs resume backend polling after restart.
+3. Implemented: open the same local case in the browser using its case URL.
+4. Planned: open the case working directory in a configured terminal or editor.
+5. Planned: request an approved Latch operation and display its receipt.
 
 The desktop must not embed credentials in the webview or grant unrestricted shell access. A packaged runner needs an explicit sidecar and a restricted Tauri capability. Until that runner is bundled and tested, the desktop is correctly described as a client for a separately running API.
 
 ## Web
 
-The web client is the collaboration and review surface. It can create reports, answer clarifications, inspect evidence, review memory, approve named actions, and receive delivery status. It cannot execute arbitrary terminal commands or read a developer's filesystem.
+The web client creates reports, records observations, reviews memory, exports handoffs, and controls configured local investigations. Clarification responses, named-action approvals, and delivery status remain planned. Hosted guest sessions cannot operate the local investigator. The web client cannot execute arbitrary terminal commands or read a developer's filesystem.
 
 The hosted web app uses the same case and event interfaces as the desktop. Workspace identity and permissions come from the server session, never from a client-supplied workspace ID.
 
@@ -44,7 +45,7 @@ A native mobile app can follow later. It should consume the same event and comma
 
 ## Shared run interface
 
-Every client consumes the same event shape:
+Proposed future event shape for tool receipts and revised conclusions:
 
 ```json
 {
@@ -58,9 +59,8 @@ Every client consumes the same event shape:
 }
 ```
 
-The backend rejects commands with an old revision, an unauthorized destination, or a stale handoff. Delivery records carry an idempotency key and provider receipt. A timeout is recoverable and must be reconciled before retrying.
+Today, run snapshots include a version and ordered state events with `sequence`, `kind`, `at`, and `detail`. There is no shared SSE stream or tool receipt feed yet. Admission rejects old revisions, and handoff checks reject stale source context. Destination authorization and delivery receipts will be added with phone messaging. See [the implemented HTTP contract](HERMES-RUNNER.md).
 
 ## First technical slice
 
-The first implementation slice is a controlled fixture: one Plow report, one Hermes run, one approved Latch action, persisted receipts, one conclusion update, and one owner message. The desktop displays the live run and the web client displays the final evidence. This proves the seam between clients before we add a terminal manager, native phone app, or broad integrations.
-
+The first implemented slice is a controlled Hermes protocol fixture with submission, status, saved proposals, usage, and cancellation through the shared interface. The next live slice is one support report, one Hermes run, one approved Latch action, a persisted receipt, a reviewed conclusion, and one authorized owner message. A native phone app follows the phone-line workflow.

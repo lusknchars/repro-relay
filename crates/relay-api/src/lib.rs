@@ -1,5 +1,6 @@
 pub mod domain;
 pub mod hosting;
+pub mod runs;
 use axum::{
     Extension, Json, Router,
     extract::{DefaultBodyLimit, Path, Query, State},
@@ -197,7 +198,14 @@ pub fn app(pool: PgPool) -> Router {
     app_with_hosting(pool, Hosting::local())
 }
 pub fn app_with_hosting(pool: PgPool, hosting: Hosting) -> Router {
+    app_with_runner(pool, hosting, runs::Runner::default())
+}
+pub fn app_with_runner(pool: PgPool, hosting: Hosting, runner: runs::Runner) -> Router {
     let routes = Router::new()
+        .route("/runner", get(runs::capabilities))
+        .route("/cases/{id}/runs", get(runs::list).post(runs::start))
+        .route("/runs/{id}/stop", post(runs::stop))
+        .route("/runs/{id}/reconcile", post(runs::reconcile))
         .route("/health", get(health))
         .route(
             "/session",
@@ -237,6 +245,7 @@ pub fn app_with_hosting(pool: PgPool, hosting: Hosting) -> Router {
         )
         .layer(middleware::from_fn_with_state(pool.clone(), hosting::guard))
         .layer(Extension(hosting))
+        .layer(Extension(runner))
         .with_state(pool)
 }
 async fn health(
