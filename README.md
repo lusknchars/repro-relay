@@ -1,6 +1,6 @@
 # Repro Relay
 
-A local engineering workspace that turns bug reports into evidence-backed agent handoffs. Preserve what the team observed, give each role a focused context view, and reject handoffs that reference outdated builds, worker assignments, or revoked memory.
+An engineering workspace that turns bug reports into evidence-backed agent handoffs, with local and hosted guest modes. Preserve what the team observed, give each role a focused context view, and reject handoffs that reference outdated builds, worker assignments, or revoked memory.
 
 This milestone records human observations and prepares agent context. Hermes execution, automatic fixes, and outbound channel delivery are not connected yet.
 
@@ -47,7 +47,7 @@ For desktop development, run `make api` and then `make desktop` in a second term
 make check
 ```
 
-This runs Rust formatting, Clippy, five PostgreSQL integration tests, the frontend production build, and a browser workflow test. SQLx creates isolated test databases. Browser tests use `relay_e2e` on the local PostgreSQL server, with an API at port 8180 and Vite at 5180. They do not write into the development workspace. Test fixtures may remain in `relay_e2e` between runs.
+This runs Rust formatting, Clippy, eight PostgreSQL integration tests, the frontend production build, and two browser tests covering the workflow and guest isolation. SQLx creates isolated test databases. Browser tests use `relay_e2e` on the local PostgreSQL server, with the local workflow API at port 8180, Vite at 5180, and the guest service at 5190. They do not write into the development workspace. Test fixtures may remain in `relay_e2e` between runs.
 
 The browser test covers intake, observation, memory review, export, stale handoff rejection, reload, and mobile overflow. Screenshots are saved under `web/test-results/` and excluded from Git. Desktop packaging is a separate `make desktop-build` check.
 
@@ -59,7 +59,7 @@ The browser test covers intake, observation, memory review, export, stale handof
 - `.agents/skills`: the four occasion-specific investigation, memory, interface, and release skills.
 - [Current status](docs/STATUS.md), [Frontend Lab provenance](docs/FRONTEND.md), [research and experiments](docs/research/agent-techniques-aug-sep-2026.md).
 
-The case database owns source truth. Memory retrieval provides leads, not verified root causes. One local installation serves one team; do not expose this unauthenticated development API to the network.
+The case database owns source truth. Memory retrieval provides leads, not verified root causes. Local mode serves one team on loopback. Use the configured guest runtime for public testing; its cookie sessions and workspace filters protect separate visitors.
 
 MIT project. Copied UI primitives retain their upstream license in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
