@@ -14,7 +14,14 @@ Frontend Lab: https://github.com/lusknchars/frontend-lab, reference commit `1167
 - `src/lib/utils.ts`: class merging.
 - `README.md`: source provenance and portability conventions.
 
-The September 12 request also named https://theui.com. Fetching that exact address returned a page titled “Young Hollywood | The Maybourne Beverly Hills,” not a component catalog. Its component reference remains unresolved. No assets or code were imported from that site. Continue with the existing foundation until the user supplies the intended address.
+The additional reference is [ReUI](https://reui.io), confirmed by the user on September 12. Its [getting-started guide](https://reui.io/docs/get-started) supports the existing React 19, Tailwind v4, and Radix/shadcn foundation.
+
+Two components are adapted from the [MIT-licensed repository](https://github.com/keenthemes/reui), revision `8a2c701eaf95729f238274d5ce2555a5a8bd23e7`:
+
+- `registry-reui/bases/radix/reui/timeline.tsx` becomes `web/src/components/ui/timeline.tsx`. `CaseActivity` presents actual stored events with timestamps, named event types, source IDs, and revisions. It does not invent activity or show event completion as proof of a repair.
+- `registry/bases/radix/ui/tabs.tsx` becomes `web/src/components/ui/tabs.tsx`. Radix owns detail-tab keyboard navigation and panel associations. Local styling retains the existing palette and typography. The wrapper forwards its orientation to the primitive.
+
+Imports resolve to the local class-merging utility. Component styling is adapted through the application's semantic tokens; existing dependencies are sufficient. The upstream MIT notice is retained in `THIRD_PARTY_NOTICES.md`. Future ReUI additions should follow this selective approach and document their source revision. Premium blocks and templates require separate licensing and are not part of this integration.
 
 ## Visual system
 

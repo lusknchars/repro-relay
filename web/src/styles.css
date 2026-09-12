@@ -144,11 +144,6 @@ dd { margin: 0; color: var(--muted); overflow-wrap: anywhere; }
 .packet-intro h3 { font-size: 13px; color: var(--ink); font-weight: 500; }
 .packet-intro p { font-size: 11px; margin-top: 8px; line-height: 1.8; }
 .packet-preview { font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.9; background: var(--surface-soft); border: 1px solid var(--tint); border-radius: 6px; padding: 20px; margin-top: 22px; color: var(--muted); }
-.timeline { margin: 0; padding: 0 0 0 6px; list-style: none; }
-.timeline li { display: flex; gap: 15px; position: relative; padding: 0 0 27px; font-size: 12px; }
-.timeline li:not(:last-child)::before { content: ''; position: absolute; top: 8px; bottom: 0; left: 3px; border-left: 1px solid var(--tint); }
-.timeline-dot { width: 7px; height: 7px; flex-shrink: 0; background: var(--accent-text); border-radius: 50%; margin-top: 5px; }
-.timeline small { display: block; color: var(--muted); font-size: 10px; margin-top: 6px; }
 .memory-view, .connections { background: var(--surface); border: 1px solid var(--tint); border-radius: 10px; padding: 26px; min-height: 540px; }
 .memory-heading { display: flex; justify-content: space-between; gap: 20px; align-items: center; margin-bottom: 25px; }
 .memory-heading h2, .connection-intro h2 { font-size: 17px; font-weight: 500; letter-spacing: -.25px; }

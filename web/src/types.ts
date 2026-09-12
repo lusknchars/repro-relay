@@ -8,7 +8,7 @@ export type Case = {
   id: string; title: string; project: string; url: string; description: string;
   expected: string; build: string; owner_version: number; handoffs: Handoff[]; source: string; status: CaseStatus; revision: number;
   created_at: string; updated_at: string; observations: Observation[];
-  events: {kind: string; at: string; detail: string}[];
+  events: {id: string; kind: string; at: string; detail: string; case_revision: number}[];
 }
 export type Memory = {
   id: string; case_id: string; revision: number; reviewer: string; created_at: string;

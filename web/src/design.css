@@ -230,6 +230,33 @@ dialog::backdrop { background: #101d3b80; backdrop-filter: blur(6px); }
 @keyframes notice-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes document-in { from { opacity: 0; transform: translateY(14px) rotate(1deg); } to { opacity: 1; transform: translateY(0) rotate(0); } }
 @keyframes dialog-in { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+/* ReUI primitives use the same application tokens and existing layout. */
+.case-tabs { flex-direction: column; min-width: 0; }
+.case-tabs > .detail-tabs { width: 100%; justify-content: flex-start; border-radius: 0; }
+.case-tabs .detail-tabs [data-slot='tabs-trigger'] { flex: none; border-radius: 0; background: transparent; box-shadow: none; }
+.case-tabs .detail-tabs [data-slot='tabs-trigger']::after { display: none; }
+.case-tabs > [data-slot='tabs-content'] { min-width: 0; }
+.activity-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 30px; }
+.activity-heading h3 { font-size: 14px; font-weight: 500; line-height: 1.7; }
+.activity-heading p { color: var(--muted); font-size: 11px; line-height: 1.9; margin-top: 6px; }
+.activity-heading > span { font-size: 10px; white-space: nowrap; padding: 5px 8px; border: 1px solid var(--border); border-radius: 5px; color: var(--muted); }
+.activity-timeline [data-slot='timeline-item'] { margin-left: 42px; padding-bottom: 26px; flex: none; min-width: 0; }
+.activity-timeline [data-slot='timeline-item']:last-child { padding-bottom: 0; }
+.activity-timeline [data-slot='timeline-header'] { display: flex; align-items: center; gap: 10px; min-height: 24px; margin-bottom: 6px; }
+.activity-timeline [data-slot='timeline-date'] { font-size: 10px; font-weight: 400; color: var(--muted); margin-bottom: 0; height: auto; }
+.activity-timeline [data-slot='timeline-title'] { font-size: 12px; font-weight: 500; line-height: 1.8; }
+.activity-timeline [data-slot='timeline-content'] { color: var(--muted); font-size: 11px; line-height: 1.9; }
+.activity-timeline [data-slot='timeline-content'] > p { margin: 5px 0 7px; overflow-wrap: anywhere; }
+.activity-timeline [data-slot='timeline-indicator'] { display: grid; place-items: center; width: 30px; height: 30px; left: -26px; top: 0; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-soft); color: var(--accent-text); z-index: 1; }
+.activity-timeline [data-slot='timeline-separator'] { left: -26px; top: 14px; width: 1px; height: calc(100% - 16px); background: var(--border); }
+.activity-timeline [data-tone='warning'] [data-slot='timeline-indicator'] { background: var(--warning-bg); color: var(--warning); border-color: var(--warning-border); }
+.activity-timeline [data-tone='success'] [data-slot='timeline-indicator'] { background: var(--success-bg); color: var(--success); border-color: var(--success-border); }
+.activity-latest { font-size: 9px; color: var(--accent-text); background: var(--tint); padding: 2px 6px; border-radius: 4px; }
+.activity-source { font-size: 10px; }
+.activity-source summary { width: fit-content; padding: 5px 0; color: var(--accent-text); }
+.activity-source dl { flex-wrap: wrap; gap: 12px 24px; margin: 8px 0; padding: 12px; background: var(--surface-soft); border-radius: 6px; border: 1px solid var(--border); }
+.activity-source dl > div { min-width: 0; }
+@media(max-width:600px) { .activity-heading { flex-direction: column; gap: 12px; }.activity-source summary { min-height: 40px; display: list-item; } }
 @media(min-width:1500px) {
   .workspace { padding: 0 44px; }
   .case-workspace { grid-template-columns: 310px minmax(0,1fr); }

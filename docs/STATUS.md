@@ -5,7 +5,7 @@ Updated September 12, 2026. The Rust and TypeScript workflow now includes a host
 Implemented:
 
 - Rust Axum API, Tokio, PostgreSQL migrations, durable cases and original observation history.
-- React, TypeScript, Vite, Tailwind, and Frontend Lab Button/Badge primitives. JetBrains Mono, a blue navigation rail, persistent light/dark themes, interactive landing preview, state-derived evidence path, keyboard tabs, and focused mobile inbox/detail views. Motion respects the device setting.
+- React, TypeScript, Vite, Tailwind, Frontend Lab Button/Badge primitives, and ReUI timeline and Radix tabs. Case activity exposes stored event sources and revisions. JetBrains Mono, a blue navigation rail, persistent light/dark themes, interactive landing preview, state-derived evidence path, keyboard tabs, and focused mobile inbox/detail views. Motion respects the device setting.
 - New report, human-recorded observations, reviewed project memory, scoped exact-term retrieval, revocation, and Markdown exports.
 - Deterministic investigator, repair, verifier, and update context views with source event IDs.
 - Persisted handoff snapshots bound to case revision, current build, worker assignment, and referenced memories. The server rejects outdated snapshots and records the reason.

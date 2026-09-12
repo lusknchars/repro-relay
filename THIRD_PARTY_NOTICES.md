@@ -33,3 +33,18 @@ JetBrains Mono regular, medium, and bold WOFF2 files are included in `web/public
 Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono).
 Licensed under the SIL Open Font License 1.1. The complete license is distributed alongside the fonts in `web/public/fonts/OFL.txt`.
 Source revision: `19371302b95d218af43299bce79ddbddd0bc364d`.
+
+## ReUI
+
+`web/src/components/ui/timeline.tsx` and `web/src/components/ui/tabs.tsx` are adapted from https://github.com/keenthemes/reui, revision `8a2c701eaf95729f238274d5ce2555a5a8bd23e7`. Source paths and adaptations are documented in `docs/FRONTEND.md`.
+
+MIT License
+
+Copyright (c) 2025 Keenthemes Inc
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
