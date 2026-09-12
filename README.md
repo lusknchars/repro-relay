@@ -47,7 +47,7 @@ For desktop development, run `make api` and then `make desktop` in a second term
 make check
 ```
 
-This runs Rust formatting, Clippy, eight PostgreSQL integration tests, the frontend production build, and two browser tests covering the workflow and guest isolation. SQLx creates isolated test databases. Browser tests use `relay_e2e` on the local PostgreSQL server, with the local workflow API at port 8180, Vite at 5180, and the guest service at 5190. They do not write into the development workspace. Test fixtures may remain in `relay_e2e` between runs.
+This runs Rust formatting, Clippy, eight PostgreSQL integration tests, the frontend production build, and three browser tests covering the workflow, guest isolation, themes, keyboard interaction, and mobile navigation. SQLx creates isolated test databases. Browser tests use `relay_e2e` on the local PostgreSQL server, with the local workflow API at port 8180, Vite at 5180, and the guest service at 5190. They do not write into the development workspace. Test fixtures may remain in `relay_e2e` between runs.
 
 The browser test covers intake, observation, memory review, export, stale handoff rejection, reload, and mobile overflow. Screenshots are saved under `web/test-results/` and excluded from Git. Desktop packaging is a separate `make desktop-build` check.
 

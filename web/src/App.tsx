@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import {
-  ArrowDownToLine, ArrowRight, BookOpen, Braces, Check, ChevronRight,
+  ArrowDownToLine, ArrowLeft, ArrowRight, BookOpen, Braces, Check, ChevronRight,
   CircleDot, Database, FileText, FlaskConical, GitBranch,
   Inbox, Link2, Plus, Radio, Search, Settings2, ShieldCheck, X,
 } from 'lucide-react'
 import { Button } from './components/ui/button'
+import { ThemeToggle } from './components/ThemeToggle'
+import { EvidencePath } from './components/EvidencePath'
 import { GuestGate } from './components/GuestGate'
 import { BetaFeedback } from './components/BetaFeedback'
 import { ContextPanel } from './components/ContextPanel'
@@ -24,7 +26,15 @@ function Status({ value }: { value: CaseStatus }) {
 }
 function Modal({ title, close, children }: {title: string; close: () => void; children: ReactNode}) {
   const ref = useRef<HTMLDialogElement>(null)
-  useEffect(() => { ref.current?.showModal(); return () => ref.current?.close() }, [])
+  useEffect(() => {
+    const dialog = ref.current
+    const trigger = document.activeElement
+    dialog?.showModal()
+    return () => {
+      dialog?.close()
+      if (trigger instanceof HTMLElement) queueMicrotask(() => { if (trigger.isConnected) trigger.focus() })
+    }
+  }, [])
   return <dialog ref={ref} onCancel={event => { event.preventDefault(); close() }} aria-labelledby="dialog-title">
     <div className="dialog-header"><h2 id="dialog-title">{title}</h2>
       <Button variant="ghost" size="icon" aria-label="Close dialog" onClick={close}><X /></Button></div>
@@ -44,6 +54,7 @@ export default function App() {
   const [related, setRelated] = useState<Memory[]>([])
   const [view, setView] = useState<'inbox' | 'memory' | 'connections'>('inbox')
   const [tab, setTab] = useState<'evidence' | 'context' | 'handoff' | 'activity'>('evidence')
+  const [showCase, setShowCase] = useState(true)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('all')
   const [modal, setModal] = useState<'report' | 'observation' | 'review' | null>(null)
@@ -104,7 +115,7 @@ export default function App() {
         method: 'POST', headers: {'Idempotency-Key': requestKey.current}, body: JSON.stringify(values),
       })
       await refresh(); setSelectedId(created.id); setView('inbox'); setQuery(''); setFilter('all')
-      setTab('evidence'); setModal(null); setNotice('Report saved. Record an observation to continue.')
+      setTab('evidence'); setShowCase(true); setModal(null); setNotice('Report saved. Record an observation to continue.')
     })
   }
   function recordObservation(event: FormEvent<HTMLFormElement>) {
@@ -145,7 +156,7 @@ export default function App() {
     setTimeout(() => URL.revokeObjectURL(url), 1000)
     setNotice('Repair packet exported. No external message was sent.')
   }
-  function navigate(next: typeof view) { setView(next); setQuery(''); setError(''); setNotice('') }
+  function navigate(next: typeof view) { setView(next); setShowCase(true); setQuery(''); setError(''); setNotice('') }
   const filtered = cases.filter(item =>
     (filter === 'all' || item.status === filter) &&
     `${item.id} ${item.title} ${item.project}`.toLowerCase().includes(query.toLowerCase()),
@@ -160,40 +171,45 @@ export default function App() {
       <a className="brand" href="#" onClick={e => {e.preventDefault(); navigate('inbox')}}>
         <span className="brand-mark"><GitBranch size={23} /></span><span>repro<span className="brand-light">relay</span></span>
       </a>
-      <div className="workspace-switch"><span className="avatar">L</span><div><strong>{isGuest ? 'Your test workspace' : 'Local workspace'}</strong><small>Engineering workspace</small></div></div>
+      <div className="workspace-switch"><span className="avatar"><Braces size={17}/></span><div><strong>{isGuest ? 'Your test workspace' : 'Local workspace'}</strong><small>Engineering workspace</small></div></div>
       <nav aria-label="Workspace">
         <button className={view === 'inbox' ? 'active' : ''} onClick={() => navigate('inbox')}><Inbox size={18} />Case inbox<span className="nav-count">{cases.length}</span></button>
         <button className={view === 'memory' ? 'active' : ''} onClick={() => navigate('memory')}><Database size={18} />Project memory<span className="nav-count">{memories.length}</span></button>
         <button className={view === 'connections' ? 'active' : ''} onClick={() => navigate('connections')}><Settings2 size={18} />Connections</button>
       </nav>
-      <div className="sidebar-note"><ShieldCheck size={20} /><p>Every finding has a source.</p><small>Keep observations, hypotheses, and verified fixes distinct.</small></div>
+      <div className="sidebar-note"><div className="sidebar-relay" aria-hidden="true"><span/><i/><span/><i/><span/></div><p>Context worth passing on.</p><small>Evidence stays attached.<br/>Every finding has a source.</small></div>
       <div className="sidebar-footer"><span className={health ? 'online-dot' : 'offline-dot'} />{health ? 'Workspace connected' : 'Connecting to workspace'}<span>v0.2</span></div>
     </aside>
     <main id="workspace" className="workspace">
       <header className="topbar"><div className="breadcrumbs">Workspace<ChevronRight size={14} /><strong>{view === 'inbox' ? 'Case inbox' : view === 'memory' ? 'Project memory' : 'Connections'}</strong></div>
-        <span className="local-badge"><FlaskConical size={14} />{isGuest ? 'Public beta' : 'Local workspace'}</span></header>
-      <div className="page-title"><div><h1>{view === 'inbox' ? 'An evidence trail for every handoff.' : view === 'memory' ? 'What your team has learned.' : 'Connect the workflow.'}</h1><p>{view === 'inbox' ? 'Investigate the report, preserve what happened, and prepare the next agent.' : view === 'memory' ? 'Reviewed observations from this workspace, with their original evidence.' : 'The local workflow works now. Agent and channel connections come next.'}</p></div>
+        <div className="topbar-actions"><span className="local-badge"><FlaskConical size={14} />{isGuest ? 'Public beta' : 'Local workspace'}</span><ThemeToggle/></div></header>
+      <div className="page-title"><div><h1>{view === 'inbox' ? 'Keep the next step in context.' : view === 'memory' ? 'What your team has learned.' : 'Connect the workflow.'}</h1><p>{view === 'inbox' ? 'Investigate the report, preserve what happened, and prepare the next agent.' : view === 'memory' ? 'Reviewed observations from this workspace, with their original evidence.' : 'The local workflow works now. Agent and channel connections come next.'}</p></div>
         <Button onClick={() => openModal('report')} disabled={!health}><Plus />New report</Button></div>
       {isGuest && <BetaFeedback/>}
-      {error && <div className="notice error" role="alert">{error}<Button variant="ghost" size="sm" onClick={() => void action(refresh)}>Retry connection</Button></div>}
+      {error && <div className="notice error" role="alert">{error}<Button variant="ghost" size="sm" onClick={() => void action(openWorkspace)}>Retry connection</Button></div>}
       {notice && <div className="notice" role="status"><Check size={16} />{notice}</div>}
-      {loading ? <div className="loading" role="status">Opening your workspace…</div> : <>
+      {loading ? <div className="loading" role="status"><span>Opening your workspace…</span><div className="workspace-skeleton" aria-hidden="true"><div/><div/><div/></div></div> : <>
       {view === 'inbox' && <>
         <div className="summary-strip"><span><strong>{cases.filter(item => item.status === 'new').length}</strong> awaiting an observation</span><span><strong>{cases.filter(item => item.status === 'reproduced').length}</strong> reproduced</span><span><strong>{memories.length}</strong> reviewed memories</span><span className="summary-end"><Radio size={14} />Observations are recorded by your team</span></div>
-        <div className="case-workspace">
+        <div className={`case-workspace ${showCase ? 'show-case' : 'show-inbox'}`}>
           <section className="inbox-panel" aria-label="Cases">
             <div className="list-tools"><label className="search"><Search size={16}/><input aria-label="Search cases" placeholder="Find a case…" value={query} onChange={e => setQuery(e.target.value)} /></label>
             <select aria-label="Filter cases by status" value={filter} onChange={e => setFilter(e.target.value)}><option value="all">All statuses</option>{Object.entries(labels).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></div>
             <div className="list-label"><span>Reports</span><span>{filtered.length}</span></div>
-            {filtered.map(item => <button key={item.id} className={`case-row ${selectedId === item.id ? 'selected' : ''}`} onClick={() => {setSelectedId(item.id); setTab('evidence')}} aria-pressed={selectedId === item.id}>
+            {filtered.map(item => <button key={item.id} className={`case-row ${selectedId === item.id ? 'selected' : ''}`} onClick={() => {setSelectedId(item.id); setShowCase(true); setTab('evidence')}} aria-pressed={selectedId === item.id}>
               <div><span className="case-id" title={item.id}>{item.id.slice(0,11)}</span><span className="case-row-project">{item.project}</span></div><h3>{item.title}</h3><div><Status value={item.status} /><small>{new Date(item.updated_at).toLocaleDateString(undefined, {month: 'short', day: 'numeric'})}</small></div>
             </button>)}
             {!filtered.length && <div className="list-empty"><Inbox size={26}/><p>{cases.length ? 'No matching reports.' : 'Your first case starts here.'}</p><small>{cases.length ? 'Try another search or status.' : 'Add a problem your team is working on.'}</small></div>}
           </section>
           {selected ? <section className="case-detail" aria-label="Selected case">
-            <div className="detail-heading"><div className="detail-kicker"><span title={selected.id}>{selected.id.slice(0,11)}</span><span>Revision {selected.revision}</span></div><h2>{selected.title}</h2><div className="detail-meta"><Status value={selected.status}/><span>{selected.project}</span><span>{time(selected.created_at)}</span></div></div>
-            <div className="detail-tabs" role="tablist" aria-label="Case detail">{(['evidence', 'context', 'handoff', 'activity'] as const).map(value => <button key={value} role="tab" aria-selected={tab === value} onClick={() => {setTab(value); setNotice(''); setError('')}}>{value === 'evidence' ? 'Evidence' : value === 'context' ? 'Agent context' : value === 'handoff' ? 'Repair packet' : 'Activity'}{value === 'evidence' && <span>{selected.observations.length}</span>}</button>)}</div>
-            <div className="detail-body">
+            <button className="mobile-back" onClick={()=>setShowCase(false)}><ArrowLeft size={16}/>All reports<span>{cases.length}</span></button><div className="detail-heading"><div className="detail-kicker"><span title={selected.id}>{selected.id.slice(0,11)}</span><span>Revision {selected.revision}</span></div><h2>{selected.title}</h2><div className="detail-meta"><Status value={selected.status}/><span>{selected.project}</span><span>{time(selected.created_at)}</span></div></div>
+            <EvidencePath item={selected} reviewed={!!selectedMemory} open={setTab}/><div className="detail-tabs" role="tablist" aria-label="Case detail">{(['evidence', 'context', 'handoff', 'activity'] as const).map(value => <button key={value} id={`tab-${value}`} role="tab" aria-controls="case-tab-panel" tabIndex={tab===value?0:-1} aria-selected={tab === value} onKeyDown={e=>{
+                const tabs=['evidence','context','handoff','activity'] as const
+                const index=tabs.indexOf(value)
+                const next=e.key==='ArrowRight'?tabs[(index+1)%4]:e.key==='ArrowLeft'?tabs[(index+3)%4]:e.key==='Home'?tabs[0]:e.key==='End'?tabs[3]:null
+                if(next){e.preventDefault();setTab(next);document.getElementById(`tab-${next}`)?.focus()}
+              }} onClick={() => {setTab(value); setNotice(''); setError('')}}>{value === 'evidence' ? 'Evidence' : value === 'context' ? 'Agent context' : value === 'handoff' ? 'Repair packet' : 'Activity'}{value === 'evidence' && <span>{selected.observations.length}</span>}</button>)}</div>
+            <div className="detail-body" key={`${selected.id}-${tab}`} role="tabpanel" id="case-tab-panel" aria-labelledby={`tab-${tab}`} tabIndex={0}>
             {tab === 'evidence' && <>
               <div className="description-grid"><div><h3>Reported behavior</h3><p>{selected.description}</p></div><div><h3>Expected behavior</h3><p>{selected.expected}</p></div></div>
               <a className="target-link" href={selected.url} target="_blank" rel="noreferrer"><Link2 size={15}/><span>{selected.url}</span><ArrowRight size={15}/></a>
@@ -208,7 +224,7 @@ export default function App() {
             {tab === 'handoff' && <><div className="packet-intro"><FileText size={22}/><div><h3>A precise starting point for engineering.</h3><p>This export includes the report, recorded evidence, and related reviewed cases. Unknown repository and commit details stay explicit.</p></div></div><Button onClick={exportPacket} disabled={!packet}><ArrowDownToLine/>Export Markdown</Button><pre className="packet-preview">{packet || 'Loading repair packet…'}</pre></>}
             {tab === 'activity' && <ol className="timeline">{[...selected.events].reverse().map((event,index) => <li key={`${event.at}-${index}`}><span className="timeline-dot"/><div><p>{event.detail}</p><small>{time(event.at)}</small></div></li>)}</ol>}
             </div>
-          </section> : <section className="welcome-panel"><div className="flow-illustration"><span><Inbox/></span><i/><span><Search/></span><i/><span><FileText/></span></div><h2>Give a bug somewhere to go.</h2><p>Start with a real report. Add what your team observed, then share a repair packet with the next person.</p><Button onClick={() => openModal('report')} disabled={!health}><Plus/>Create your first report</Button><div className="welcome-note"><ShieldCheck size={16}/>Evidence stays in your local workspace.</div></section>}
+          </section> : <section className="welcome-panel"><div className="flow-illustration"><span><Inbox/></span><i/><span><Search/></span><i/><span><FileText/></span></div><h2>Give a bug somewhere to go.</h2><p>Start with a real report. Add what your team observed, then share a repair packet with the next person.</p><Button onClick={() => openModal('report')} disabled={!health}><Plus/>Create your first report</Button><div className="welcome-note"><ShieldCheck size={16}/>Evidence stays in your workspace.</div></section>}
         </div>
       </>}
       {view === 'memory' && <section className="memory-view"><div className="memory-heading"><div><h2>Reviewed observations</h2><p>References for investigation. These entries do not establish a root cause or a verified fix.</p></div><label className="search"><Search size={16}/><input aria-label="Search memory" placeholder="Search observations…" value={query} onChange={e => setQuery(e.target.value)}/></label></div>

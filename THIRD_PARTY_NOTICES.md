@@ -25,3 +25,11 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## JetBrains Mono
+
+JetBrains Mono regular, medium, and bold WOFF2 files are included in `web/public/fonts`.
+
+Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono).
+Licensed under the SIL Open Font License 1.1. The complete license is distributed alongside the fonts in `web/public/fonts/OFL.txt`.
+Source revision: `19371302b95d218af43299bce79ddbddd0bc364d`.
