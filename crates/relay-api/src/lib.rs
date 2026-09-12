@@ -1,5 +1,10 @@
+pub mod automation;
+pub mod channels;
 pub mod domain;
+pub mod evidence;
 pub mod hosting;
+pub mod intake;
+pub mod repairs;
 pub mod runs;
 use axum::{
     Extension, Json, Router,
@@ -202,8 +207,14 @@ pub fn app_with_hosting(pool: PgPool, hosting: Hosting) -> Router {
 }
 pub fn app_with_runner(pool: PgPool, hosting: Hosting, runner: runs::Runner) -> Router {
     let routes = Router::new()
+        .merge(automation::routes())
+        .merge(channels::routes())
+        .merge(evidence::routes())
+        .merge(repairs::routes())
+        .merge(intake::routes())
         .route("/runner", get(runs::capabilities))
         .route("/cases/{id}/runs", get(runs::list).post(runs::start))
+        .route("/cases/{id}/inspections", post(runs::record_inspection))
         .route("/cases/{id}/investigation-preview", get(runs::preview))
         .route("/cases/{id}/run-reviews", get(runs::reviews))
         .route("/runs/{id}/reviews", post(runs::review))
@@ -240,7 +251,7 @@ pub fn app_with_runner(pool: PgPool, hosting: Hosting, runner: runs::Runner) -> 
                         .map(|s| s.parse::<axum::http::HeaderValue>().unwrap())
                         .collect::<Vec<_>>(),
                 )
-                .allow_methods([Method::GET, Method::POST, Method::DELETE])
+                .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
                 .allow_headers([
                     header::CONTENT_TYPE,
                     axum::http::HeaderName::from_static("idempotency-key"),
@@ -333,6 +344,9 @@ async fn create_case(
         .bind(json!(case.report))
         .execute(&mut *tx)
         .await?;
+    if !workspace.guest {
+        automation::enqueue_case(&mut tx, &case).await?;
+    }
     tx.commit().await?;
     Ok((StatusCode::CREATED, Json(case)))
 }

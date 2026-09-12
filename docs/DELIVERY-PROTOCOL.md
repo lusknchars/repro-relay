@@ -39,6 +39,8 @@ Record evidence scope separately: `source inspection`, `protocol fixture`, `brow
 
 ## Complete area coverage
 
+The [backend workflow implementation](BACKEND-WORKFLOW.md) now supplies concrete storage and command contracts for evidence, findings, automation, local intake, decisions, outbox recovery, and approved repair/verification stages. Read its validation scope alongside this protocol. Live channel transport, authenticated provider hooks, binary artifacts, independent patch verification and physical-device evidence remain open; backend fixtures do not close those gates.
+
 The status column below describes the starting baseline. All listed deliverables still require work or further verification. Dependencies refer to accepted contracts needed for final integration; independent interface work can use labeled fixtures beforehand.
 
 Implementation update, September 12: the first review increment adds persisted proposal decisions, frozen corrective context, and a three-column investigation workspace. It contributes to RP-04, RP-05, RP-07, and RP-08. Findings are still free-form proposals; typed findings, evidence promotion, live receipts, automatic source repair, and independent retesting remain open. The correction path is a user-initiated follow-up investigation. It does not satisfy RP-06 automatic workflow. [Runner documentation](HERMES-RUNNER.md) records the API, trust boundaries, recovery behavior, and fixture scope. Microsoft testing is Edge/Windows compatibility, separate from smartphone and physical-device checks.

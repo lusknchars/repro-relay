@@ -89,3 +89,60 @@ test('investigation review remains readable and keyboard-operable in the selecte
   }
   expect(errors).toEqual([])
 })
+
+test('local validation exposes recorded evidence without claiming Hermes execution', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await fixtureApi(page)
+  let revoked = false
+  const artifact = {
+    id: 'EV-log', sequence: 1, name: 'validation-fixture.log', media_type: 'text/plain',
+    size_bytes: 30, sha256: 'a'.repeat(64), available: true, received_at: fixtureCase.created_at,
+    captured_at: fixtureCase.created_at,
+    environment: { name: 'UI fixture', os: 'macOS', os_version: 'fixture', browser: 'Chromium', browser_version: 'fixture', device: 'desktop', emulated: false, capture_mode: 'fixture' },
+  }
+  const event = { id: 'EV-event-1', sequence: 2, event_type: 'test_result', summary: 'Recorded fixture command exited successfully.', producer: 'fixture-inspector', producer_sequence: 1, captured_at: fixtureCase.created_at, received_at: fixtureCase.created_at, environment: artifact.environment, artifact_ids: [artifact.id], data: { exit_code: 0 } }
+  await page.route('**/api/v1/**', async route => {
+    const url = new URL(route.request().url())
+    const path = url.pathname.replace('/api/v1', '')
+    if (path === `/cases/${fixtureCase.id}/runs`) {
+      await route.fulfill({ json: [{ ...fixtureRun, execution_kind: 'local_validation', context: { ...context, inspection: { inspector: 'Named test operator' } }, output: 'Local validation fixture result, with separately stored evidence.' }] })
+    } else if (path === `/runs/${fixtureRun.id}/journal`) {
+      await route.fulfill({ json: url.searchParams.has('after') ? { items: [{ ...event, id: 'EV-event-2', sequence: 3, summary: 'Second saved event from the next page.' }], next_cursor: null } : { items: [event], next_cursor: 2 } })
+    } else if (path === `/runs/${fixtureRun.id}/artifacts`) {
+      await route.fulfill({ json: { items: [{ ...artifact, available: !revoked }], next_cursor: null } })
+    } else if (path === `/runs/${fixtureRun.id}/findings`) {
+      await route.fulfill({ json: { items: [{ id: 'EV-finding', sequence: 4, kind: 'observed_symptom', statement: 'The fixture preserved its original recorded output.', build: fixtureCase.build, received_at: fixtureCase.created_at, sources_available: !revoked, event_ids: [event.id], artifact_ids: [artifact.id], latest_review: { decision: 'accepted', feedback: 'Reviewed fixture evidence; independent verification remains unperformed.', reviewer: 'Fixture reviewer', received_at: fixtureCase.created_at } }], next_cursor: null } })
+    } else if (path === '/artifacts/EV-log') {
+      await route.fulfill({ json: revoked ? { ...artifact, available: false } : { ...artifact, content: 'Stored fixture command output: PASS' } })
+    } else await route.fallback()
+  })
+  await page.goto(`/?view=agents&case=${fixtureCase.id}`)
+  const workspace = page.locator('.investigation-workspace')
+  await expect(workspace.locator('.iw-state-banner')).toContainText('Local validation')
+  await expect(workspace).toContainText('Local validation attributed to Named test operator (locally supplied identity)')
+  await expect(workspace).not.toContainText('Validation executed locally by Codex')
+  await expect(workspace).toContainText('Review accepted · not verified')
+  await expect(workspace).toContainText('Recorded fixture command exited successfully.')
+  await workspace.getByRole('button', { name: 'Load more journal', exact: true }).click()
+  await expect(workspace).toContainText('Second saved event from the next page.')
+  const openLog = workspace.getByRole('button', { name: 'Inspect stored log', exact: true })
+  await openLog.click()
+  const inspector = workspace.getByRole('region', { name: 'Stored artifact contents', exact: true })
+  await expect(inspector).toBeFocused()
+  await expect(inspector).toContainText('Stored fixture command output: PASS')
+  await expect(inspector).toContainText(artifact.sha256)
+  await expect(inspector).toContainText('30')
+  await inspector.getByRole('button', { name: 'Close log', exact: true }).click()
+  await expect(openLog).toBeFocused()
+  revoked = true
+  await openLog.click()
+  await expect(inspector).toContainText('Artifact content is unavailable or has been revoked.')
+  await expect(inspector).not.toContainText('Stored fixture command output: PASS')
+  await inspector.getByRole('button', { name: 'Close log', exact: true }).click()
+  await workspace.getByRole('button', { name: 'Refresh evidence', exact: true }).click()
+  await expect(openLog).toBeDisabled()
+  await expect(workspace).toContainText('One or more sources are unavailable or revoked.')
+  await expect(workspace.getByRole('button', { name: 'Start Hermes investigation', exact: true })).toBeDisabled()
+  expect(errors).toEqual([])
+})

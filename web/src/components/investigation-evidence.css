@@ -1,0 +1,14 @@
+.iw-evidence { margin-top: 1.5rem; min-width: 0; }
+.iw-evidence .iw-section-heading { flex-wrap: wrap; gap: .5rem; }
+.iw-evidence .ie-record > div { flex-wrap: wrap; }
+.iw-evidence .ie-record p, .iw-evidence .ie-record strong, .iw-evidence small { overflow-wrap: anywhere; }
+.ie-artifact-links { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
+.ie-artifact-links button { white-space: normal; overflow-wrap: anywhere; height: auto; min-height: 44px; text-align: left; max-width: 100%; }
+.iw-evidence pre { max-width: 100%; max-height: 28rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: .75rem; border-radius: .5rem; background: var(--surface); font-size: .75rem; line-height: 1.65; }
+.iw-evidence blockquote { margin: .75rem 0; padding: .1rem .75rem; border-left: 2px solid var(--border); }
+.ie-inspector { margin-top: 1rem; padding: 1rem; }
+.ie-inspector dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .4rem 1rem; font-size: .75rem; margin: .75rem 0; }
+.ie-inspector dt { color: var(--muted); }
+.ie-inspector dd { margin: 0; overflow-wrap: anywhere; }
+.ie-digest { font-family: monospace; }
+@media (max-width: 480px) { .ie-inspector dl { grid-template-columns: 1fr; gap: .2rem; } .ie-inspector dd { margin-bottom: .5rem; } }

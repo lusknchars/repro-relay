@@ -6,6 +6,8 @@ The Rust API coordinates one investigation at a time in the local workspace. Web
 
 This adapter has been exercised against controlled protocol fixtures. Those tests do not prove live model execution, Latch permissions, browser evidence capture, or phone delivery.
 
+The [backend workflow](BACKEND-WORKFLOW.md) adds opt-in report scheduling, evidence ingestion, and approved repair/verification dispatch. Ordinary investigations retain their read-only instructions. Repair stages require explicit approval and additional advertised runtime capabilities. The receipt APIs accept a trusted local bridge's actual records; they do not imply that the Hermes HTTP adapter automatically streams tool receipts.
+
 ## Setup
 
 Use a dedicated Hermes profile with its HTTP API enabled, an `API_SERVER_KEY`, and the intended tools configured by the maintainer. Start that profile's gateway with `hermes gateway`. In the Relay API process environment, set:

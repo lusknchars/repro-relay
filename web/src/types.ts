@@ -1,5 +1,6 @@
 export type Result = 'reproduced' | 'not_reproduced' | 'blocked' | 'needs_context'
 export type InvestigationRun = {
+  execution_kind?: 'hermes' | 'local_validation';
   id:string; case_id:string; case_revision:number; owner_version:number; build:string; version:number;
   status:string; detail:string; created_at:string; checked_at:string; deadline:string; max_seconds:number;
   remote_id:string|null; output:string|null; stop_requested:boolean; context_stale:boolean; context:unknown;

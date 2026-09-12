@@ -12,6 +12,8 @@ Overview values come from stored cases, observations, reviewed memories, and han
 
 Agent controls now opens a three-column investigation workspace inspired by the supplied context-rescue reference: searchable cases, the saved result with evidence and reviews, and the exact next-run context with runtime controls. It remains inside PaceUI and uses existing shadcn buttons and Relay theme tokens. Narrow layouts stack the columns. The view separates human observations, coordinator events, proposals, and review decisions; none is labeled as an automated browser receipt. Reviewed corrections can be included in a follow-up after previewing its server-generated context. Saved run selection survives reload; unsaved drafts and pending retries last only while the workspace is mounted.
 
+The evidence section reads paginated typed findings, journal events and artifacts from the backend. Opening a stored log shows its exact text, SHA-256, byte length and environment. Revoked content is unavailable. Local validation records display the supplied inspector's name and command context, separately from Hermes execution. Configuration, intake, delivery, and repair APIs are currently backend contracts; their full management views remain to be built inside the selected template.
+
 ## Components and appearance
 
 The Plow Chat + Latch connection card uses the user-supplied `web/src/assets/plow-logo.png` in both web and desktop. Its original lime mark and dark background are preserved. The adjacent card title labels the image, so it has an empty alt attribute to avoid duplicate screen-reader announcements.

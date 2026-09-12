@@ -25,6 +25,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("The guest beta cannot use a maintainer's Hermes runtime. Configure it on a local Relay server.".into());
     }
     let worker = tokio::spawn(relay_api::runs::worker(pool.clone(), runner.clone()));
+    let automation_worker = if !hosted {
+        Some(tokio::spawn(relay_api::automation::worker(
+            pool.clone(),
+            runner.clone(),
+        )))
+    } else {
+        None
+    };
+    let recovery_pool = pool.clone();
+    let recovery_worker = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
+        loop {
+            interval.tick().await;
+            if let Err(error) = relay_api::channels::recover(&recovery_pool).await {
+                tracing::error!(message=%error.message, "delivery recovery failed");
+            }
+        }
+    });
     if hosted {
         let cleanup_pool = pool.clone();
         tokio::spawn(async move {
@@ -52,6 +70,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_graceful_shutdown(shutdown())
         .await?;
     worker.abort();
+    if let Some(worker) = automation_worker {
+        worker.abort();
+    }
+    recovery_worker.abort();
     Ok(())
 }
 async fn shutdown() {
