@@ -6,6 +6,8 @@ import {
 } from 'lucide-react'
 import { Button } from './components/ui/button'
 import { ThemeToggle } from './components/ThemeToggle'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from './components/ui/tabs'
+import { CaseActivity } from './components/CaseActivity'
 import { EvidencePath } from './components/EvidencePath'
 import { GuestGate } from './components/GuestGate'
 import { BetaFeedback } from './components/BetaFeedback'
@@ -203,13 +205,14 @@ export default function App() {
           </section>
           {selected ? <section className="case-detail" aria-label="Selected case">
             <button className="mobile-back" onClick={()=>setShowCase(false)}><ArrowLeft size={16}/>All reports<span>{cases.length}</span></button><div className="detail-heading"><div className="detail-kicker"><span title={selected.id}>{selected.id.slice(0,11)}</span><span>Revision {selected.revision}</span></div><h2>{selected.title}</h2><div className="detail-meta"><Status value={selected.status}/><span>{selected.project}</span><span>{time(selected.created_at)}</span></div></div>
-            <EvidencePath item={selected} reviewed={!!selectedMemory} open={setTab}/><div className="detail-tabs" role="tablist" aria-label="Case detail">{(['evidence', 'context', 'handoff', 'activity'] as const).map(value => <button key={value} id={`tab-${value}`} role="tab" aria-controls="case-tab-panel" tabIndex={tab===value?0:-1} aria-selected={tab === value} onKeyDown={e=>{
-                const tabs=['evidence','context','handoff','activity'] as const
-                const index=tabs.indexOf(value)
-                const next=e.key==='ArrowRight'?tabs[(index+1)%4]:e.key==='ArrowLeft'?tabs[(index+3)%4]:e.key==='Home'?tabs[0]:e.key==='End'?tabs[3]:null
-                if(next){e.preventDefault();setTab(next);document.getElementById(`tab-${next}`)?.focus()}
-              }} onClick={() => {setTab(value); setNotice(''); setError('')}}>{value === 'evidence' ? 'Evidence' : value === 'context' ? 'Agent context' : value === 'handoff' ? 'Repair packet' : 'Activity'}{value === 'evidence' && <span>{selected.observations.length}</span>}</button>)}</div>
-            <div className="detail-body" key={`${selected.id}-${tab}`} role="tabpanel" id="case-tab-panel" aria-labelledby={`tab-${tab}`} tabIndex={0}>
+            <Tabs className="case-tabs" value={tab} onValueChange={value=>{
+              if(value==='evidence'||value==='context'||value==='handoff'||value==='activity') {
+                setTab(value);setNotice('');setError('')
+              }
+            }}>
+            <EvidencePath item={selected} reviewed={!!selectedMemory} open={setTab}/>
+            <TabsList className="detail-tabs" variant="line" aria-label="Case detail">{(['evidence', 'context', 'handoff', 'activity'] as const).map(value => <TabsTrigger key={value} value={value}>{value === 'evidence' ? 'Evidence' : value === 'context' ? 'Agent context' : value === 'handoff' ? 'Repair packet' : 'Activity'}{value === 'evidence' && <span>{selected.observations.length}</span>}</TabsTrigger>)}</TabsList>
+            <TabsContent className="detail-body" value={tab} key={`${selected.id}-${tab}`}>
             {tab === 'evidence' && <>
               <div className="description-grid"><div><h3>Reported behavior</h3><p>{selected.description}</p></div><div><h3>Expected behavior</h3><p>{selected.expected}</p></div></div>
               <a className="target-link" href={selected.url} target="_blank" rel="noreferrer"><Link2 size={15}/><span>{selected.url}</span><ArrowRight size={15}/></a>
@@ -222,8 +225,9 @@ export default function App() {
             </>}
             {tab === 'context' && <ContextPanel key={selected.id} item={selected} refresh={refresh}/>}
             {tab === 'handoff' && <><div className="packet-intro"><FileText size={22}/><div><h3>A precise starting point for engineering.</h3><p>This export includes the report, recorded evidence, and related reviewed cases. Unknown repository and commit details stay explicit.</p></div></div><Button onClick={exportPacket} disabled={!packet}><ArrowDownToLine/>Export Markdown</Button><pre className="packet-preview">{packet || 'Loading repair packet…'}</pre></>}
-            {tab === 'activity' && <ol className="timeline">{[...selected.events].reverse().map((event,index) => <li key={`${event.at}-${index}`}><span className="timeline-dot"/><div><p>{event.detail}</p><small>{time(event.at)}</small></div></li>)}</ol>}
-            </div>
+            {tab === 'activity' && <CaseActivity events={selected.events}/>}
+            </TabsContent>
+            </Tabs>
           </section> : <section className="welcome-panel"><div className="flow-illustration"><span><Inbox/></span><i/><span><Search/></span><i/><span><FileText/></span></div><h2>Give a bug somewhere to go.</h2><p>Start with a real report. Add what your team observed, then share a repair packet with the next person.</p><Button onClick={() => openModal('report')} disabled={!health}><Plus/>Create your first report</Button><div className="welcome-note"><ShieldCheck size={16}/>Evidence stays in your workspace.</div></section>}
         </div>
       </>}

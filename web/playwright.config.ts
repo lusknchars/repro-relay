@@ -1,5 +1,6 @@
 import { defineConfig } from '@playwright/test'
 export default defineConfig({
+  outputDir: 'test-results/workflow-artifacts',
   testDir: './tests', testIgnore: 'guest.spec.ts', fullyParallel: false, workers: 1, timeout: 45_000,
   use: {baseURL: 'http://127.0.0.1:5180', viewport: {width: 1512,height: 982}, trace: 'retain-on-failure'},
   webServer: [
