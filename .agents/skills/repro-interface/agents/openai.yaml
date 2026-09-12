@@ -1,0 +1,4 @@
+interface:
+  display_name: "Repro Interface"
+  short_description: "Project-specific interface workflow"
+  default_prompt: "Use $repro-interface for the next Repro Relay interface task."

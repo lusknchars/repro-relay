@@ -1,0 +1,4 @@
+interface:
+  display_name: "Repro Release"
+  short_description: "Project-specific release workflow"
+  default_prompt: "Use $repro-release for the next Repro Relay release task."
