@@ -2,7 +2,7 @@
 
 Updated September 12, 2026.
 
-The target architecture has one case model and three clients. The Rust backend owns state; a configured Hermes runtime owns execution. Web and Tauri currently share durable run controls and case review. Plow Latch actions and the phone adapter remain planned. Clients submit commands to the backend.
+The target architecture has one case model across web, desktop, and phone clients. The Rust backend owns state; a configured Hermes runtime owns execution. Web and Tauri currently share durable run controls and case review. Plow Latch actions and the phone adapter remain planned. The [SwiftUI plan](SWIFTUI-CLIENT-PLAN.md) adds a native iPhone-first conversation and later macOS adaptation. Clients submit commands to the backend.
 
 ```text
 Support or operations report
@@ -41,9 +41,9 @@ The hosted web app uses the same case and event interfaces as the desktop. Works
 
 ## Phone
 
-The first phone client is the Plow phone line through `hermes-plugin-plow`. It receives reports and sends concise state updates, clarification requests, approval requests, and completion messages. It is a projection of the canonical case, not a second database.
+The planned Plow phone line through `hermes-plugin-plow` receives reports and sends concise state updates, clarification requests, approval requests, and completion messages. It projects the canonical case. The backend now has local intake and approved delivery contracts; provider authentication and transport still need implementation and live validation.
 
-A native mobile app can follow later. It should consume the same event and command interfaces, with push notifications and mobile review controls added when the phone-line workflow proves useful.
+The native SwiftUI client can begin with an isolated simulated investigator call before that transport is connected. It uses the same case and command model. Authenticated pairing and a conversation adapter gate real phone execution. Push notifications follow later. See [the native client plan and delivery gates](SWIFTUI-CLIENT-PLAN.md).
 
 ## Shared run interface
 
@@ -61,8 +61,8 @@ Proposed future event shape for tool receipts and revised conclusions:
 }
 ```
 
-Today, run snapshots include a version and ordered state events with `sequence`, `kind`, `at`, and `detail`. There is no shared SSE stream or tool receipt feed yet. Admission rejects old revisions, and handoff checks reject stale source context. Destination authorization and delivery receipts will be added with phone messaging. See [the implemented HTTP contract](HERMES-RUNNER.md).
+Today, run snapshots include a version and ordered state events with `sequence`, `kind`, `at`, and `detail`. The [backend workflow](BACKEND-WORKFLOW.md) also provides a cursor-based evidence journal, text artifacts, scoped decisions, destination bindings, and delivery attempt contracts. There is no shared SSE stream or live provider transport yet. Admission rejects old revisions, and handoff checks reject stale source context. See [the implemented runner HTTP contract](HERMES-RUNNER.md).
 
 ## First technical slice
 
-The first implemented slice is a controlled Hermes protocol fixture with submission, status, saved proposals, usage, and cancellation through the shared interface. The next live slice is one support report, one Hermes run, one approved Latch action, a persisted receipt, a reviewed conclusion, and one authorized owner message. A native phone app follows the phone-line workflow.
+The first implemented slice is a controlled Hermes protocol fixture with submission, status, saved proposals, usage, and cancellation through the shared interface. The next live slice is one support report, one Hermes run, one approved Latch action, a persisted receipt, a reviewed conclusion, and one authorized owner message. Native gate N-01 can proceed independently with labeled simulation; it does not establish any live integration.

@@ -10,6 +10,8 @@ The local API can submit, monitor, stop, and reconcile investigations on a confi
 
 The [backend workflow](docs/BACKEND-WORKFLOW.md) now includes durable evidence and findings, reviewed finding memory, opt-in automatic investigation, local channel intake and delivery contracts, decisions, approved repair stages, and protected verification reports. Provider transports and live runtime enforcement remain separate integration requirements. Agent controls can display the actual stored logs and distinguish local validation from Hermes execution.
 
+The proposed [SwiftUI client and investigator call](docs/SWIFTUI-CLIENT-PLAN.md) adds an iPhone-first AI conversation, shared native Mac architecture, tool approvals, and evidence review. It starts with an isolated simulation; authenticated phone access and real voice execution have separate delivery gates.
+
 ## Run locally
 
 Requires Node 24, Rust stable, Docker Compose, and PostgreSQL client tools (`psql` and `createdb`). macOS desktop builds also require Xcode command-line tools.
