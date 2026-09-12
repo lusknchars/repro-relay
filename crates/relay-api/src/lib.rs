@@ -1,6 +1,7 @@
 pub mod domain;
+pub mod hosting;
 use axum::{
-    Json, Router,
+    Extension, Json, Router,
     extract::{DefaultBodyLimit, Path, Query, State},
     http::{HeaderMap, Method, StatusCode, header},
     middleware::{self, Next},
@@ -8,6 +9,7 @@ use axum::{
     routing::{delete, get, post},
 };
 use domain::*;
+use hosting::{Hosting, Workspace};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sqlx::{PgPool, Postgres, Row, Transaction};
@@ -67,26 +69,42 @@ type Tx<'a> = Transaction<'a, Postgres>;
 pub async fn initialize(pool: &PgPool) -> Result<(), sqlx::migrate::MigrateError> {
     sqlx::migrate!("./migrations").run(pool).await
 }
-// A single local team shares this installation. Serialize mutations, including cross-case
-// memory revocation, so freshness checks and handoff activation use the same authority.
-// Replace with ordered per-case/dependency locks before scaling to hosted workspaces.
-async fn transaction(pool: &PgPool) -> ApiResult<Tx<'_>> {
+// Serialize each workspace independently, including cross-case memory revocation.
+// All queries also scope by the server-resolved transaction workspace; caller labels never grant access.
+async fn transaction<'a>(pool: &'a PgPool, workspace: &Workspace) -> ApiResult<Tx<'a>> {
     let mut tx = pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(72401978)")
+    sqlx::query("SELECT set_config('relay.workspace', $1, true)")
+        .bind(&workspace.id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+        .bind(&workspace.id)
         .execute(&mut *tx)
         .await?;
     Ok(tx)
 }
 async fn read(tx: &mut Tx<'_>, id: &str) -> ApiResult<Case> {
-    sqlx::query_scalar::<_, sqlx::types::Json<Case>>("SELECT payload FROM cases WHERE id=$1")
-        .bind(id)
-        .fetch_optional(&mut **tx)
-        .await?
-        .map(|v| v.0)
-        .ok_or_else(ApiError::missing)
+    sqlx::query_scalar::<_, sqlx::types::Json<Case>>(
+        "SELECT payload FROM cases WHERE id=$1 AND workspace_id=current_setting('relay.workspace')",
+    )
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .map(|v| v.0)
+    .ok_or_else(ApiError::missing)
 }
 async fn save(tx: &mut Tx<'_>, case: &Case) -> ApiResult<()> {
-    sqlx::query("UPDATE cases SET payload=$1, updated_at=now() WHERE id=$2")
+    if json!(case).to_string().len() > 512 * 1024 {
+        let workspace: String = sqlx::query_scalar("SELECT current_setting('relay.workspace')")
+            .fetch_one(&mut **tx)
+            .await?;
+        if workspace != "local" {
+            return Err(ApiError::invalid(
+                "This demo case has reached its storage limit. Export it and create a new report.",
+            ));
+        }
+    }
+    sqlx::query("UPDATE cases SET payload=$1, updated_at=now() WHERE id=$2 AND workspace_id=current_setting('relay.workspace')")
         .bind(sqlx::types::Json(case))
         .bind(&case.id)
         .execute(&mut **tx)
@@ -94,7 +112,7 @@ async fn save(tx: &mut Tx<'_>, case: &Case) -> ApiResult<()> {
     Ok(())
 }
 async fn invalidate(tx: &mut Tx<'_>, case_id: &str) -> ApiResult<()> {
-    sqlx::query("UPDATE memories SET active=false WHERE case_id=$1")
+    sqlx::query("UPDATE memories SET active=false WHERE case_id=$1 AND workspace_id=current_setting('relay.workspace')")
         .bind(case_id)
         .execute(&mut **tx)
         .await?;
@@ -114,7 +132,7 @@ async fn memories_in(
     project: &str,
     exclude: &str,
 ) -> ApiResult<Vec<Value>> {
-    let rows = sqlx::query("SELECT m.id,m.case_id,m.revision,m.reviewer,m.created_at, c.payload FROM memories m JOIN cases c ON c.id=m.case_id WHERE m.active ORDER BY m.created_at DESC")
+    let rows = sqlx::query("SELECT m.id,m.case_id,m.revision,m.reviewer,m.created_at, c.payload FROM memories m JOIN cases c ON c.id=m.case_id WHERE m.active AND m.workspace_id=current_setting('relay.workspace') AND c.workspace_id=m.workspace_id ORDER BY m.created_at DESC")
         .fetch_all(&mut **tx).await?;
     let search = terms(query);
     let mut results = vec![];
@@ -176,8 +194,16 @@ async fn local_only(request: axum::extract::Request, next: Next) -> Response {
     next.run(request).await
 }
 pub fn app(pool: PgPool) -> Router {
+    app_with_hosting(pool, Hosting::local())
+}
+pub fn app_with_hosting(pool: PgPool, hosting: Hosting) -> Router {
     let routes = Router::new()
         .route("/health", get(health))
+        .route(
+            "/session",
+            get(hosting::get_session).post(hosting::start_session),
+        )
+        .route("/feedback", post(hosting::feedback))
         .route("/cases", get(list_cases).post(create_case))
         .route("/cases/{id}", get(get_case))
         .route("/cases/{id}/observations", post(observe))
@@ -209,13 +235,17 @@ pub fn app(pool: PgPool) -> Router {
                     axum::http::HeaderName::from_static("idempotency-key"),
                 ]),
         )
-        .layer(middleware::from_fn(local_only))
+        .layer(middleware::from_fn_with_state(pool.clone(), hosting::guard))
+        .layer(Extension(hosting))
         .with_state(pool)
 }
-async fn health(State(pool): State<PgPool>) -> ApiResult<Json<Value>> {
+async fn health(
+    State(pool): State<PgPool>,
+    Extension(hosting): Extension<Hosting>,
+) -> ApiResult<Json<Value>> {
     sqlx::query("SELECT 1").execute(&pool).await?;
     Ok(Json(
-        json!({"status":"ok","mode":"local","backend":"rust","database":"postgresql","memory":"reviewed_exact_lookup","integrations":{"hermes":false,"mem0":false,"github":false,"slack":false}}),
+        json!({"status":"ok","mode":hosting.mode(),"backend":"rust","database":"postgresql","memory":"reviewed_exact_lookup","integrations":{"hermes":false,"mem0":false,"github":false,"slack":false}}),
     ))
 }
 #[derive(Deserialize)]
@@ -225,18 +255,21 @@ struct Page {
 }
 async fn list_cases(
     State(pool): State<PgPool>,
+    Extension(workspace): Extension<Workspace>,
     Query(page): Query<Page>,
 ) -> ApiResult<Json<Vec<Case>>> {
+    let mut tx = transaction(&pool, &workspace).await?;
     let rows = sqlx::query_scalar::<_, sqlx::types::Json<Case>>(
-        "SELECT payload FROM cases ORDER BY updated_at DESC,id LIMIT 100 OFFSET $1",
+        "SELECT payload FROM cases WHERE workspace_id=current_setting('relay.workspace') ORDER BY updated_at DESC,id LIMIT 100 OFFSET $1",
     )
     .bind(page.offset.max(0))
-    .fetch_all(&pool)
+    .fetch_all(&mut *tx)
     .await?;
     Ok(Json(rows.into_iter().map(|v| v.0).collect()))
 }
 async fn create_case(
     State(pool): State<PgPool>,
+    Extension(workspace): Extension<Workspace>,
     headers: HeaderMap,
     Json(report): Json<Report>,
 ) -> ApiResult<(StatusCode, Json<Case>)> {
@@ -249,10 +282,10 @@ async fn create_case(
     if let Some(k) = &key {
         text(k, "Request key", 1, 128)?;
     }
-    let mut tx = transaction(&pool).await?;
+    let mut tx = transaction(&pool, &workspace).await?;
     if let Some(key) = &key {
         let previous =
-            sqlx::query("SELECT payload, request_payload FROM cases WHERE request_key=$1")
+            sqlx::query("SELECT payload, request_payload FROM cases WHERE request_key=$1 AND workspace_id=current_setting('relay.workspace')")
                 .bind(key)
                 .fetch_optional(&mut *tx)
                 .await?;
@@ -268,8 +301,20 @@ async fn create_case(
             ));
         }
     }
+    if workspace.guest {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM cases WHERE workspace_id=current_setting('relay.workspace')",
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        if count >= 20 {
+            return Err(ApiError::invalid(
+                "This test workspace has reached its 20-report limit.",
+            ));
+        }
+    }
     let case = Case::new(report);
-    sqlx::query("INSERT INTO cases(id,payload,request_key,request_payload) VALUES($1,$2,$3,$4)")
+    sqlx::query("INSERT INTO cases(id,payload,request_key,request_payload,workspace_id) VALUES($1,$2,$3,$4,current_setting('relay.workspace'))")
         .bind(&case.id)
         .bind(sqlx::types::Json(&case))
         .bind(key)
@@ -279,18 +324,24 @@ async fn create_case(
     tx.commit().await?;
     Ok((StatusCode::CREATED, Json(case)))
 }
-async fn get_case(State(pool): State<PgPool>, Path(id): Path<String>) -> ApiResult<Json<Case>> {
-    let mut tx = pool.begin().await?;
+async fn get_case(
+    State(pool): State<PgPool>,
+    Extension(workspace): Extension<Workspace>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Case>> {
+    let mut tx = transaction(&pool, &workspace).await?;
     Ok(Json(read(&mut tx, &id).await?))
 }
 async fn observe(
     State(pool): State<PgPool>,
+    Extension(workspace): Extension<Workspace>,
     Path(id): Path<String>,
     Json(input): Json<ObservationInput>,
 ) -> ApiResult<Json<Case>> {
     input.validate()?;
-    let mut tx = transaction(&pool).await?;
+    let mut tx = transaction(&pool, &workspace).await?;
     let mut case = read(&mut tx, &id).await?;
+    guest_capacity(&workspace, &case)?;
     case.check_revision(input.revision)?;
     if !case.report.build.is_empty() && !input.build.is_empty() && case.report.build != input.build
     {
@@ -325,12 +376,14 @@ async fn observe(
 }
 async fn publish(
     State(pool): State<PgPool>,
+    Extension(workspace): Extension<Workspace>,
     Path(id): Path<String>,
     Json(review): Json<Review>,
 ) -> ApiResult<Json<Value>> {
     text(&review.reviewer, "Reviewer", 2, 80)?;
-    let mut tx = transaction(&pool).await?;
+    let mut tx = transaction(&pool, &workspace).await?;
     let mut case = read(&mut tx, &id).await?;
+    guest_capacity(&workspace, &case)?;
     case.check_revision(review.revision)?;
     if case.status != "reproduced"
         || !case
@@ -343,7 +396,7 @@ async fn publish(
         ));
     }
     if let Some(row) =
-        sqlx::query("SELECT id,active FROM memories WHERE case_id=$1 AND revision=$2")
+        sqlx::query("SELECT id,active FROM memories WHERE case_id=$1 AND revision=$2 AND workspace_id=current_setting('relay.workspace')")
             .bind(&id)
             .bind(review.revision as i64)
             .fetch_optional(&mut *tx)
@@ -357,7 +410,7 @@ async fn publish(
         return Ok(Json(json!({"id":row.get::<String,_>("id")})));
     }
     let memory_id = domain::id("MEM");
-    sqlx::query("INSERT INTO memories(id,case_id,revision,reviewer) VALUES($1,$2,$3,$4)")
+    sqlx::query("INSERT INTO memories(id,case_id,revision,reviewer,workspace_id) VALUES($1,$2,$3,$4,current_setting('relay.workspace'))")
         .bind(&memory_id)
         .bind(&id)
         .bind(review.revision as i64)
@@ -383,11 +436,12 @@ struct MemoryQuery {
 }
 async fn list_memories(
     State(pool): State<PgPool>,
+    Extension(workspace): Extension<Workspace>,
     Query(q): Query<MemoryQuery>,
 ) -> ApiResult<Json<Vec<Value>>> {
     text(&q.q, "Search", 0, 500)?;
     text(&q.project, "Project", 0, 80)?;
-    let mut tx = pool.begin().await?;
+    let mut tx = transaction(&pool, &workspace).await?;
     Ok(Json(
         memories_in(&mut tx, &q.q, &q.project, "")
             .await?
@@ -399,21 +453,26 @@ async fn list_memories(
 }
 async fn related(
     State(pool): State<PgPool>,
+    Extension(workspace): Extension<Workspace>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<Vec<Value>>> {
-    let mut tx = transaction(&pool).await?;
+    let mut tx = transaction(&pool, &workspace).await?;
     let case = read(&mut tx, &id).await?;
     Ok(Json(related_in(&mut tx, &case).await?))
 }
-async fn revoke(State(pool): State<PgPool>, Path(id): Path<String>) -> ApiResult<StatusCode> {
-    let mut tx = transaction(&pool).await?;
-    let row = sqlx::query("SELECT case_id,active FROM memories WHERE id=$1")
+async fn revoke(
+    State(pool): State<PgPool>,
+    Extension(workspace): Extension<Workspace>,
+    Path(id): Path<String>,
+) -> ApiResult<StatusCode> {
+    let mut tx = transaction(&pool, &workspace).await?;
+    let row = sqlx::query("SELECT case_id,active FROM memories WHERE id=$1 AND workspace_id=current_setting('relay.workspace')")
         .bind(&id)
         .fetch_optional(&mut *tx)
         .await?
         .ok_or_else(ApiError::missing)?;
     if row.get::<bool, _>("active") {
-        sqlx::query("UPDATE memories SET active=false WHERE id=$1")
+        sqlx::query("UPDATE memories SET active=false WHERE id=$1 AND workspace_id=current_setting('relay.workspace')")
             .bind(&id)
             .execute(&mut *tx)
             .await?;
@@ -430,22 +489,25 @@ struct ContextQuery {
 }
 async fn context(
     State(pool): State<PgPool>,
+    Extension(workspace): Extension<Workspace>,
     Path(id): Path<String>,
     Query(q): Query<ContextQuery>,
 ) -> ApiResult<Json<Value>> {
-    let mut tx = transaction(&pool).await?;
+    let mut tx = transaction(&pool, &workspace).await?;
     let case = read(&mut tx, &id).await?;
     let related = related_in(&mut tx, &case).await?;
     Ok(Json(case.context(&q.role, &related)))
 }
 async fn change_build(
     State(pool): State<PgPool>,
+    Extension(workspace): Extension<Workspace>,
     Path(id): Path<String>,
     Json(change): Json<BuildChange>,
 ) -> ApiResult<Json<Case>> {
     text(&change.build, "Build", 1, 160)?;
-    let mut tx = transaction(&pool).await?;
+    let mut tx = transaction(&pool, &workspace).await?;
     let mut case = read(&mut tx, &id).await?;
+    guest_capacity(&workspace, &case)?;
     case.check_revision(change.revision)?;
     if case.report.build != change.build {
         let old = std::mem::replace(&mut case.report.build, change.build);
@@ -467,11 +529,13 @@ async fn change_build(
 }
 async fn change_lease(
     State(pool): State<PgPool>,
+    Extension(workspace): Extension<Workspace>,
     Path(id): Path<String>,
     Json(change): Json<LeaseChange>,
 ) -> ApiResult<Json<Case>> {
-    let mut tx = transaction(&pool).await?;
+    let mut tx = transaction(&pool, &workspace).await?;
     let mut case = read(&mut tx, &id).await?;
+    guest_capacity(&workspace, &case)?;
     case.check_revision(change.revision)?;
     if change.owner_version != case.owner_version {
         return Err(ApiError::conflict(
@@ -489,11 +553,13 @@ async fn change_lease(
 }
 async fn prepare(
     State(pool): State<PgPool>,
+    Extension(workspace): Extension<Workspace>,
     Path(id): Path<String>,
     Json(input): Json<Prepare>,
 ) -> ApiResult<Json<Case>> {
-    let mut tx = transaction(&pool).await?;
+    let mut tx = transaction(&pool, &workspace).await?;
     let mut case = read(&mut tx, &id).await?;
+    guest_capacity(&workspace, &case)?;
     case.check_revision(input.revision)?;
     let related = if matches!(input.role, Role::Investigator | Role::Repair) {
         related_in(&mut tx, &case).await?
@@ -532,11 +598,13 @@ async fn prepare(
 }
 async fn check_handoff(
     State(pool): State<PgPool>,
+    Extension(workspace): Extension<Workspace>,
     Path(id): Path<String>,
     Json(check): Json<HandoffCheck>,
 ) -> ApiResult<Json<Case>> {
-    let mut tx = transaction(&pool).await?;
+    let mut tx = transaction(&pool, &workspace).await?;
     let mut case = read(&mut tx, &id).await?;
+    guest_capacity(&workspace, &case)?;
     let index = case
         .handoffs
         .iter()
@@ -554,7 +622,7 @@ async fn check_handoff(
         None
     };
     for memory in &handoff.memory_ids {
-        let valid: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM memories m JOIN cases c ON c.id=m.case_id WHERE m.id=$1 AND m.active AND (c.payload->>'revision')::bigint=m.revision AND c.payload->>'status'='reproduced')")
+        let valid: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM memories m JOIN cases c ON c.id=m.case_id WHERE m.id=$1 AND m.workspace_id=current_setting('relay.workspace') AND c.workspace_id=m.workspace_id AND m.active AND (c.payload->>'revision')::bigint=m.revision AND c.payload->>'status'='reproduced')")
             .bind(memory).fetch_one(&mut *tx).await?;
         if !valid {
             reason = Some("A referenced memory changed or was revoked. Prepare a fresh handoff.");
@@ -587,13 +655,14 @@ struct PacketQuery {
 }
 async fn packet(
     State(pool): State<PgPool>,
+    Extension(workspace): Extension<Workspace>,
     Path(id): Path<String>,
     Query(q): Query<PacketQuery>,
 ) -> ApiResult<Response> {
     if !["", "json", "markdown"].contains(&q.format.as_str()) {
         return Err(ApiError::invalid("Choose json or markdown."));
     }
-    let mut tx = transaction(&pool).await?;
+    let mut tx = transaction(&pool, &workspace).await?;
     let case = read(&mut tx, &id).await?;
     let related = related_in(&mut tx, &case).await?;
     if q.format != "markdown" {
@@ -636,4 +705,15 @@ async fn packet(
         out,
     )
         .into_response())
+}
+
+fn guest_capacity(workspace: &Workspace, case: &Case) -> ApiResult<()> {
+    if workspace.guest
+        && (case.events.len() >= 120 || case.observations.len() >= 20 || case.handoffs.len() >= 12)
+    {
+        return Err(ApiError::invalid(
+            "This demo case has reached its activity limit. Create another report to keep testing.",
+        ));
+    }
+    Ok(())
 }

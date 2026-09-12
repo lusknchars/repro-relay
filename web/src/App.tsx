@@ -5,6 +5,8 @@ import {
   Inbox, Link2, Plus, Radio, Search, Settings2, ShieldCheck, X,
 } from 'lucide-react'
 import { Button } from './components/ui/button'
+import { GuestGate } from './components/GuestGate'
+import { BetaFeedback } from './components/BetaFeedback'
 import { ContextPanel } from './components/ContextPanel'
 import { Badge } from './components/ui/badge'
 import { apiBase, message, request, requestAll } from './lib/api'
@@ -34,6 +36,7 @@ function Field({ label, children, hint }: {label: string; children: ReactNode; h
 }
 
 export default function App() {
+  const [session, setSession] = useState<{mode: 'local' | 'guest'; authenticated: boolean} | null>(null)
   const [cases, setCases] = useState<Case[]>([])
   const [memories, setMemories] = useState<Memory[]>([])
   const [health, setHealth] = useState<Health | null>(null)
@@ -60,8 +63,14 @@ export default function App() {
     setCases(items); setMemories(knowledge); setHealth(status)
     setSelectedId(id => items.some(item => item.id === id) ? id : items[0]?.id || '')
   }
+  async function openWorkspace() {
+    const current = await request<{mode: 'local' | 'guest'; authenticated: boolean}>('/session')
+    setSession(current)
+    if (current.authenticated) await refresh()
+    setLoading(false)
+  }
   useEffect(() => {
-    refresh().catch(e => setError(message(e))).finally(() => setLoading(false))
+    openWorkspace().catch(e => {setError(message(e)); setLoading(false)})
   }, [])
   useEffect(() => {
     let current = true
@@ -84,7 +93,7 @@ export default function App() {
   }
   async function action(work: () => Promise<void>) {
     setBusy(true); setError(''); setNotice('')
-    try { await work() } catch (e) { setError(message(e)); await refresh().catch(() => {}) }
+    try { await work() } catch (e) { setError(message(e)); await openWorkspace().catch(() => {}) }
     finally { setBusy(false) }
   }
   function createReport(event: FormEvent<HTMLFormElement>) {
@@ -143,26 +152,29 @@ export default function App() {
   )
   const selectedMemory = memories.find(item => item.case_id === selectedId)
 
+  if (session?.mode === 'guest' && !session.authenticated) return <GuestGate ready={openWorkspace}/>
+  const isGuest = session?.mode === 'guest'
   return <div className="app-shell">
     <a className="skip-link" href="#workspace">Skip to workspace</a>
     <aside className="sidebar">
       <a className="brand" href="#" onClick={e => {e.preventDefault(); navigate('inbox')}}>
         <span className="brand-mark"><GitBranch size={23} /></span><span>repro<span className="brand-light">relay</span></span>
       </a>
-      <div className="workspace-switch"><span className="avatar">L</span><div><strong>Local workspace</strong><small>Engineering workspace</small></div></div>
+      <div className="workspace-switch"><span className="avatar">L</span><div><strong>{isGuest ? 'Your test workspace' : 'Local workspace'}</strong><small>Engineering workspace</small></div></div>
       <nav aria-label="Workspace">
         <button className={view === 'inbox' ? 'active' : ''} onClick={() => navigate('inbox')}><Inbox size={18} />Case inbox<span className="nav-count">{cases.length}</span></button>
         <button className={view === 'memory' ? 'active' : ''} onClick={() => navigate('memory')}><Database size={18} />Project memory<span className="nav-count">{memories.length}</span></button>
         <button className={view === 'connections' ? 'active' : ''} onClick={() => navigate('connections')}><Settings2 size={18} />Connections</button>
       </nav>
       <div className="sidebar-note"><ShieldCheck size={20} /><p>Every finding has a source.</p><small>Keep observations, hypotheses, and verified fixes distinct.</small></div>
-      <div className="sidebar-footer"><span className={health ? 'online-dot' : 'offline-dot'} />{health ? 'Local API connected' : 'Connecting to local API'}<span>v0.2</span></div>
+      <div className="sidebar-footer"><span className={health ? 'online-dot' : 'offline-dot'} />{health ? 'Workspace connected' : 'Connecting to workspace'}<span>v0.2</span></div>
     </aside>
     <main id="workspace" className="workspace">
       <header className="topbar"><div className="breadcrumbs">Workspace<ChevronRight size={14} /><strong>{view === 'inbox' ? 'Case inbox' : view === 'memory' ? 'Project memory' : 'Connections'}</strong></div>
-        <span className="local-badge"><FlaskConical size={14} />Local workspace</span></header>
+        <span className="local-badge"><FlaskConical size={14} />{isGuest ? 'Public beta' : 'Local workspace'}</span></header>
       <div className="page-title"><div><h1>{view === 'inbox' ? 'An evidence trail for every handoff.' : view === 'memory' ? 'What your team has learned.' : 'Connect the workflow.'}</h1><p>{view === 'inbox' ? 'Investigate the report, preserve what happened, and prepare the next agent.' : view === 'memory' ? 'Reviewed observations from this workspace, with their original evidence.' : 'The local workflow works now. Agent and channel connections come next.'}</p></div>
         <Button onClick={() => openModal('report')} disabled={!health}><Plus />New report</Button></div>
+      {isGuest && <BetaFeedback/>}
       {error && <div className="notice error" role="alert">{error}<Button variant="ghost" size="sm" onClick={() => void action(refresh)}>Retry connection</Button></div>}
       {notice && <div className="notice" role="status"><Check size={16} />{notice}</div>}
       {loading ? <div className="loading" role="status">Opening your workspace…</div> : <>

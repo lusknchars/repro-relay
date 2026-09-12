@@ -1,0 +1,12 @@
+.git
+.data
+.env
+.env.*
+.venv
+**/node_modules
+**/target
+**/dist
+**/test-results
+**/playwright-report
+web/src-tauri/gen
+backend
