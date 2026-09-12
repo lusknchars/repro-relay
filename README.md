@@ -62,3 +62,9 @@ The browser test covers intake, observation, memory review, export, stale handof
 The case database owns source truth. Memory retrieval provides leads, not verified root causes. One local installation serves one team; do not expose this unauthenticated development API to the network.
 
 MIT project. Copied UI primitives retain their upstream license in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## Hosted guest beta
+
+The new `REPRO_MODE=guest` runtime serves the web UI and API from one public HTTPS origin. It requires `DATABASE_URL` and `PUBLIC_ORIGIN`, or Railway's generated domain variable. Each browser receives an isolated, seven-day test workspace. Guest quotas and a feedback form are included. Existing local records stay in the `local` workspace and cannot be read by hosted guests.
+
+See the [deployment plan and launch checklist](docs/deployment/public-beta.md). Run `make check` for both local and guest-browser workflows. `Dockerfile` and `railway.toml` package the web service; the Tauri app is excluded.

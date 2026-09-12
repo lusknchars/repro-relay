@@ -1,6 +1,6 @@
 import { defineConfig } from '@playwright/test'
 export default defineConfig({
-  testDir: './tests', fullyParallel: false, workers: 1, timeout: 45_000,
+  testDir: './tests', testIgnore: 'guest.spec.ts', fullyParallel: false, workers: 1, timeout: 45_000,
   use: {baseURL: 'http://127.0.0.1:5180', viewport: {width: 1512,height: 982}, trace: 'retain-on-failure'},
   webServer: [
     {command: '../target/debug/relay-api', url: 'http://127.0.0.1:8180/api/v1/health', timeout: 30_000,

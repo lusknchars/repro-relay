@@ -25,6 +25,7 @@ check:
 	npm run build --prefix web
 	node scripts/prepare-e2e-db.mjs
 	npm run test:e2e --prefix web
+	npm run test:guest --prefix web
 
 desktop:
 	npm run tauri --prefix web -- dev

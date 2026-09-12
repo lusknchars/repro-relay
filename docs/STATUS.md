@@ -1,6 +1,6 @@
 # Current milestone
 
-Updated September 12, 2026. This is the Rust and TypeScript local workflow milestone. The research documents describe the larger hackathon product; they are not claims of implemented integrations.
+Updated September 12, 2026. The Rust and TypeScript workflow now includes a hosted guest beta, tested locally. Public deployment is pending Railway account sign-in. The research documents describe the larger hackathon product; they are not claims of implemented integrations.
 
 Implemented:
 
@@ -11,17 +11,19 @@ Implemented:
 - Persisted handoff snapshots bound to case revision, current build, worker assignment, and referenced memories. The server rejects outdated snapshots and records the reason.
 - Build updates preserve old observations and invalidate published memory. Concurrent writes use revision checks.
 - Tauri desktop shell with native packet export and external browser links. API and PostgreSQL run separately and must already be available.
+- Hosted guest workspaces with opaque HttpOnly cookies, scoped database access, seven-day expiry, capacity limits, and usefulness feedback. A landing page introduces the synthetic sample report and current capabilities.
+- One deployment container serving the built React app and Rust API, Railway configuration, PostgreSQL TLS support, and graceful shutdown.
 
 The freshness check is a local preflight. It does not run an agent, reserve a worker, prove evidence contents, or guarantee safe execution after the check. A real worker must atomically claim the current assignment at dispatch and reconcile external effects after interruption. Existing handoff records and source evidence survive service restarts.
 
-Not implemented: Hermes/Plow browser investigation, autonomous repair, independent patch verification, Mem0, outbound GitHub/Slack delivery, runtime instruction evolution, authenticated shared hosting, signed installers, or App Store submission. The connections screen keeps these disconnected.
+Not implemented: Hermes/Plow browser investigation, autonomous repair, independent patch verification, Mem0, outbound GitHub/Slack delivery, runtime instruction evolution, persistent team accounts, signed installers, or App Store submission. The connections screen keeps external integrations disconnected.
 
-PostgreSQL stores each case aggregate as JSONB and the memory publication index relationally. One transaction-level advisory lock serializes local mutations and cross-case memory validation. This is a deliberate local-team implementation; hosted concurrency needs ordered row/dependency locks and authenticated workspace isolation. Evidence links are not fetched automatically.
+PostgreSQL stores each case aggregate as JSONB and the memory publication index relationally. A transaction-level advisory lock per workspace serializes mutations and cross-case memory validation within that workspace; separate workspaces can progress independently. SQL filters scope every case and memory operation to the server-derived workspace. Evidence links are not fetched automatically.
 
 The earlier Python/SQLite prototype has been replaced. No SQLite migration is provided because it was an unfinished scaffold. Existing local SQLite files, if any, are left untouched and are not read by this build.
 
-Next milestone: connect one bounded Hermes investigation against a controlled fixture application, persist real tool receipts and evidence, then produce a reviewed GitHub draft. Add external sends only after destination authorization and receipt reconciliation are implemented. Evaluate recurring workflow corrections after collecting real failed runs.
+Next: publish and verify the Railway beta, collect visitor feedback, then connect one bounded Hermes investigation against a controlled fixture application, persist real tool receipts and evidence, and produce a reviewed GitHub draft. Add external sends only after destination authorization and receipt reconciliation are implemented. Evaluate recurring workflow corrections after collecting real failed runs.
 
 Validation commands and the repeatable browser flow are in README.md. Automated fixtures are separate from usage and from the local demo workspace.
 
-Validation on September 12: `make check` passed Rust formatting, Clippy with warnings denied, five isolated PostgreSQL integration tests, the production frontend build, and the Chromium workflow test. Desktop packaging passed and the executable was launched. Native save-dialog interaction has not been exercised; the available desktop accessibility bridge denied access. Browser screenshots were inspected at desktop and 390 px mobile widths.
+Validation on September 12: `make check` passed Rust formatting, Clippy with warnings denied, eight isolated PostgreSQL integration tests, the production frontend build, and two Chromium tests covering the workflow and separate guest sessions, feedback, reload, and mobile width. The guest landing screenshot was visually inspected. The Linux deployment container passed health, static UI, guest-session isolation, CSRF, and feedback checks against an isolated PostgreSQL database; the feedback row was verified directly. Desktop packaging previously passed and the executable was launched. Native save-dialog interaction has not been exercised; the available desktop accessibility bridge denied access.
