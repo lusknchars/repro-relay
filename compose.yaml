@@ -1,0 +1,19 @@
+name: repro-relay
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: relay
+      POSTGRES_PASSWORD: relay_local_only
+      POSTGRES_DB: relay
+    ports:
+      - "127.0.0.1:55478:5432"
+    volumes:
+      - relay-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U relay -d relay"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+volumes:
+  relay-data:

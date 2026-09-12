@@ -1,0 +1,4 @@
+interface:
+  display_name: "Repro Memory"
+  short_description: "Project-specific memory workflow"
+  default_prompt: "Use $repro-memory for the next Repro Relay memory task."

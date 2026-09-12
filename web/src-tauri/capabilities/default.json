@@ -1,0 +1,11 @@
+{
+  "identifier": "main-window",
+  "description": "Local workspace window; no shell or filesystem access from the webview.",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "opener:default"
+  ]
+}

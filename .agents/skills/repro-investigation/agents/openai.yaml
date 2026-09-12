@@ -1,0 +1,4 @@
+interface:
+  display_name: "Repro Investigation"
+  short_description: "Project-specific investigation workflow"
+  default_prompt: "Use $repro-investigation for the next Repro Relay investigation task."
