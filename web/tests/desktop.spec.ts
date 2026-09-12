@@ -23,6 +23,7 @@ test('desktop startup explains a missing service and recovers without restarting
   await expect(page.getByRole('button',{name:'New report',exact:true})).toBeEnabled()
   await expect(page.getByRole('heading',{name:'Connect your local workspace.'})).toHaveCount(0)
   expect(errors).toEqual([])
+  await page.unrouteAll({behavior:'wait'})
 })
 
 test('workspace shortcuts preserve dialog focus and reduced motion leaves panels readable', async ({page}) => {
@@ -32,7 +33,7 @@ test('workspace shortcuts preserve dialog focus and reduced motion leaves panels
   await page.goto(`/?case=${item.id}`)
   await expect(page.getByRole('button',{name:'New report',exact:true})).toBeEnabled()
   await page.keyboard.press('Control+,')
-  await expect(page.getByRole('heading',{name:'Connect the workflow.'})).toBeVisible()
+  await expect(page.getByRole('heading',{name:'Connections'})).toBeVisible()
   await page.keyboard.press('Control+k')
   await expect(page.getByRole('textbox',{name:'Search cases'})).toBeFocused()
   await page.keyboard.press('Control+Shift+n')
@@ -43,6 +44,8 @@ test('workspace shortcuts preserve dialog focus and reduced motion leaves panels
   await expect(page.getByRole('textbox',{name:'Search cases'})).toBeFocused()
   await page.getByRole('button',{name:'New report',exact:true}).hover()
   await expect(page.getByRole('tooltip')).toContainText('Create a report')
+  await page.getByRole('textbox',{name:'Search cases'}).fill('Desktop interaction fixture')
+  await page.locator('.case-row').first().click()
   await page.getByRole('tab',{name:'Agent context',exact:true}).click()
   await page.emulateMedia({reducedMotion:'reduce'})
   await expect(page.getByRole('tabpanel')).toHaveCSS('transform','none')

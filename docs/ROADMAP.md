@@ -2,6 +2,12 @@
 
 Updated September 12, 2026.
 
+The [product depth review and skill map](PRODUCT-DEPTH-REVIEW.md) expands the accessibility, evidence/memory consistency, mobile/channel, automation, and acceptance requirements below. It distinguishes proposed work from current functionality.
+
+Use the [delivery protocol](DELIVERY-PROTOCOL.md) to execute that direction: RP-01 through RP-15 define coverage and dependencies, D-01 through D-06 define the dashboard's user tasks, and T-01 through T-14 define acceptance scenarios. [Orca and Warp](research/orca-warp-dashboard-benchmark.md) are interaction references; PaceUI remains the selected template.
+
+[Vercel is the selected configuration reference](research/vercel-configuration-benchmark.md), with C-01 through C-08 covering settings behavior and validation across the implementation areas.
+
 Repro Relay's next release is one agent that investigates a reported problem while it works, keeps its conclusions tied to evidence, and sends the current result to the configured owner. The same case is readable from the desktop workspace, a developer's terminal, and the owner's phone line.
 
 ## Product decision

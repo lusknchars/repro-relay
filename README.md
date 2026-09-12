@@ -2,6 +2,10 @@
 
 Repro Relay connects support and operations reports to agent investigation and developer review. Its web and desktop clients share cases, recorded evidence, project memory, and engineering handoffs.
 
+Both clients use the selected PaceUI Ultimate Dashboard template, adapted to investigation activity, case search, and Hermes controls. See [the migration record](docs/PACEUI-MIGRATION.md).
+
+For the next implementation work, use the [delivery protocol](docs/DELIVERY-PROTOCOL.md), [product depth review](docs/PRODUCT-DEPTH-REVIEW.md), [Orca/Warp interaction benchmark](docs/research/orca-warp-dashboard-benchmark.md), and the user-selected [Vercel configuration benchmark](docs/research/vercel-configuration-benchmark.md). The protocol defines resources, dependencies and acceptance evidence; it does not describe all of those capabilities as shipped.
+
 The local API can submit, monitor, stop, and reconcile investigations on a configured Hermes runtime. Runs survive client reloads and retain agent answers as proposals for review. The adapter has passed protocol-fixture tests; live Hermes and Latch execution still need verification. Phone intake, outbound delivery, and automatic fixes remain planned. See [the release plan](docs/ROADMAP.md) and [client architecture](docs/CLIENT-ARCHITECTURE.md).
 
 ## Run locally
@@ -32,7 +36,7 @@ An evidence URL is a reference supplied by the recorder. The application has not
 
 ## Connect an investigator
 
-Run a dedicated Hermes gateway with its authenticated run API enabled. Pass `REPRO_HERMES_URL` and `REPRO_HERMES_KEY` to the Relay API process, then open a case's **Agent context** tab. Check the connection, select a time limit, and start the investigation. Both web and desktop read the same saved run. Case links retain selection across reloads.
+Run a dedicated Hermes gateway with its authenticated run API enabled. Pass `REPRO_HERMES_URL` and `REPRO_HERMES_KEY` to the Relay API process, then open **Agent controls**. Select a case, inspect the exact context packet, check the connection, and start a bounded investigation. Review its saved proposal, request a correction, and inspect the next context before starting a follow-up. Both web and desktop read the same saved history; reviews preserve the original output and do not automatically publish evidence or memory.
 
 See [runner setup and recovery](docs/HERMES-RUNNER.md) for the required capabilities, endpoints, limits, and interruption behavior. Runtime credentials stay in the backend. Hosted guest workspaces cannot operate this runner. Time limits request a cooperative stop; token and spending limits must be configured in Hermes.
 
@@ -61,6 +65,8 @@ This runs Rust formatting, Clippy, PostgreSQL integration tests, the frontend pr
 
 The browser test covers intake, observation, memory review, export, stale handoff rejection, reload, and mobile overflow. Screenshots are saved under `web/test-results/` and excluded from Git. Desktop packaging is a separate `make desktop-build` check.
 
+The investigation fixture also covers proposal review retries and corrective follow-ups. `npm run test:compatibility --prefix web` checks the responsive review view and keyboard interaction against explicit mock data on port 5186. `npm run test:edge --prefix web` runs the same UI checks in installed Microsoft Edge. The Windows compatibility workflow runs Edge on Windows and checks native desktop compilation; it does not prove native interaction or live Hermes execution.
+
 ## Code map
 
 - `crates/relay-api`: Rust API, input validation, transactional workflow, PostgreSQL migration, and integration tests.
@@ -71,7 +77,7 @@ The browser test covers intake, observation, memory review, export, stale handof
 
 The case database owns source truth. Memory retrieval provides leads, not verified root causes. Local mode serves one team on loopback. Use the configured guest runtime for public testing; its cookie sessions and workspace filters protect separate visitors.
 
-MIT project. Copied UI primitives retain their upstream license in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Repro Relay's original code is MIT. PaceUI template source retains its product license; other components and packages retain their upstream licenses. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Hosted guest beta
 

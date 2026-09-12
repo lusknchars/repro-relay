@@ -10,6 +10,20 @@
     "cssVariables": true
   },
   "iconLibrary": "lucide",
+  "registries": {
+    "@reactbits-starter": {
+      "url": "https://pro.reactbits.dev/api/r/starter/{name}.json",
+      "headers": {
+        "Authorization": "Bearer ${REACTBITS_LICENSE_KEY}"
+      }
+    },
+    "@paceui": {
+      "url": "https://paceui.com/r/{name}.json",
+      "headers": {
+        "Authorization": "Bearer ${PACEUI_REGISTRY_TOKEN}"
+      }
+    }
+  },
   "aliases": {
     "components": "@/components",
     "ui": "@/components/ui",

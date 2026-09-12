@@ -28,8 +28,11 @@ All paths below are under `/api/v1`. The existing local origin guard applies. Ho
 | Method and path | Behavior |
 | --- | --- |
 | `GET /runner` | Probe required runtime capabilities; return availability and a credential-free reason. |
-| `POST /cases/{id}/runs` | Admit `{revision, max_seconds}` with an `Idempotency-Key` header. |
+| `GET /cases/{id}/investigation-preview` | Preview current investigator context and its SHA-256 digest; optional `review_id` includes a requested correction. |
+| `POST /cases/{id}/runs` | Admit `{revision, max_seconds, context_hash?, follow_up_review_id?}` with an `Idempotency-Key` header. |
 | `GET /cases/{id}/runs` | Read saved run history, newest first. |
+| `GET /cases/{id}/run-reviews` | Read the case's persisted proposal reviews, newest first. |
+| `POST /runs/{id}/reviews` | Save `{case_revision, run_version, reviewer, decision, feedback}` with an `Idempotency-Key`. Decisions are `accepted`, `needs_changes`, or `dismissed`. |
 | `POST /runs/{id}/stop` | Cancel an undispatched request or request a cooperative remote stop. |
 | `POST /runs/{id}/reconcile` | Reconcile a run in `attention` with its original runtime. |
 
@@ -51,10 +54,18 @@ A stop acknowledgement is not completion. Relay keeps polling until Hermes repor
 
 Agent answers remain proposals attached to the run. They do not change case observations, reproduction status, reviewed memory, or handoffs. Human review remains explicit. Stored run events describe coordinator state; they are not a browser replay or tool receipts.
 
+The **Agent controls** workspace puts case selection, the saved investigation, and the next context packet side by side. Reviews append to history without changing the original answer. Local reviewer names are supplied by the operator, not verified team identities. A failed or cancelled run can retain partial output for review.
+
+A `needs_changes` review can seed a bounded follow-up investigation. The preview includes the original proposal and exact feedback, marked as untrusted context. Admission checks its digest again. Newer feedback, changed source context, reassignment, or revoked memory in the source run's ancestry blocks stale follow-ups. **Use current case only** explicitly excludes the old proposal and feedback when a fresh investigation is needed. Accepting a review does not publish memory, verify a fix, or authorize source-code changes.
+
+After an uncertain browser response, **Retry pending request** uses the original body and key. Pending requests and review drafts stay in memory while this workspace is mounted; navigating away or reloading clears them. Saved reviews and runs remain in PostgreSQL. Refreshing context preserves a draft while loading current case data.
+
 Limits currently include one active run, 30–600 seconds until a cooperative stop request, bounded context, a 256 KiB response limit, and an answer limit of 64,000 characters. Usage records preserve reported numeric token and cost fields; absent usage displays **Not reported**. These controls do not enforce a hard token or dollar budget. There is no model-cost estimate or automatic owner delivery.
 
 ## Validation
 
-`make check` includes SQL integration tests for admission races, duplicate requests, stale context, memory revocation, stop confirmation, restart recovery, unknown dispatch, cancellation during submission, runtime mismatch, and guest isolation. The browser fixture verifies start, saved results across reload, usage display, mobile width, and confirmed cancellation.
+`make check` includes SQL integration tests for admission races, duplicate requests, stale context, memory revocation, stop confirmation, restart recovery, unknown dispatch, cancellation during submission, runtime mismatch, and guest isolation. Review tests cover idempotency, revision checks, scoped source reviews, context digest changes, superseded feedback, revoked ancestor memory, and partial outputs. The browser fixture verifies review retry, exact preview/admission matching, bounded follow-up, preserved original output, saved history across reload, usage display, mobile width, and confirmed cancellation.
+
+Microsoft browser testing means Edge on Windows. `.github/workflows/windows-compatibility.yml` runs a mocked UI compatibility suite in actual Edge on a Windows runner and checks the native desktop crate. It does not run the PostgreSQL/Hermes integration suite or exercise native desktop interaction. Locally, `npm run test:compatibility --prefix web` runs that UI suite in Chromium; `npm run test:edge --prefix web` requires installed Microsoft Edge. Local Chromium results are not Windows validation.
 
 `scripts/hermes-fixture.mjs` requires `REPRO_FIXTURE_ONLY=1` and uses a test credential. Its in-memory idempotency and generated answer are only for browser tests. Do not configure it as a production runner. The next live acceptance test requires one approved Latch action and an actual receipt from the intended Hermes profile.

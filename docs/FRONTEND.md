@@ -1,58 +1,47 @@
 # Frontend design
 
-Repro Relay is an engineering workbench for preserving evidence and preparing agent handoffs. The connected report, evidence, memory, and handoff path is the central visual idea. The public landing page includes an interactive, explicitly synthetic build-change example. The workspace path reflects actual case state and opens the relevant detail view.
+Repro Relay uses the authenticated `@paceui/ultimate-dashboard-template` source as its only dashboard template. The user's selection replaces the former custom blue rail and landing preview. See [the migration record](PACEUI-MIGRATION.md) for provenance and installation.
 
-## Foundation and references
+## Shared application
 
-React, TypeScript, Vite, Tailwind, and locally owned shadcn Button/Badge primitives remain the framework. Frontend Lab is a reference collection, not an installable library. The property inspector uses native controls informed by the lab's InspectorPanel composition.
+Web and Tauri render the same React, TypeScript, Vite, Tailwind application. PaceUI supplies the sidebar, sticky top bar, page title, footer, AI dashboard composition, statistic cards, chart cards, and table layout. Their source is in `web/src/components/templates/ultimate-dashboard` and `web/src/components/blocks/dashboard`.
 
-Frontend Lab: https://github.com/lusknchars/frontend-lab, reference commit `1167099e04ca412f57fda657d28e19b0d8f933be`.
+The six views are Overview, Case inbox, Agent controls, Project memory, Handoffs, and Connections. Navigation persists in the URL. Case detail opens from the table; All reports returns to the list. On mobile the template sidebar opens in a drawer.
 
-The user confirmed shadcn/ui as the component library for desktop and web. `web/components.json` configures the existing React, Tailwind v4, Lucide, CSS-variable, and `@/` alias setup for selective registry additions. Tooltip and Kbd are adapted from the official shadcn Radix registry retrieved September 12. Their URLs and notices are in `THIRD_PARTY_NOTICES.md`. Existing Button, Badge, ReUI tabs, and timeline remain locally owned components.
+Overview values come from stored cases, observations, reviewed memories, and handoff snapshots. The activity chart groups reports and observations by UTC date over fourteen days. Agent controls use the existing Hermes coordinator with one active investigation. Phone intake, owner delivery, and Latch actions remain labeled as unconnected.
 
-- `src/components/inspector-panel/InspectorPanel.tsx`: compact properties and native inputs.
-- `src/components/ui/button.tsx`: reusable variants and keyboard focus.
-- `src/components/ui/badge.tsx`: status and source-revision labels.
-- `src/lib/utils.ts`: class merging.
-- `README.md`: source provenance and portability conventions.
+Agent controls now opens a three-column investigation workspace inspired by the supplied context-rescue reference: searchable cases, the saved result with evidence and reviews, and the exact next-run context with runtime controls. It remains inside PaceUI and uses existing shadcn buttons and Relay theme tokens. Narrow layouts stack the columns. The view separates human observations, coordinator events, proposals, and review decisions; none is labeled as an automated browser receipt. Reviewed corrections can be included in a follow-up after previewing its server-generated context. Saved run selection survives reload; unsaved drafts and pending retries last only while the workspace is mounted.
 
-The additional reference is [ReUI](https://reui.io), confirmed by the user on September 12. Its [getting-started guide](https://reui.io/docs/get-started) supports the existing React 19, Tailwind v4, and Radix/shadcn foundation.
+## Components and appearance
 
-Two components are adapted from the [MIT-licensed repository](https://github.com/keenthemes/reui), revision `8a2c701eaf95729f238274d5ce2555a5a8bd23e7`:
+The Plow Chat + Latch connection card uses the user-supplied `web/src/assets/plow-logo.png` in both web and desktop. Its original lime mark and dark background are preserved. The adjacent card title labels the image, so it has an empty alt attribute to avoid duplicate screen-reader announcements.
 
-- `registry-reui/bases/radix/reui/timeline.tsx` becomes `web/src/components/ui/timeline.tsx`. `CaseActivity` presents actual stored events with timestamps, named event types, source IDs, and revisions. It does not invent activity or show event completion as proof of a repair.
-- `registry/bases/radix/ui/tabs.tsx` becomes `web/src/components/ui/tabs.tsx`. Radix owns detail-tab keyboard navigation and panel associations. Local styling retains the existing palette and typography. The wrapper forwards its orientation to the primitive.
+The Hermes investigator connection card and the overview's Investigator control card use the user-supplied `web/src/assets/hermes-logo.webp`, also unchanged and labeled by its adjacent title. A white image surface keeps the black artwork visible in both themes.
 
-Imports resolve to the local class-merging utility. Component styling is adapted through the application's semantic tokens; existing dependencies are sufficient. The upstream MIT notice is retained in `THIRD_PARTY_NOTICES.md`. Future ReUI additions should follow this selective approach and document their source revision. Premium blocks and templates require separate licensing and are not part of this integration.
+The CLI installed the selected template and its shadcn dependencies. Unused sales, crypto, customer, hospital, and sample app files were removed. The migration adds Recharts; unused registry dependencies were removed. Existing Button, Badge, Tooltip, Kbd, Radix tabs, and event timeline retain their APIs and licenses. They are controls inside the selected template, not additional dashboard templates.
 
-## Visual system
+The neutral white/zinc sidebar, cards, typography, spacing, and mobile drawer follow PaceUI. Repro Relay's blue primary color identifies actions and its branch mark. System sans-serif is the body font; locally hosted JetBrains Mono is used for code and identifiers. Light/dark semantic tokens live in `web/src/styles.css`. `design.css` styles Relay's case content, dialogs, context inspector, and startup view within the template.
 
-Preserve the original blue `#355cce` and white branch mark. The logo wordmark retains its sans-serif lettering. The rest of the interface uses locally hosted JetBrains Mono regular, medium, and bold. The fonts are from the [official JetBrains repository](https://github.com/JetBrains/JetBrainsMono), revision `19371302b95d218af43299bce79ddbddd0bc364d`. Their SIL Open Font License is bundled in `web/public/fonts/OFL.txt`.
+The sidebar includes the authenticated `@reactbits-starter/ascii-waves-tw` component from React Bits Pro. Its original wave shader and glyph atlas are retained in `web/src/components/react-bits/ascii-waves.tsx`. A direct Three.js renderer replaces React Three Fiber because Fiber 9.7 excludes this application's React 19.3 from its supported peer range. No React downgrade or ignored peer conflict is required.
 
-Light palette: rail `#172e69`, canvas `#eef2f8`, paper `#ffffff`, ink `#1c2d4a`, muted `#5c6c83`. Dark mode uses slate-blue surfaces and the same brand mark. Semantic tokens in `web/src/design.css` define both palettes. Green and amber accompany named success and outdated states; color is not the sole indication.
+The effect is decorative, lazy-loaded, clipped to the sidebar, and excluded from pointer events and the accessibility tree. Theme colors and a vertical mask preserve navigation contrast. Rendering uses device pixel ratio 1, no antialiasing, and at most 20 frames per second. Reduced motion shows a static frame; hidden documents and offscreen sidebars pause rendering. Closing the sidebar unmounts the renderer and disposes GPU resources. A static character texture appears when WebGL is unavailable or its context is lost. PaceUI remains the dashboard template.
 
-Use 12–14px body text, compact metadata, 20–22px case headings, and larger landing typography. Keep prose left aligned. Use borders to separate evidence and execution controls, not a grid of decorative metric cards.
+Registry access uses `REACTBITS_LICENSE_KEY` in ignored `web/.env.local`; it is not a browser environment variable. Source is governed by the [React Bits Pro license](https://pro.reactbits.dev/license), which prohibits publishing component source in open source repositories. Keep the licensed source private.
 
-Desktop:
+Source notices are in `THIRD_PARTY_NOTICES.md`. Frontend Lab supplied the existing shadcn Button/Badge and utility at revision `1167099e04ca412f57fda657d28e19b0d8f933be`. Existing ReUI timeline and Radix tabs were adapted from revision `8a2c701eaf95729f238274d5ce2555a5a8bd23e7`. PaceUI's product license applies to its template source; it is not relicensed by the project's MIT notice.
 
-```text
-Blue navigation | Report inbox | Case title and evidence path
-                |              | Evidence / Context / Packet / Activity
-                |              | Evidence content + execution inspector
-```
+## Configuration background
 
-On mobile, the selected case and report list switch between focused views. “All reports” returns to the list. Navigation remains available at the top. The theme control remembers an explicit preference and otherwise initializes from the device setting.
+The Connections page uses authenticated `@reactbits-starter/perspective-grid-tw` behind the existing PaceUI configuration cards. The shared layout keeps the user's grid configuration: `speed={1}`, `gridScale={2.7}`, `lineThickness={0.1}`, `fadeSmoothness={0.9500000000000001}`, `perspective={-30}`, `gridLength={13}`, and `curve={2.3000000000000003}`. Only `height="100%"` is added to fill the page background. The user subsequently requested matching the sidebar colors. Both effects now share `--effect-blue` and `--effect-opacity`, with the same Three.js color conversion. The grid background and bottom fade use `--sidebar`. Theme changes update the shader immediately, including in reduced-motion mode. ASCII Waves remains in the sidebar.
+
+The installed component already uses Three.js directly. Its shader is preserved. The grid renders on every `requestAnimationFrame` callback, allowing 120/144+ Hz when the display, browser, and GPU permit it. Elapsed-time updates keep movement speed consistent across refresh rates. Reduced motion freezes the frame; hidden/offscreen views pause rendering. ResizeObserver sizing and context-loss handling remain active. GPU resources are disposed when leaving Connections. When WebGL is unavailable, the dark background and usable configuration controls remain. The decorative layer cannot capture pointer events, and cards and heading retain opaque surfaces. The React Bits Pro product license applies. Rubber Fluid and its blue background were removed.
 
 ## Interaction and validation
 
-- The landing example lets a visitor change a sample build, see the outdated-context state, and reset it. It does not call an agent or claim real verification.
-- Detail tabs support arrow keys, Home, End, and named tab panels.
-- Native dialogs trap focus, close with Escape, and return focus to their trigger.
-- GSAP 3.15.0 with `@gsap/react` 2.1.2 introduces case panels, changed run states, saved confirmations, and desktop connection states with a 220ms transform/opacity transition. The scoped hook reverts on state changes and unmount. It follows [GSAP's React lifecycle guidance](https://gsap.com/resources/React/) and responds to the device's reduced-motion setting while running. Focus and command dispatch never wait for animation completion.
-- Buttons use a 120ms press transition. Investigation controls report checking, starting, stopping, and reconciliation requests using text plus `aria-busy`; these labels do not imply remote completion. The landing, dialogs, tooltips, and build examples retain short CSS transitions. There are no looping animations. Reduced motion disables GSAP and CSS motion.
-- Keep loading, empty, error, disconnected, and stale states actionable and readable in both themes.
-- Run `make check` for the real workflow and guest tests. Guest coverage includes theme persistence, the interactive example, keyboard focus, reduced motion, and mobile inbox navigation. Inspect screenshots of light, dark, and mobile views.
+Dialogs focus the first field, close with Escape, and restore trigger focus. Case tabs support arrow keys. Search and native Workspace commands share the existing command dispatcher. The desktop startup screen explains the separate API/database requirement and offers retry.
 
-Button/Badge notices and font attribution are in `THIRD_PARTY_NOTICES.md`. No proprietary component code or reference artwork is included.
+Navigation exposes the current page, the sidebar trigger exposes its expanded state, and the skip destination accepts focus. Mobile sidebar navigation and its visible close button have 44-pixel targets. Investigation controls use labeled fields, visible keyboard focus, live status announcements, and 44-pixel targets. The isolated compatibility suite checks both themes at 320 pixels, dialog focus restoration, drawer dismissal, and JavaScript errors. Windows CI runs it in Microsoft Edge; those results must be recorded separately from local Chromium checks.
 
-The desktop startup view explains the separate local API/database requirement and provides retry and copyable setup commands. Tauri's native Workspace menu emits the same report, search, and connection commands used by web keyboard shortcuts. Window placement uses the official [Tauri window-state plugin](https://v2.tauri.app/plugin/window-state/), limited to size, position, and maximized state so a hidden window is not restored as hidden.
+GSAP 3.15.0 with `@gsap/react` 2.1.2 animates case panels, investigation state changes, confirmations, and desktop connection states with scoped 220ms opacity/transform transitions. Buttons have a 120ms press transition. Reduced motion disables both GSAP and CSS effects. Chart entry animations are disabled.
+
+Run `make check` and `make desktop-build` after workflow changes. Browser coverage includes report capture, observations, memory, handoff freshness, URL persistence, guest isolation, theme persistence, keyboard commands, mobile layout, and fixture investigation controls. Screenshot checks cover the actual dashboard in both themes and mobile case detail. Browser tests do not establish native save-dialog behavior or live Hermes/Latch delivery.

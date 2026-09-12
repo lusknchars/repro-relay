@@ -17,7 +17,9 @@ createServer(async (req,res)=>{
       return send(202,{run_id:old.id,status:'started'})
     }
     const id=`run_fixture_${runs.size+1}`
-    runs.set(id,{id,body,polls:0,stopped:false,slow:body.includes('Hold fixture')});byKey.set(key,id)
+    const submission=JSON.parse(body)
+    const context=JSON.parse(submission.input.slice(submission.input.indexOf('\n')+1))
+    runs.set(id,{id,body,context,polls:0,stopped:false,slow:body.includes('Hold fixture')});byKey.set(key,id)
     return send(202,{run_id:id,status:'started'})
   }
   const match=req.url.match(/^\/v1\/runs\/(run_fixture_\d+)(\/stop)?$/)
@@ -25,5 +27,9 @@ createServer(async (req,res)=>{
   if(match[2]&&req.method==='POST'){run.stopped=true;return send(200,{status:'stopping'})}
   run.polls++
   const status=run.stopped?'cancelled':run.slow||run.polls<2?'running':'completed'
-  return send(200,{run_id:run.id,status,output:status==='completed'?'Controlled fixture proposal: export requires investigation. No real browser actions were executed.':null,usage:status==='completed'?{input_tokens:25,output_tokens:17,total_tokens:42}:null})
+  const correction=run.context.follow_up?.review?.feedback
+  const proposal=correction
+    ? `Controlled fixture follow-up proposal: received reviewer feedback: ${correction}. No real browser actions were executed.`
+    : 'Controlled fixture proposal: export requires investigation. No real browser actions were executed.'
+  return send(200,{run_id:run.id,status,output:status==='completed'?proposal:null,usage:status==='completed'?{input_tokens:25,output_tokens:17,total_tokens:42}:null})
 }).listen(8654,'127.0.0.1')

@@ -1,5 +1,13 @@
 # Third-party notices
 
+## Hermes image
+
+`web/src/assets/hermes-logo.webp` was supplied by the user on September 12, 2026 for the Hermes investigator connection card. The image is preserved without modification. This project's MIT license does not grant rights to the supplied artwork.
+
+## Plow logo
+
+`web/src/assets/plow-logo.png` was supplied by the user on September 12, 2026 for the Plow connection card. The image is preserved without modification. This project's MIT license does not grant rights to the Plow brand asset.
+
 Button, Badge, and class-merging utility in `web/src/components/ui` and `web/src/lib/utils.ts` were copied through Frontend Lab, commit `1167099e04ca412f57fda657d28e19b0d8f933be`, from its shadcn/ui primitives.
 
 Source: https://github.com/shadcn-ui/ui
@@ -62,3 +70,37 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+## PaceUI Ultimate Dashboard
+
+Authenticated source retrieved September 12, 2026 from `@paceui/ultimate-dashboard-template` via the official registry at https://paceui.com/r/ultimate-dashboard-template.json.
+
+The adapted layout and AI dashboard live in `web/src/components/templates/ultimate-dashboard/`. Selected statistic, chart, and table blocks live in `web/src/components/blocks/dashboard/`. Source filenames and adaptations are recorded in `docs/PACEUI-MIGRATION.md`.
+
+These files remain subject to the applicable PaceUI product license. They are not relicensed under Repro Relay's MIT license. The registry payload contained no separate license file. Consult the license attached to the purchaser's product and https://paceui.com/terms-of-service before public redistribution.
+
+The accompanying shadcn Card, Input, Separator, Sheet, Sidebar, Skeleton, and Table components in `web/src/components/ui/`, and the mobile hook, use the shadcn MIT notice above. Local adaptations share the existing Radix controls and theme tokens.
+
+
+## React Bits Pro ASCII Waves
+
+`web/src/components/react-bits/ascii-waves.tsx` adapts the authenticated `@reactbits-starter/ascii-waves-tw` registry component retrieved September 12, 2026. The original shader and font-atlas generator are retained. The renderer is adapted to direct Three.js with limited frame rate, reduced-motion handling, visibility suspension, and resource cleanup.
+
+Source: https://pro.reactbits.dev/api/r/starter/ascii-waves-tw.json
+License: https://pro.reactbits.dev/license
+
+The component remains subject to the React Bits Pro product license, not this project's MIT license. The license allows use and modification in an application but prohibits publishing component source, including modified source, in open source repositories. No public redistribution was performed.
+
+Three.js and its TypeScript definitions are npm dependencies with their own upstream MIT notices.
+
+
+## React Bits Pro Perspective Grid
+
+`web/src/components/react-bits/perspective-grid.tsx` is adapted from the authenticated `@reactbits-starter/perspective-grid-tw` registry component retrieved September 12, 2026. The original shader and parameter defaults are retained. Local adaptations add reduced-motion and visibility handling, display-driven frame updates, ResizeObserver sizing, context-loss handling, and GPU disposal. The shared Connections layout supplies the user's exact visual values and fills the background height.
+
+Source: https://pro.reactbits.dev/api/r/starter/perspective-grid-tw.json
+Docs: https://pro.reactbits.dev/docs/components/perspective-grid
+License: https://pro.reactbits.dev/license
+
+This component retains its React Bits Pro product license. As with ASCII Waves, do not publish its source in an open source repository or relicense it under the project's MIT license. No public redistribution was performed.

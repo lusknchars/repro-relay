@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import {
-  ArrowDownToLine, ArrowLeft, ArrowRight, BookOpen, Braces, Check, ChevronRight,
-  CircleDot, Database, FileText, FlaskConical, GitBranch,
-  Inbox, Link2, Plus, Radio, Search, Settings2, ShieldCheck, X,
+  ArrowDownToLine, ArrowLeft, ArrowRight, BookOpen, Check, ChevronRight,
+  CircleDot, Database, FileText, Link2, Plus, Search, ShieldCheck, X,
 } from 'lucide-react'
 import { Button } from './components/ui/button'
-import { ThemeToggle } from './components/ThemeToggle'
+import { AdminLayout, type View } from './components/templates/ultimate-dashboard/layouts'
+import { PageTitle } from './components/templates/ultimate-dashboard/layouts/page-title'
+import { AIDashboard } from './components/templates/ultimate-dashboard/dashboards/ai'
+import { Table7 } from './components/blocks/dashboard/table/table-7'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './components/ui/tabs'
 import { CaseActivity } from './components/CaseActivity'
 import { EvidencePath } from './components/EvidencePath'
@@ -19,6 +22,10 @@ import type { Case, CaseStatus, Health, Memory, Result } from './types'
 import { useTransition } from './lib/motion'
 import { useWorkspaceCommands, type WorkspaceCommand } from './lib/desktop'
 import { ShortcutHint } from './components/ShortcutHint'
+import plowLogo from './assets/plow-logo.png'
+import hermesLogo from './assets/hermes-logo.webp'
+
+const InvestigationWorkspace = lazy(() => import('./components/InvestigationWorkspace').then(module => ({default: module.InvestigationWorkspace})))
 
 const labels: Record<CaseStatus, string> = {
   new: 'New report', reproduced: 'Reproduced', not_reproduced: 'Not reproduced',
@@ -59,9 +66,9 @@ export default function App() {
   const [health, setHealth] = useState<Health | null>(null)
   const [selectedId, setSelectedId] = useState(()=>new URLSearchParams(window.location.search).get('case') || '')
   const [related, setRelated] = useState<Memory[]>([])
-  const [view, setView] = useState<'inbox' | 'memory' | 'connections'>('inbox')
+  const [view, setView] = useState<View>(()=>{ const params=new URLSearchParams(window.location.search); const v=params.get('view'); return ['overview','inbox','agents','memory','handoffs','connections'].includes(v||'') ? v as View : params.has('case') ? 'inbox' : 'overview' })
   const [tab, setTab] = useState<'evidence' | 'context' | 'handoff' | 'activity'>('evidence')
-  const [showCase, setShowCase] = useState(true)
+  const [showCase, setShowCase] = useState(new URLSearchParams(window.location.search).has('case'))
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('all')
   const [modal, setModal] = useState<'report' | 'observation' | 'review' | null>(null)
@@ -87,11 +94,12 @@ export default function App() {
     } else if (command === 'connections') setView('connections')
   }, [modal, busy, health]))
   useEffect(()=>{
-    if(!selectedId)return
     const url = new URL(window.location.href)
-    url.searchParams.set('case',selectedId)
+    if(selectedId&&((view==='inbox'&&showCase)||view==='agents'))url.searchParams.set('case',selectedId)
+    else url.searchParams.delete('case')
+    if(view==='overview')url.searchParams.delete('view');else url.searchParams.set('view',view)
     window.history.replaceState(null,'',url)
-  },[selectedId])
+  },[selectedId,view,showCase])
 
   async function refresh() {
     const [items, knowledge, status] = await Promise.all([
@@ -112,7 +120,7 @@ export default function App() {
   useEffect(() => {
     let current = true
     setRelated([]); setPacket('')
-    if (selectedId) {
+    if (selectedId && view === 'inbox' && showCase) {
       request<Memory[]>(`/cases/${selectedId}/related`).then(data => {
         if (current) setRelated(data)
       }).catch(e => { if (current) setError(message(e)) })
@@ -123,7 +131,7 @@ export default function App() {
       }).catch(e => { if (current) setError(message(e)) })
     }
     return () => { current = false }
-  }, [selectedId, selected?.revision, memories])
+  }, [selectedId, selected?.revision, memories, view, showCase])
 
   function openModal(next: typeof modal) {
     setError(''); setNotice(''); requestKey.current = crypto.randomUUID(); setModal(next)
@@ -182,52 +190,22 @@ export default function App() {
     setTimeout(() => URL.revokeObjectURL(url), 1000)
     setNotice('Repair packet exported. No external message was sent.')
   }
-  function navigate(next: typeof view) { setView(next); setShowCase(true); setQuery(''); setError(''); setNotice('') }
-  const filtered = cases.filter(item =>
-    (filter === 'all' || item.status === filter) &&
-    `${item.id} ${item.title} ${item.project}`.toLowerCase().includes(query.toLowerCase()),
-  )
+  function navigate(next: View) { setView(next); setShowCase(false); setQuery(''); setFilter('all'); setError(''); setNotice('') }
+  function openCase(item:Case) {setSelectedId(item.id);setView('inbox');setShowCase(true);setTab('evidence')}
+  function focusCaseSearch(){setView('inbox');setShowCase(false);setFocusSearch(value=>value+1)}
   const selectedMemory = memories.find(item => item.case_id === selectedId)
 
   if (session?.mode === 'guest' && !session.authenticated) return <GuestGate ready={openWorkspace}/>
   const isGuest = session?.mode === 'guest'
-  return <div className="app-shell">
-    <a className="skip-link" href="#workspace">Skip to workspace</a>
-    <aside className="sidebar">
-      <a className="brand" href="#" onClick={e => {e.preventDefault(); navigate('inbox')}}>
-        <span className="brand-mark"><GitBranch size={23} /></span><span>repro<span className="brand-light">relay</span></span>
-      </a>
-      <div className="workspace-switch"><span className="avatar"><Braces size={17}/></span><div><strong>{isGuest ? 'Your test workspace' : 'Local workspace'}</strong><small>Engineering workspace</small></div></div>
-      <nav aria-label="Workspace">
-        <button className={view === 'inbox' ? 'active' : ''} onClick={() => navigate('inbox')}><Inbox size={18} />Case inbox<span className="nav-count">{cases.length}</span></button>
-        <button className={view === 'memory' ? 'active' : ''} onClick={() => navigate('memory')}><Database size={18} />Project memory<span className="nav-count">{memories.length}</span></button>
-        <button className={view === 'connections' ? 'active' : ''} onClick={() => navigate('connections')}><Settings2 size={18} />Connections</button>
-      </nav>
-      <div className="sidebar-note"><div className="sidebar-relay" aria-hidden="true"><span/><i/><span/><i/><span/></div><p>Context worth passing on.</p><small>Evidence stays attached.<br/>Every finding has a source.</small></div>
-      <div className="sidebar-footer"><span className={health ? 'online-dot' : 'offline-dot'} />{health ? 'Workspace connected' : 'Connecting to workspace'}<span>v0.2</span></div>
-    </aside>
-    <main id="workspace" className="workspace">
-      <header className="topbar"><div className="breadcrumbs">Workspace<ChevronRight size={14} /><strong>{view === 'inbox' ? 'Case inbox' : view === 'memory' ? 'Project memory' : 'Connections'}</strong></div>
-        <div className="topbar-actions"><span className="local-badge"><FlaskConical size={14} />{isGuest ? 'Public beta' : 'Local workspace'}</span><ThemeToggle/></div></header>
-      <div className="page-title"><div><h1>{view === 'inbox' ? 'Keep the next step in context.' : view === 'memory' ? 'What your team has learned.' : 'Connect the workflow.'}</h1><p>{view === 'inbox' ? 'Investigate the report, preserve what happened, and prepare the next agent.' : view === 'memory' ? 'Reviewed observations from this workspace, with their original evidence.' : 'The local workflow works now. Agent and channel connections come next.'}</p></div>
-        <ShortcutHint label="Create a report" keys="Shift N"><Button onClick={() => openModal('report')} disabled={!health}><Plus />New report</Button></ShortcutHint></div>
-      {isGuest && <BetaFeedback/>}
-      {error && <div className="notice error" role="alert">{error}<Button variant="ghost" size="sm" onClick={() => void action(openWorkspace)}>Retry connection</Button></div>}
-      {notice && <div ref={noticeRef} className="notice" role="status"><Check size={16} />{notice}</div>}
-      {loading ? <div className="loading" role="status"><span>Opening your workspace…</span><div className="workspace-skeleton" aria-hidden="true"><div/><div/><div/></div></div> : <>
-      {view === 'inbox' && <>
-        <div className="summary-strip"><span><strong>{cases.filter(item => item.status === 'new').length}</strong> awaiting an observation</span><span><strong>{cases.filter(item => item.status === 'reproduced').length}</strong> reproduced</span><span><strong>{memories.length}</strong> reviewed memories</span><span className="summary-end"><Radio size={14} />Observations are recorded by your team</span></div>
-        <div className={`case-workspace ${showCase ? 'show-case' : 'show-inbox'}`}>
-          <section className="inbox-panel" aria-label="Cases">
-            <div className="list-tools"><label className="search"><Search size={16}/><input ref={searchRef} aria-label="Search cases" placeholder="Find a case…" value={query} onChange={e => setQuery(e.target.value)} /></label>
-            <select aria-label="Filter cases by status" value={filter} onChange={e => setFilter(e.target.value)}><option value="all">All statuses</option>{Object.entries(labels).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></div>
-            <div className="list-label"><span>Reports</span><span>{filtered.length}</span></div>
-            {filtered.map(item => <button key={item.id} className={`case-row ${selectedId === item.id ? 'selected' : ''}`} onClick={() => {setSelectedId(item.id); setShowCase(true); setTab('evidence')}} aria-pressed={selectedId === item.id}>
-              <div><span className="case-id" title={item.id}>{item.id.slice(0,11)}</span><span className="case-row-project">{item.project}</span></div><h3>{item.title}</h3><div><Status value={item.status} /><small>{new Date(item.updated_at).toLocaleDateString(undefined, {month: 'short', day: 'numeric'})}</small></div>
-            </button>)}
-            {!filtered.length && <div className="list-empty"><Inbox size={26}/><p>{cases.length ? 'No matching reports.' : 'Your first case starts here.'}</p><small>{cases.length ? 'Try another search or status.' : 'Add a problem your team is working on.'}</small></div>}
-          </section>
-          {selected ? <section className="case-detail" aria-label="Selected case">
+  const titles:Record<View,string>={overview:'Investigation overview',inbox:'Case inbox',agents:'Agent controls',memory:'Project memory',handoffs:'Handoffs',connections:'Connections'}
+  return <AdminLayout view={view} navigate={navigate} search={focusCaseSearch} guest={isGuest} connected={!!health}>
+    <PageTitle title={titles[view]} description={view==='overview'?'Keep reports, agent work, and evidence in one place.':undefined} endContent={<ShortcutHint label="Create a report" keys="Shift N"><Button onClick={()=>openModal('report')} disabled={!health}><Plus/>New report</Button></ShortcutHint>}/>
+    {isGuest && <div className="mt-5"><BetaFeedback/></div>}
+    {error && <div className="notice error" role="alert">{error}<Button variant="ghost" size="sm" onClick={()=>void action(openWorkspace)}>Retry connection</Button></div>}
+    {notice && <div ref={noticeRef} className="notice" role="status"><Check size={16}/>{notice}</div>}
+    {loading ? <div className="loading" role="status">Opening your workspace…</div> : <>
+     {view==='overview' && <><AIDashboard cases={cases} memories={memories} guest={isGuest} navigate={navigate}/><div className="mt-5"><Table7 compact cases={cases} open={openCase} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter}/></div></>}
+     {view==='inbox' && <div className="mt-5">{showCase&&selected ? <section className="case-detail rounded-xl border bg-card" aria-label="Selected case">
             <button className="mobile-back" onClick={()=>setShowCase(false)}><ArrowLeft size={16}/>All reports<span>{cases.length}</span></button><div className="detail-heading"><div className="detail-kicker"><span title={selected.id}>{selected.id.slice(0,11)}</span><span>Revision {selected.revision}</span></div><h2>{selected.title}</h2><div className="detail-meta"><Status value={selected.status}/><span>{selected.project}</span><span>{time(selected.created_at)}</span></div></div>
             <Tabs className="case-tabs" value={tab} onValueChange={value=>{
               if(value==='evidence'||value==='context'||value==='handoff'||value==='activity') {
@@ -241,7 +219,7 @@ export default function App() {
               <div className="description-grid"><div><h3>Reported behavior</h3><p>{selected.description}</p></div><div><h3>Expected behavior</h3><p>{selected.expected}</p></div></div>
               <a className="target-link" href={selected.url} target="_blank" rel="noreferrer"><Link2 size={15}/><span>{selected.url}</span><ArrowRight size={15}/></a>
               <div className="section-label"><h3>Investigation record</h3><Button variant="outline" size="sm" onClick={() => openModal('observation')}><Plus/>Record observation</Button></div>
-              {!selected.observations.length && <div className="evidence-empty"><div className="evidence-symbol"><Search size={24}/></div><div><h4>The report is ready to investigate.</h4><p>Record what you observed in the application. Include the build and an evidence link when you reproduce the problem.</p><small>The browser agent is not connected yet.</small></div></div>}
+              {!selected.observations.length && <div className="evidence-empty"><div className="evidence-symbol"><Search size={24}/></div><div><h4>The report is ready to investigate.</h4><p>Record what you observed in the application. Include the build and an evidence link when you reproduce the problem.</p><small>Open Agent context to check the connected investigator.</small></div></div>}
               {[...selected.observations].reverse().map(observation => <article className="observation" key={observation.id}><div className="observation-top"><Status value={observation.result}/><small>{time(observation.at)}</small></div>{observation.build && observation.build !== selected.build && <p className="build-warning">Earlier build. Recheck this evidence against {selected.build}.</p>}<p>{observation.observed}</p>{observation.steps && <details><summary>Reproduction steps</summary><p className="preserve">{observation.steps}</p></details>}<dl><div><dt>Recorded by</dt><dd>{observation.author}</dd></div><div><dt>Build</dt><dd>{observation.build || 'Not supplied'}</dd></div></dl>{observation.evidence_url && <a className="evidence-link" href={observation.evidence_url} target="_blank" rel="noreferrer"><Link2 size={14}/>Open evidence</a>}<small className="attribution">Human-recorded observation. Repro Relay has not independently verified it.</small></article>)}
               <div className="section-label"><h3>Related project memory</h3><span className="subtle">Exact term lookup</span></div>
               {related.length ? related.map(memory => <button className="related-row" key={memory.id} onClick={() => setSelectedId(memory.case_id)}><BookOpen size={16}/><div><strong>{memory.title}</strong><small>{memory.case_id} · Reviewed by {memory.reviewer}</small></div><ChevronRight size={15}/></button>) : <p className="muted-paragraph">No matching reviewed observations yet. Memory grows as your team reviews evidence.</p>}
@@ -252,27 +230,26 @@ export default function App() {
             {tab === 'activity' && <CaseActivity events={selected.events}/>}
             </TabsContent>
             </Tabs>
-          </section> : <section className="welcome-panel"><div className="flow-illustration"><span><Inbox/></span><i/><span><Search/></span><i/><span><FileText/></span></div><h2>Give a bug somewhere to go.</h2><p>Start with a real report. Add what your team observed, then share a repair packet with the next person.</p><Button onClick={() => openModal('report')} disabled={!health}><Plus/>Create your first report</Button><div className="welcome-note"><ShieldCheck size={16}/>Evidence stays in your workspace.</div></section>}
-        </div>
-      </>}
-      {view === 'memory' && <section className="memory-view"><div className="memory-heading"><div><h2>Reviewed observations</h2><p>References for investigation. These entries do not establish a root cause or a verified fix.</p></div><label className="search"><Search size={16}/><input aria-label="Search memory" placeholder="Search observations…" value={query} onChange={e => setQuery(e.target.value)}/></label></div>
-        {memories.filter(memory => `${memory.title} ${memory.observation.observed}`.toLowerCase().includes(query.toLowerCase())).map(memory => <article className="memory-card" key={memory.id}><div className="memory-card-icon"><Database size={21}/></div><div className="memory-copy"><span className="subtle">{memory.project} · {memory.case_id} · Revision {memory.revision}</span><h3>{memory.title}</h3><p>{memory.observation.observed}</p><small>Reviewed by {memory.reviewer} · {time(memory.created_at)}</small></div><div className="memory-actions"><Button variant="outline" size="sm" onClick={() => {setSelectedId(memory.case_id); navigate('inbox'); setTab('evidence')}}>Open case</Button><Button variant="ghost" size="sm" disabled={busy} onClick={() => void action(async () => {await request(`/memories/${memory.id}`, {method: 'DELETE'}); await refresh(); setNotice('Memory removed from retrieval. The original case is preserved.')})}>Remove from memory</Button></div></article>)}
+          </section> : <Table7 cases={cases} open={openCase} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} searchRef={searchRef}/>}</div>}
+     {view==='agents' && <Suspense fallback={<Card className="mt-5"><CardContent role="status">Loading the investigation workspace…</CardContent></Card>}><InvestigationWorkspace cases={cases} selectedId={selectedId} onSelect={setSelectedId} guest={isGuest} onOpenCase={openCase} onNewReport={()=>openModal('report')} onRefresh={refresh}/></Suspense>}
+{view === 'memory' && <section className="memory-view"><div className="memory-heading"><div><h2>Reviewed observations</h2><p>References for investigation. These entries do not establish a root cause or a verified fix.</p></div><label className="search"><Search size={16}/><input aria-label="Search memory" placeholder="Search observations…" value={query} onChange={e => setQuery(e.target.value)}/></label></div>
+        {memories.filter(memory => `${memory.title} ${memory.observation.observed}`.toLowerCase().includes(query.toLowerCase())).map(memory => <article className="memory-card" key={memory.id}><div className="memory-card-icon"><Database size={21}/></div><div className="memory-copy"><span className="subtle">{memory.project} · {memory.case_id} · Revision {memory.revision}</span><h3>{memory.title}</h3><p>{memory.observation.observed}</p><small>Reviewed by {memory.reviewer} · {time(memory.created_at)}</small></div><div className="memory-actions"><Button variant="outline" size="sm" onClick={() => {setSelectedId(memory.case_id); setView('inbox'); setShowCase(true); setTab('evidence')}}>Open case</Button><Button variant="ghost" size="sm" disabled={busy} onClick={() => void action(async () => {await request(`/memories/${memory.id}`, {method: 'DELETE'}); await refresh(); setNotice('Memory removed from retrieval. The original case is preserved.')})}>Remove from memory</Button></div></article>)}
         {!memories.length && <div className="large-empty"><Database size={34}/><h3>Start with a reviewed reproduction.</h3><p>Record evidence on a case, then choose “Review for memory.” Its source and revision will stay attached.</p><Button variant="outline" onClick={() => navigate('inbox')}>Go to case inbox</Button></div>}
         {memories.length > 0 && !memories.some(memory => `${memory.title} ${memory.observation.observed}`.toLowerCase().includes(query.toLowerCase())) && <p className="muted-paragraph">No observations match this search.</p>}
       </section>}
-      {view === 'connections' && <section className="connections"><div className="connection-intro"><GitBranch size={26}/><div><h2>The foundation is ready for connections.</h2><p>Case storage, context preparation, freshness checks, and exports work locally. The integrations below are the next milestones.</p></div></div>{[
-        ['Local workspace', 'Rust API, PostgreSQL history, reviewed memory, and versioned handoffs.', true],
-        ['Hermes run adapter', 'Start, monitor, stop, and reconcile a configured local Hermes run from Agent context. Check its live connection there.', !isGuest],
-        ['Plow Chat + Latch', 'Team intake, approved Mac/browser actions, and owner updates. Live integration is not exercised yet.', false],
-        ['Mem0', 'Semantic retrieval adapter. Exact lookup already works without an API key.', false],
-        ['GitHub', 'Reviewed issue creation. Export a Markdown packet manually today.', false],
-        ['Slack', 'Case-linked engineering updates. Outbound delivery is not implemented.', false],
-      ].map(([name,description,connected]) => <div className="connection-row" key={String(name)}><span className="connection-icon"><Braces size={20}/></span><div><h3>{name}</h3><p>{description}</p></div><span className={`connection-status ${connected ? 'connected' : ''}`}>{connected ? 'Available' : 'Not connected'}</span></div>)}</section>}
-      </>}
-      <footer className="page-footer"><span>Repro Relay</span><span>Evidence stays attached.</span><a href="https://github.com/lusknchars/repro-relay" target="_blank" rel="noreferrer">Project on GitHub</a></footer>
-    </main>
+     {view==='handoffs'&&<div className="mt-5 space-y-4">{cases.flatMap(c=>c.handoffs.map(h=><Card key={h.id} className="py-5"><CardContent className="flex flex-wrap items-center justify-between gap-4 px-5"><div><h2 className="text-sm font-medium">{c.title}</h2><p className="text-muted-foreground mt-1 text-xs">{h.role} · Revision {h.case_revision} · {h.status}</p><p className="text-muted-foreground mt-2 text-xs">{h.reason||'Check freshness before using this snapshot.'}</p></div><Button variant="outline" onClick={()=>{openCase(c);setTab('context')}}>Review handoff<ArrowRight/></Button></CardContent></Card>))}
+      {!cases.some(c=>c.handoffs.length)&&<Card><CardContent><h2 className="font-medium">No handoffs prepared yet.</h2><p className="text-muted-foreground my-3 text-sm">Open a case, choose Agent context, and prepare a role-specific snapshot.</p><Button variant="outline" onClick={()=>navigate('inbox')}>Go to case inbox</Button></CardContent></Card>}
+     </div>}
+     {view==='connections'&&<div className="mt-5 grid gap-4 md:grid-cols-2">{[
+      [isGuest?'Guest workspace':'Local workspace','Rust API, PostgreSQL history, reviewed memory, and versioned handoffs.',health?'Available':'Disconnected'],
+      ['Hermes investigator','Start, monitor, stop, and reconcile runs from Agent controls. Check the live runtime connection there.',isGuest?'Disabled for guests':'Check runtime in Agent controls'],
+      ['Plow Chat + Latch','Phone intake and approved Mac/browser actions still need a live integration test.','Not connected'],
+      ['Owner updates','Channel delivery and destination authorization are not implemented yet.','Not connected'],
+     ].map(([name,description,status])=><Card key={name} className="py-5"><CardHeader className="px-5"><CardTitle className="flex items-center gap-3">{name==='Plow Chat + Latch'&&<img src={plowLogo} alt="" width={60} height={32} className="h-8 w-[60px] shrink-0 rounded object-contain"/>}{name==='Hermes investigator'&&<img src={hermesLogo} alt="" width={32} height={32} className="size-8 shrink-0 rounded bg-white object-contain"/>}{name}</CardTitle><CardDescription>{description}</CardDescription></CardHeader><CardContent className="flex items-center justify-between px-5"><Badge variant="outline">{status}</Badge>{name==='Hermes investigator'&&<Button variant="outline" size="sm" onClick={()=>navigate('agents')}>Agent controls<ArrowRight/></Button>}</CardContent></Card>)}</div>}
+    </>}
     {modal === 'report' && <Modal title="New bug report" close={() => !busy && setModal(null)}><form onSubmit={createReport}><p className="form-intro">Describe a real problem and what should happen instead.</p><Field label="Report title"><input name="title" required minLength={3} maxLength={160} placeholder="CSV export stops after changing the date range" autoFocus/></Field><div className="form-grid"><Field label="Project"><input name="project" required maxLength={80} placeholder="Your application"/></Field><Field label="Application URL"><input name="url" type="url" required placeholder="https://staging.example.com"/></Field></div><Field label="Current build" hint="Optional now. Required when you record a reproduction."><input name="build" maxLength={160} placeholder="Commit or build identifier"/></Field><Field label="Reported behavior"><textarea name="description" required maxLength={8000} rows={3} placeholder="What happened, and when?"/></Field><Field label="Expected behavior"><textarea name="expected" required maxLength={8000} rows={2} placeholder="What should the application do?"/></Field>{error && <p className="form-error" role="alert">{error}</p>}<div className="dialog-footer"><Button type="button" variant="ghost" onClick={() => setModal(null)} disabled={busy}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save report'}</Button></div></form></Modal>}
     {modal === 'observation' && selected && <Modal title="Record an observation" close={() => !busy && setModal(null)}><form onSubmit={recordObservation}><p className="form-intro">Record what you actually observed. A reproduction needs evidence, steps, and a build.</p><div className="form-grid"><Field label="Result"><select name="result" value={result} onChange={e => setResult(e.target.value as Result)}>{Object.entries(labels).filter(([value]) => value !== 'new').map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></Field><Field label="Recorded by"><input name="author" required minLength={2} maxLength={80} placeholder="Your name"/></Field></div><Field label="What you observed"><textarea name="observed" required maxLength={8000} rows={3}/></Field><Field label="Steps taken"><textarea name="steps" required={result === 'reproduced'} maxLength={8000} rows={3} placeholder="1. Open the report…"/></Field><div className="form-grid"><Field label="Build or revision"><input name="build" defaultValue={selected.build} required={result === 'reproduced'} maxLength={160} placeholder="Commit or build identifier"/></Field><Field label="Evidence URL"><input name="evidence_url" type="url" required={result === 'reproduced'} placeholder="Link to screenshot, trace, or recording"/></Field></div>{error && <p className="form-error" role="alert">{error}</p>}<div className="dialog-footer"><Button type="button" variant="ghost" disabled={busy} onClick={() => setModal(null)}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save observation'}</Button></div></form></Modal>}
     {modal === 'review' && selected && <Modal title="Review for project memory" close={() => !busy && setModal(null)}><form onSubmit={publishMemory}><p className="form-intro">Other investigations can retrieve this observation, its evidence, and this case revision. It will be labeled as human-reviewed.</p><div className="review-excerpt"><strong>{selected.title}</strong><p>{selected.observations.at(-1)?.observed}</p></div><Field label="Reviewed by"><input name="reviewer" required minLength={2} maxLength={80} placeholder="Your name" autoFocus/></Field><label className="check-field"><input type="checkbox" required/>I reviewed the linked evidence and its applicability to this build.</label>{error && <p className="form-error" role="alert">{error}</p>}<div className="dialog-footer"><Button type="button" variant="ghost" disabled={busy} onClick={() => setModal(null)}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? 'Publishing…' : 'Publish reviewed memory'}</Button></div></form></Modal>}
-  </div>
+
+  </AdminLayout>
 }

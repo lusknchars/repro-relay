@@ -11,7 +11,9 @@
     "tauri": "tauri",
     "test:e2e": "playwright test",
     "test:guest": "playwright test --config playwright.guest.config.ts",
-    "test:runner": "playwright test --config playwright.runner.config.ts"
+    "test:runner": "playwright test --config playwright.runner.config.ts",
+    "test:compatibility": "playwright test --config playwright.compatibility.config.ts --project=chromium",
+    "test:edge": "playwright test --config playwright.compatibility.config.ts --project=edge"
   },
   "dependencies": {
     "@gsap/react": "2.1.2",
@@ -24,7 +26,9 @@
     "radix-ui": "1.6.7",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "tailwind-merge": "3.6.0"
+    "recharts": "^3.8.0",
+    "tailwind-merge": "3.6.0",
+    "three": "^0.186.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
@@ -33,6 +37,7 @@
     "@types/node": "22.20.2",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
+    "@types/three": "^0.186.0",
     "@vitejs/plugin-react": "6.1.1",
     "tailwindcss": "4.3.3",
     "typescript": "7.0.2",

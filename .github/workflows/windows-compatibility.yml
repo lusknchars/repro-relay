@@ -1,0 +1,31 @@
+name: Windows compatibility
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  edge-and-desktop:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci --prefix web
+      - run: npm run build --prefix web
+      - name: Install Microsoft Edge for the isolated runner
+        working-directory: web
+        run: npx playwright install msedge
+      - name: Exercise the investigation UI in Edge on Windows
+        run: npm run test:edge --prefix web
+      - name: Check native Windows desktop compilation
+        run: cargo check -p relay-desktop
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-edge-compatibility-results
+          path: web/test-results/compatibility-artifacts
+          if-no-files-found: ignore

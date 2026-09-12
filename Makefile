@@ -27,6 +27,7 @@ check:
 	npm run test:e2e --prefix web
 	npm run test:guest --prefix web
 	npm run test:runner --prefix web
+	npm run test:compatibility --prefix web
 
 desktop:
 	npm run tauri --prefix web -- dev
