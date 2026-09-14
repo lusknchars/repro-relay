@@ -1,9 +1,6 @@
 name: iPhone
+# iPhone work is deferred; retain an explicit manual verification path.
 on:
-  push:
-    paths: ['apple/**', '.github/workflows/apple.yml']
-  pull_request:
-    paths: ['apple/**', '.github/workflows/apple.yml']
   workflow_dispatch:
 permissions:
   contents: read

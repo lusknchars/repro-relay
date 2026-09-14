@@ -22,6 +22,21 @@ jobs:
         run: npx playwright install msedge
       - name: Exercise the investigation UI in Edge on Windows
         run: npm run test:edge --prefix web
+      - name: Start isolated PostgreSQL for backend browser tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path "$env:PGBIN/pg_ctl.exe")) { throw 'PostgreSQL tools are missing from the runner.' }
+          $env:PGBIN | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          $testData = Join-Path $env:RUNNER_TEMP 'relay-postgres'
+          & "$env:PGBIN/initdb.exe" -D $testData -U relay -A trust --no-locale
+          if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL initialization failed.' }
+          & "$env:PGBIN/pg_ctl.exe" -D $testData -l "$env:RUNNER_TEMP/relay-postgres.log" -o '-h 127.0.0.1 -p 55478' -w start
+          if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL startup failed.' }
+          & "$env:PGBIN/createdb.exe" -h 127.0.0.1 -p 55478 -U relay relay
+          if ($LASTEXITCODE -ne 0) { throw 'Relay database creation failed.' }
+      - name: Build the Rust API used by frontend tests
+        run: cargo build -p relay-api
       - name: Exercise the supplied default frontend in Edge on Windows
         run: npm run test:reptest --prefix web
         env:

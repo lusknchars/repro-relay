@@ -4,11 +4,14 @@ import XCTest
 final class ReproRelayUITests: XCTestCase {
     private var app: XCUIApplication!
 
-    override func setUpWithError() throws {
-        continueAfterFailure = false
-        app = XCUIApplication()
-        app.launchArguments = ["--ui-testing", "--reset-simulation"]
-        app.launch()
+    override func setUp() async throws {
+        try await super.setUp()
+        await MainActor.run {
+            continueAfterFailure = false
+            app = XCUIApplication()
+            app.launchArguments = ["--ui-testing", "--reset-simulation"]
+            app.launch()
+        }
     }
 
     private func reveal(_ element: XCUIElement) {

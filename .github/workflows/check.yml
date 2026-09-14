@@ -24,7 +24,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - name: Install PostgreSQL client tools
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
       - run: npm ci --prefix web
       - run: npm ci --prefix web/reptest
       - run: npm exec --prefix web -- playwright install --with-deps chromium
+      - name: Test fresh database bootstrap
+        run: node --test scripts/prepare-e2e-db.test.mjs
       - run: make check
