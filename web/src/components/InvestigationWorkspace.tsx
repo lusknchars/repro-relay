@@ -216,6 +216,7 @@ function CaseInvestigation({ item, guest, onOpenCase, session, onRefresh }: { it
       {pending && !busy && <div className="iw-warning"><p>A {pending.label} request has an unconfirmed outcome. Its original request is retained.</p><Button variant="outline" onClick={() => void submit(pending)}><RefreshCw />Retry pending request</Button></div>}
       <div className="iw-problem"><div><span className="iw-eyebrow">REPORTED PROBLEM</span><p>{item.description || 'No problem description was supplied.'}</p></div><div><span className="iw-eyebrow">EXPECTED BEHAVIOR</span><p>{item.expected || 'No expected behavior was supplied.'}</p></div></div>
       {runs.length > 0 && <label className="iw-field iw-history-picker"><span><History aria-hidden="true" />Investigation history</span><select aria-label="Investigation history" value={current?.id || ''} onChange={event => selectRun(event.target.value)}>{runs.map((run, index) => <option key={run.id} value={run.id}>{index === 0 ? 'Latest · ' : ''}{date(run.created_at)} · {runLabels[run.status] || run.status}</option>)}</select></label>}
+      {current && <InvestigationCost key={current.id} run={current} runs={runs} />}
       {current ? <>
         {stale && <div className="iw-warning"><strong>Source context has changed</strong><p>This investigation used build {current.build}, revision {current.case_revision}. The case is now on build {item.build || 'unnamed'}, revision {item.revision}. Its proposal cannot be reviewed as current evidence.</p></div>}
         <div className="iw-section-heading"><h3>{localValidation ? 'Validation results' : 'Agent findings'}</h3><span className="iw-tag">{latestReview ? reviewLabels[latestReview.decision] : localValidation ? 'Locally recorded results' : 'Agent proposal'}</span></div>
@@ -233,7 +234,6 @@ function CaseInvestigation({ item, guest, onOpenCase, session, onRefresh }: { it
       }) : <p className="iw-caption">No human observations have been recorded for this case.</p>}<Button variant="outline" onClick={() => onOpenCase(item)}>Record an observation<ArrowRight /></Button></details>
     </section>
     <aside className="iw-context" aria-label="Investigator context and controls">
-      {current && <InvestigationCost key={current.id} run={current} runs={runs} />}
       <div className="iw-context-heading"><span className="iw-eyebrow">NEXT INVESTIGATION</span><h2>What Hermes will receive</h2><p>Inspect the exact source context before starting.</p></div>
       <Button variant="outline" disabled={!!busy || !!pending} onClick={() => void refreshContext()}><RefreshCw />Refresh context</Button>
       {followUpReviewId && <Button variant="ghost" disabled={!!busy || !!pending} onClick={() => setExcludedReviewId(followUpReviewId)}>Use current case only</Button>}

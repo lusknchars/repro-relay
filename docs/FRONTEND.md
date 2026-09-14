@@ -6,6 +6,8 @@ Repro Relay uses the authenticated `@paceui/ultimate-dashboard-template` source 
 
 Web and Tauri render the same React, TypeScript, Vite, Tailwind application. PaceUI supplies the sidebar, sticky top bar, page title, footer, AI dashboard composition, statistic cards, chart cards, and table layout. Their source is in `web/src/components/templates/ultimate-dashboard` and `web/src/components/blocks/dashboard`.
 
+The overview starts with a guided tour invitation instead of directing new users immediately into automatic work. The seven-step tour visits Overview, Connections, Autonomous work, Case inbox, Agent controls, Project memory, and Handoffs in place. Back, Next, Skip, and Replay remain available without running operations. Tour state is saved separately for local and guest mode in browser storage; ordinary navigation stays available throughout.
+
 The seven views are Overview, Autonomous work, Case inbox, Agent controls, Project memory, Handoffs, and Connections. Navigation persists in the URL. Case detail opens from the table; All reports returns to the list. On mobile the template sidebar opens in a drawer.
 
 Autonomous work replaces the prompt-driven Sessions screen on the existing `view=sessions` route. Desktop shows automatic audit history, evidence and proposal decisions, and repository monitoring. Mobile switches between Activity, Review, and Monitor. No session title, project form, first prompt, continuation form, or direction composer remains. Earlier saved notes are preserved in the API and shown as the latest 40 previews under Earlier notes.
@@ -18,7 +20,7 @@ Agent controls now opens a three-column investigation workspace inspired by the 
 
 The evidence section reads paginated typed findings, journal events and artifacts from the backend. Opening a stored log shows its exact text, SHA-256, byte length and environment. Revoked content is unavailable. Local validation records display the supplied inspector's name and command context, separately from Hermes execution. Configuration, intake, delivery, and repair APIs are currently backend contracts; their full management views remain to be built inside the selected template.
 
-The selected investigation's side panel begins with [Cost and token inspection](HERMES-COST-INSPECTION.md). It shows runtime-reported cost and token categories, per-field observation times, changed-report history, case spending coverage, and run/source identity. Expandable details keep the report available beside the findings. Missing cost is distinct from a reported zero; imported local validation is excluded from Hermes spending. Web and desktop export the same JSON accounting report, with a native JSON save filter on desktop. This is reported telemetry, not provider billing reconciliation or a hard spending cap.
+The selected investigation's main column includes [Hermes usage and cost](HERMES-COST-INSPECTION.md). It shows inline token/cost history and per-investigation comparison charts with a Tokens / Cost · USD switch, then expandable runtime-reported cost and token categories, per-field observation times, changed-report history, case spending coverage, and run/source identity. Expandable details keep the report available beside the findings. Missing cost is distinct from a reported zero; imported local validation is excluded from Hermes spending. Web and desktop export the same JSON accounting report, with a native JSON save filter on desktop. This is reported telemetry, not provider billing reconciliation or a hard spending cap.
 
 ## Components and appearance
 

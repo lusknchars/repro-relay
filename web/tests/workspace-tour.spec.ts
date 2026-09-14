@@ -1,0 +1,38 @@
+import { test, expect } from '@playwright/test'
+
+test('workspace introduction teaches each page without executing work and can resume or skip', async ({ page }) => {
+  const writes: string[] = []
+  page.on('request', request => { if (request.url().includes('/api/v1/') && request.method() !== 'GET') writes.push(request.url()) })
+  await page.goto('/')
+  const guide = page.getByRole('region', { name: 'Workspace guide', exact: true })
+  await guide.getByRole('button', { name: 'Start guided tour' }).click()
+  await expect(guide).toContainText('Your workspace at a glance')
+  await expect(guide.getByRole('heading')).toBeFocused()
+  await guide.getByRole('button', { name: 'Next page' }).click()
+  await expect(page).toHaveURL(/view=connections/)
+  await expect(guide).toContainText('2 OF 7')
+  expect(await guide.evaluate(el => el.getBoundingClientRect().top)).toBeGreaterThanOrEqual(56)
+  await expect(page.getByRole('button', { name: 'Connect Plow Latch' })).toBeVisible()
+  await page.reload()
+  await expect(guide).toContainText('2 OF 7')
+  await guide.getByRole('button', { name: 'Back', exact: true }).click()
+  await expect(guide).toContainText('1 OF 7')
+  for (const view of ['connections', 'sessions', 'inbox', 'agents', 'memory', 'handoffs']) {
+    await guide.getByRole('button', { name: 'Next page' }).click()
+    await expect(page).toHaveURL(new RegExp(`view=${view}`))
+  }
+  await guide.getByRole('button', { name: 'Finish tour' }).click()
+  await expect(guide.getByRole('button', { name: 'Replay guided tour' })).toBeVisible()
+  await page.reload()
+  await guide.getByRole('button', { name: 'Replay guided tour' }).click()
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.setViewportSize({ width: 320, height: 844 })
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.screenshot({ path: 'test-results/workspace-tour-mobile.png' })
+  await guide.getByRole('button', { name: 'Skip tour' }).click()
+  await guide.getByRole('button', { name: 'Go to connections' }).click()
+  await expect(guide).toHaveCount(0)
+  await page.reload()
+  await expect(guide).toHaveCount(0)
+  expect(writes).toEqual([])
+})

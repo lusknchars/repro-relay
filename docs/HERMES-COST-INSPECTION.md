@@ -1,6 +1,10 @@
 # Hermes cost inspection
 
-Open Agent controls, select a case and investigation, then use **Cost and token inspection**. The panel shows the latest reported cost, token counters, reporting coverage across the case, and the selected run's source identity. Download cost report exports those readings, their history, the frozen context and its hash, coordinator events, and accounting limits as JSON. Web downloads a file; desktop uses its native save dialog.
+Open Agent controls and select a case and investigation. **Hermes usage and cost** is in the main investigation column. Switch between Tokens and Cost · USD to see the selected run's reporting history and a comparison of saved investigations in that case. Charts refresh through the existing three-second run poll. Expand Chart data for exact readings without downloading anything.
+
+Missing values leave gaps; they are not zero. A run with only a saved total shows one point with no invented observation time. Downward revisions remain visible. Imported local validation is excluded from Hermes comparisons. The token graph uses the reported total, not a sum of potentially overlapping counters.
+
+Token breakdown and model, reporting history, case spending coverage, and source identity remain available as expandable details. Export audit file contains the optional JSON download with readings, frozen context, coordinator events and accounting limits.
 
 ## What a number means
 

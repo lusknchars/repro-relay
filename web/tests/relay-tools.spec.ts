@@ -65,8 +65,9 @@ test('legacy preview registers tools and unsupported browsers retain normal guid
 test('overview gives direct routes and guest sessions never register local tools', async ({ page }) => {
   await mockWebMCP(page)
   await page.goto('/')
-  await page.getByLabel('Workspace guide').getByRole('button', { name: 'Open autonomous work', exact: true }).click()
-  await expect(page).toHaveURL(/view=sessions/)
+  await page.getByLabel('Workspace guide').getByRole('button', { name: 'Go to connections', exact: true }).click()
+  await expect(page).toHaveURL(/view=connections/)
+  await page.goto('/?view=sessions')
   await page.route('**/api/v1/session', route => route.fulfill({ json: { mode: 'guest', authenticated: true } }))
   await page.reload()
   expect(await page.evaluate(() => (window as unknown as { relayTestTools: Map<string, unknown> }).relayTestTools.size)).toBe(0)

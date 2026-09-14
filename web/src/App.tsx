@@ -1,5 +1,6 @@
 import { useRelayWebMCP } from './lib/webmcp'
 import { ApprovalButton, type ApprovalState } from './components/ui/approval-button'
+import { WorkspaceTour } from './components/WorkspaceTour'
 import { WorkspaceGuide } from './components/WorkspaceGuide'
 import { PlowConnection } from './components/PlowConnection'
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
@@ -218,7 +219,8 @@ export default function App() {
     {error && <div className="notice error" role="alert">{error}<Button variant="ghost" size="sm" onClick={()=>void action(openWorkspace)}>Retry connection</Button></div>}
     {notice && <div ref={noticeRef} className="notice" role="status"><Check size={16}/>{notice}</div>}
     {loading ? <div className="loading" role="status">Opening your workspace…</div> : <>
-     {view==='overview' && <><WorkspaceGuide navigate={navigate} browserTools={browserTools} guest={isGuest}/><AIDashboard cases={cases} memories={memories} guest={isGuest} navigate={navigate}/><div className="mt-5"><Table7 compact cases={cases} open={openCase} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter}/></div></>}
+     <WorkspaceTour key={isGuest ? 'guest' : 'local'} view={view} navigate={navigate} guest={isGuest}/>
+     {view==='overview' && <><AIDashboard cases={cases} memories={memories} guest={isGuest} navigate={navigate}/><div className="mt-5"><Table7 compact cases={cases} open={openCase} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter}/></div></>}
      {view==='inbox' && <div className="mt-5">{showCase&&selected ? <section className="case-detail rounded-xl border bg-card" aria-label="Selected case">
             <button className="mobile-back" onClick={()=>setShowCase(false)}><ArrowLeft size={16}/>All reports<span>{cases.length}</span></button><div className="detail-heading"><div className="detail-kicker"><span title={selected.id}>{selected.id.slice(0,11)}</span><span>Revision {selected.revision}</span></div><h2>{selected.title}</h2><div className="detail-meta"><Status value={selected.status}/><span>{selected.project}</span><span>{time(selected.created_at)}</span></div></div>
             <Tabs className="case-tabs" value={tab} onValueChange={value=>{
