@@ -90,3 +90,7 @@ Repro Relay's original code is MIT. PaceUI template source retains its product l
 The new `REPRO_MODE=guest` runtime serves the web UI and API from one public HTTPS origin. It requires `DATABASE_URL` and `PUBLIC_ORIGIN`, or Railway's generated domain variable. Each browser receives an isolated, seven-day test workspace. Guest quotas and a feedback form are included. Existing local records stay in the `local` workspace and cannot be read by hosted guests.
 
 See the [deployment plan and launch checklist](docs/deployment/public-beta.md). Run `make check` for both local and guest-browser workflows. `Dockerfile` and `railway.toml` package the web service; the Tauri app is excluded.
+
+## Local investigation and repair controls
+
+Run `./relay doctor` from this checkout, then `./relay cases` and `./relay --help`. The CLI reads the same records as the app, starts and watches configured Hermes investigations, prepares isolated Git worktrees, and dispatches approved repair stages. See [terminal setup and runtime requirements](integrations/relay-terminal/README.md). A worktree is a separate checkout, not an installed or sandboxed coding runtime.
