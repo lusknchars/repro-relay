@@ -13,7 +13,7 @@ export const AdminLayout = ({ children, view, navigate, search, guest = false, c
  <a className="skip-link" href="#workspace">Skip to workspace</a>
  <DemoAdminSidebar view={view} navigate={navigate} guest={guest} connected={connected}/>
  <SidebarInset className="min-w-0">
-  <Topbar view={view} search={search} guest={guest}/>
+  <Topbar navigate={navigate} view={view} search={search} guest={guest}/>
   <div id="workspace" tabIndex={-1} className={'flex min-w-0 flex-1 flex-col p-4 sm:p-5'+(view==='connections'?' configuration-workspace':'')}>
    {view==='connections'&&<div className="configuration-background" aria-hidden="true"><Suspense fallback={null}>
     <PerspectiveGrid

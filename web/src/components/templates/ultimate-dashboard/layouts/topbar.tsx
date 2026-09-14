@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import type { View } from './index';
-export function Topbar({view,search,guest}:{view:View;search:()=>void;guest:boolean}) {
+export function Topbar({view,search,guest,navigate}:{view:View;search:()=>void;guest:boolean;navigate:(view:View)=>void}) {
  return <header className="bg-background/80 sticky top-0 z-30 flex min-h-14 items-center justify-between border-b backdrop-blur-sm">
   <div className="flex items-center gap-2 px-4"><SidebarTrigger/>
    <Button variant="outline" size="sm" className="w-48 justify-between shadow-none max-md:hidden" onClick={search}>
@@ -14,6 +14,6 @@ export function Topbar({view,search,guest}:{view:View;search:()=>void;guest:bool
    </Button>
    <Button variant="ghost" size="icon-sm" className="md:hidden" aria-label="Find a case" onClick={search}><Search className="size-4"/></Button>
   </div>
-  <div className="flex items-center gap-2 px-4"><span className="text-muted-foreground hidden items-center gap-1.5 text-xs sm:flex"><Bot className="size-4"/>{guest?'Guest workspace':view==='agents'?'Investigator workspace':'Local workspace'}</span>{!guest && <AccountControl returnTo={(() => {const p=new URLSearchParams();p.set('view',view);const c=new URLSearchParams(window.location.search).get('case');if(c && ['agents','inbox'].includes(view))p.set('case',c);const a=new URLSearchParams(window.location.search).get('audit');if(a && view==='sessions')p.set('audit',a);return '/?'+p.toString()})()}/>}<ThemeToggle/></div>
+  <div className="flex items-center gap-2 px-4"><span className="text-muted-foreground hidden items-center gap-1.5 text-xs sm:flex"><Bot className="size-4"/>{guest?'Guest workspace':view==='agents'?'Investigator workspace':'Local workspace'}</span><ThemeToggle/>{!guest && <AccountControl navigate={navigate} returnTo={(() => {const p=new URLSearchParams();p.set('view',view);const c=new URLSearchParams(window.location.search).get('case');if(c && ['agents','inbox'].includes(view))p.set('case',c);const a=new URLSearchParams(window.location.search).get('audit');if(a && view==='sessions')p.set('audit',a);return '/?'+p.toString()})()}/>}</div>
  </header>
 }

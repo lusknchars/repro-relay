@@ -212,7 +212,6 @@ export default function App() {
   }
   function navigate(next: View) { setView(next); setShowCase(false); setQuery(''); setFilter('all'); setError(''); setNotice('') }
   function openInvestigation(item:Case) { navigate('agents'); setSelectedId(item.id) }
-  function triage(status:string) { navigate('inbox'); setFilter(status) }
   function openCase(item:Case) {setSelectedId(item.id);setView('inbox');setShowCase(true);setTab('evidence')}
   function focusCaseSearch(){setView('inbox');setShowCase(false);setFocusSearch(value=>value+1)}
   const selectedMemory = memories.find(item => item.case_id === selectedId)
@@ -229,7 +228,7 @@ export default function App() {
     {notice && <div ref={noticeRef} className="notice" role="status"><Check size={16}/>{notice}</div>}
     {loading ? <div className="loading" role="status">Opening your workspace…</div> : <>
      <WorkspaceTour key={isGuest ? 'guest' : 'local'} view={view} navigate={navigate} guest={isGuest}/>
-     {view==='overview' && <><AIDashboard cases={cases} memories={memories} guest={isGuest} navigate={navigate} triage={triage}/><div className="mt-5"><Table7 compact cases={cases} open={openCase} investigate={openInvestigation} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter}/></div></>}
+     {view==='overview' && <><AIDashboard cases={cases} guest={isGuest} navigate={navigate}/><div className="mt-5"><Table7 compact cases={cases} open={openCase} investigate={openInvestigation} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter}/></div></>}
      {view==='inbox' && <div className="mt-5">{showCase&&selected ? <section className="case-detail rounded-xl border bg-card" aria-label="Selected case">
             <button className="mobile-back" onClick={()=>setShowCase(false)}><ArrowLeft size={16}/>All reports<span>{cases.length}</span></button><div className="detail-heading"><div className="detail-kicker"><span title={selected.id}>{selected.id.slice(0,11)}</span><span>Revision {selected.revision}</span></div><h2>{selected.title}</h2><Button variant="outline" className="my-3 min-h-11" onClick={()=>openInvestigation(selected)}>View investigation<ArrowRight/></Button><div className="detail-meta"><Status value={selected.status}/><span>{selected.project}</span><span>{time(selected.created_at)}</span></div></div>
             <Tabs className="case-tabs" value={tab} onValueChange={value=>{

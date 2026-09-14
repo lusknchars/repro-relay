@@ -5,10 +5,10 @@ Relay supports one shared team per installation. Accounts attach to the existing
 ## Create the owner account
 
 1. Start the trusted local installation with `make dev`.
-2. Open `http://127.0.0.1:5178`, then **Account & team** in the top bar.
+2. Open `http://127.0.0.1:5178`, then the profile icon at the top right and **Create account**.
 3. Choose your display name, username and password. The first account becomes the owner. Additional accounts require invitations.
 
-Use 3–40 ASCII letters, numbers, underscores or hyphens for the username and 15–128 characters for the password. Usernames are case insensitive. Profiles contain a display name and a short description. There is no email field or email verification.
+Use 3–40 ASCII letters, numbers, underscores or hyphens for the username and 15–128 characters for the password. Usernames are case insensitive. Use **My profile** in the menu to edit your display name and short description. **Password & security** opens password settings. There is no email field or email verification.
 
 The desktop app opens account management in the browser on its local API server, `http://127.0.0.1:8178`. This uses browser session cookies without depending on cross-site cookies inside the native webview. The API must be running with a built frontend. Remote team sign-in currently runs in the web app; the native desktop client still connects to its local API.
 
@@ -16,7 +16,7 @@ Local mode trusts access from this computer. Signing out of a profile does not l
 
 ## Invite a teammate
 
-Open the case or saved audit you want to share, then **Account & team → Create invitation link → Copy invitation**. Share the link yourself. Relay does not send email or a Plow message from this control.
+Open the case or saved audit you want to share, then the profile icon at the top right and **Team & invitations → Create invitation link → Copy invitation**. Share the link yourself. Relay does not send email or a Plow message from this control.
 
 An invitation lasts 24 hours and admits one account. A teammate can create an account or sign in, accept the invitation, and reopen the selected case or audit. Once joined, they can bookmark that view and return after signing in again. The invitation secret is carried in a URL fragment and removed by navigation after acceptance. The server retains only its hash; the owner cannot recover the original link from invitation history.
 
