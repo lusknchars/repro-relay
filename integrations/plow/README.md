@@ -14,6 +14,8 @@ The adapter has protocol tests. Live activation, a real phone report, provider d
 
 ## Set up a line
 
+For a first-time Plow user, Latch's setup creates the account from the phone number that sends its displayed activation message. Finish that setup to link the Mac. A Connected Mac with zero agents is a valid intermediate state; it does not provide Relay with a line credential or a running investigator. The CLI login below is a separate authorization flow for the local agent tooling. Use the current code and destination displayed by each flow.
+
 Run Plow's official `plow-agents` tool. Its login flow requires an activation text from the account owner's phone. `--new-line` requests a new assistant line; omit that flag when using an existing line. Follow the printed activation instructions, then inspect the available lines.
 
 ```sh
