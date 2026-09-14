@@ -2,6 +2,20 @@
 
 Repro Relay connects support and operations reports to agent investigation and developer review. Its web and desktop clients share cases, recorded evidence, project memory, and engineering handoffs.
 
+## Start Relay
+
+Install and open Docker Desktop, then run this in Terminal:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/lusknchars/repro-relay/main/install.sh | sh
+```
+
+Relay opens at **http://127.0.0.1:8178** with a local administrator session. No signup, phone number, provider key, Node, Rust, Python or Git installation is required. The installer downloads the app, starts its database, and waits for readiness before opening the browser. A published image skips compilation; if it is unavailable, Docker builds the included source, which takes several minutes.
+
+Already downloaded the repository? Double-click **Start Relay.command** on macOS, or run `sh start.sh`. The packaged path currently opens the browser interface; the macOS app build is described below. Connect Hermes and optional tools from Settings when you need them. Installation does not start a model or connect external accounts.
+
+Records and settings survive restarts. Run the same command to reopen your installation. See [setup, stop, updates and sharing](docs/EASY-START.md). This is a private local workspace; cross-device team links require a shared HTTPS service.
+
 The web and desktop clients use the supplied Reptest interface with persisted cases, investigations, reviewed evidence, usage and connection checks from the Rust/PostgreSQL backend. Account setup opens inside the app. The previous client remains available for regression testing. See [connected behavior](docs/LIVE-WORKSPACE.md).
 
 For the next implementation work, use the [delivery protocol](docs/DELIVERY-PROTOCOL.md), [product depth review](docs/PRODUCT-DEPTH-REVIEW.md), [Orca/Warp interaction benchmark](docs/research/orca-warp-dashboard-benchmark.md), and the user-selected [Vercel configuration benchmark](docs/research/vercel-configuration-benchmark.md). The protocol defines resources, dependencies and acceptance evidence; it does not describe all of those capabilities as shipped.
@@ -14,7 +28,7 @@ The [SwiftUI iPhone app](apple/README.md) now implements the first isolated, tex
 
 The [local Plow bridge](integrations/plow/README.md) checks an authorized phone line, imports a selected owner report into Relay, and dispatches an exact approved update with durable receipt recovery. Setup requires Plow phone activation and a line-scoped credential. This adapter does not yet connect the SwiftUI simulation or implement live Hermes/Latch execution.
 
-## Run locally
+## Build the macOS app from source
 
 From your checkout, run:
 
@@ -34,7 +48,7 @@ Source builds require Python 3.9+, Node 24+, Rust stable, and Docker with Compos
 
 Linux and Windows use the web app by default. In Windows PowerShell, run `python relay setup --web`. Its interface and API share `http://127.0.0.1:8178`; signing in does not redirect to another address. Docker keeps local PostgreSQL data on port 55478 in the `repro-relay_relay-data` volume. Setup reuses a healthy running API and preserves the database and provider configuration. If you changed backend source while an older API is running, restart that service to load the new binary. A setup-started service records its PID and private log in `.data/setup/`.
 
-For an existing PostgreSQL server, export `DATABASE_URL` before setup. It then skips Docker. Environment variables are read from the process; `.env.example` is documentation, not an automatically loaded configuration file. This command configures a trusted local installation, not a public hosted deployment.
+For an existing PostgreSQL server, export `DATABASE_URL` before setup. It then skips Docker. Source setup reads a private `.env` as literal configuration, with existing process variables taking precedence. `.env.example` documents available variables. This command configures a trusted local installation, not a public hosted deployment.
 
 For hot-reload development, run `make dev` after setup. For tests, the existing `make setup` also installs Chromium and prepares the test database. See [account setup and sharing](docs/ACCOUNTS-AND-TEAM.md) for local versus hosted account access.
 

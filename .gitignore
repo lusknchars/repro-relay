@@ -22,3 +22,5 @@ web/src-tauri/gen/
 web/reptest/dist/
 web/reptest/*.tsbuildinfo
 web/legacy-dist/
+.relay-install
+.relay-image

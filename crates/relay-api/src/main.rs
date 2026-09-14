@@ -9,6 +9,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
     let hosting = relay_api::hosting::Hosting::from_env()?;
     let hosted = hosting.origin.is_some();
+    let address = listen_address(
+        hosted,
+        std::env::var("REPRO_LOCAL_CONTAINER").ok().as_deref(),
+        cfg!(target_os = "linux") && std::path::Path::new("/.dockerenv").exists(),
+    )?;
     let database = match std::env::var("DATABASE_URL") {
         Ok(value) => value,
         Err(_) if !hosted => relay_api::LOCAL_DATABASE.into(),
@@ -71,11 +76,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .or_else(|_| std::env::var("REPRO_PORT"))
         .unwrap_or_else(|_| "8178".into())
         .parse()?;
-    let address = if hosted {
-        std::net::Ipv4Addr::UNSPECIFIED
-    } else {
-        std::net::Ipv4Addr::LOCALHOST
-    };
     let listener = tokio::net::TcpListener::bind((address, port)).await?;
     tracing::info!(port, mode = hosting.mode(), "Repro Relay API ready");
     axum::serve(listener, relay_api::app_with_runner(pool, hosting, runner))
@@ -88,6 +88,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     recovery_worker.abort();
     Ok(())
 }
+// Container loopback cannot receive Docker's published-port traffic. Only the
+// local Compose package opts in, with a host-loopback port mapping. This does
+// not change request origin checks or turn local mode into a hosted service.
+fn listen_address(
+    hosted: bool,
+    container: Option<&str>,
+    inside_docker: bool,
+) -> Result<std::net::Ipv4Addr, &'static str> {
+    match (hosted, container, inside_docker) {
+        (_, None | Some("0"), _) => Ok(if hosted {
+            std::net::Ipv4Addr::UNSPECIFIED
+        } else {
+            std::net::Ipv4Addr::LOCALHOST
+        }),
+        (false, Some("1"), true) => Ok(std::net::Ipv4Addr::UNSPECIFIED),
+        _ => Err(
+            "REPRO_LOCAL_CONTAINER=1 is only supported in local-mode Docker. Use the supplied loopback-only compose.local.yaml.",
+        ),
+    }
+}
+
 async fn shutdown() {
     #[cfg(unix)]
     {
@@ -99,5 +120,24 @@ async fn shutdown() {
     #[cfg(not(unix))]
     {
         let _ = tokio::signal::ctrl_c().await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::listen_address;
+    use std::net::Ipv4Addr;
+
+    #[test]
+    fn container_listening_requires_explicit_local_docker_opt_in() {
+        assert_eq!(listen_address(false, None, true), Ok(Ipv4Addr::LOCALHOST));
+        assert_eq!(
+            listen_address(false, Some("1"), true),
+            Ok(Ipv4Addr::UNSPECIFIED)
+        );
+        assert!(listen_address(false, Some("1"), false).is_err());
+        assert!(listen_address(true, Some("1"), true).is_err());
+        assert!(listen_address(false, Some("yes"), true).is_err());
+        assert_eq!(listen_address(true, None, false), Ok(Ipv4Addr::UNSPECIFIED));
     }
 }

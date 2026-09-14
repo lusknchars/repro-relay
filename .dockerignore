@@ -2,6 +2,13 @@
 .data
 .env
 .env.*
+**/.data
+**/.env
+**/.env.*
+**/__pycache__
+**/*credentials*
+.relay-image
+.relay-install
 .venv
 **/node_modules
 **/target

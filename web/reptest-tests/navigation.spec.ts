@@ -27,7 +27,8 @@ test('real case, bounded investigation, persisted review and inline usage in sup
  await page.getByRole('button',{name:'Customize appearance'}).click();await page.getByRole('dialog').getByRole('radio',{name:'Violet',exact:true}).click();await page.getByRole('dialog').getByRole('button',{name:'Close',exact:true}).click();await page.reload();await expect(page.locator('html')).toHaveAttribute('data-accent','violet');
  await page.getByRole('button',{name:'Switch to dark mode'}).click();await expect(page.locator('html')).toHaveClass(/dark/);
  await page.setViewportSize({width:390,height:844});for(const name of ['Team','Reach','Usage','Settings','Work']){await page.getByRole('navigation',{name:'Phone navigation'}).getByRole('button',{name,exact:true}).click();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}
- if (await page.getByRole('button',{name:'Work history',exact:true}).isVisible()) await page.getByRole('button',{name:'Work history',exact:true}).click();
+ // Work loads after navigation; click waits for its mobile back control.
+ await page.getByRole('button',{name:'Work history',exact:true}).click();
  await page.getByRole('region',{name:'Work history'}).getByRole('button',{name:new RegExp(item.title)}).click(); await expect(page.getByRole('heading',{name:item.title,exact:true})).toBeVisible(); expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  expect(errors).toEqual([]);
 });

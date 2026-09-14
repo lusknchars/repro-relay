@@ -16,10 +16,14 @@ COPY web/src-tauri/build.rs web/src-tauri/build.rs
 RUN cargo build --locked --release -p relay-api
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+LABEL org.opencontainers.image.source="https://github.com/lusknchars/repro-relay"
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl python3 && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=backend /build/target/release/relay-api /app/relay-api
 COPY --from=frontend /build/web/dist /app/web/dist
+COPY integrations/ /app/integrations/
+COPY relay /app/relay
+RUN mkdir -p /app/.data && chown 65532:65532 /app/.data
 ENV REPRO_MODE=guest
 ENV PORT=8080
 USER 65532:65532
