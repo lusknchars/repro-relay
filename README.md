@@ -2,7 +2,7 @@
 
 Repro Relay connects support and operations reports to agent investigation and developer review. Its web and desktop clients share cases, recorded evidence, project memory, and engineering handoffs.
 
-The default web and desktop clients now use the actual user-supplied Reptest frontend. Its screens, styles and sample data are copied unchanged. It is a design prototype; its displayed agent activity, costs and connections are not live. The existing backend and its working client are retained separately. See [the frontend and desktop integration record](docs/REPTEST-ADAPTATION.md).
+The default web and desktop clients now use the actual user-supplied Reptest frontend. Its supplied layout and sample data are preserved, with the user-provided Repro Relay mark for branding. It is a design prototype; its displayed agent activity, costs and connections are not live. The existing backend and its working client are retained separately. See [the frontend and desktop integration record](docs/REPTEST-ADAPTATION.md).
 
 For the next implementation work, use the [delivery protocol](docs/DELIVERY-PROTOCOL.md), [product depth review](docs/PRODUCT-DEPTH-REVIEW.md), [Orca/Warp interaction benchmark](docs/research/orca-warp-dashboard-benchmark.md), and the user-selected [Vercel configuration benchmark](docs/research/vercel-configuration-benchmark.md). The protocol defines resources, dependencies and acceptance evidence; it does not describe all of those capabilities as shipped.
 

@@ -2,7 +2,7 @@
 
 ## Current default: supplied Reptest files
 
-The default web and Tauri clients now render the actual user-supplied ZIP from `web/reptest`, without the prior adaptation. See [source fidelity, commands and integration boundaries](REPTEST-ADAPTATION.md). The supplied screens and sample data are unchanged. Their backend connections are still pending. The previous working client is retained under `web/src` and `dev:legacy` for integration and regression testing.
+The default web and Tauri clients now render the actual user-supplied ZIP from `web/reptest`, without the prior adaptation. See [source fidelity, commands and integration boundaries](REPTEST-ADAPTATION.md). The supplied layout and sample data are preserved. The user-supplied Repro Relay mark now replaces the RR placeholder, using black in light mode and white in dark mode; the favicon and desktop app icon use the same mark. Their backend connections are still pending. The previous working client is retained under `web/src` and `dev:legacy` for integration and regression testing.
 
 ## Previous client, retained for backend integration
 

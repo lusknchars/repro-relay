@@ -79,7 +79,13 @@ export function Shell({ route, onRoute, onOpenCustomizer, children }: { route: R
       aria-label="Primary navigation"
     >
       <div className={cn("flex h-12 items-center gap-2 px-3", collapsed && "justify-center px-0")}>
-        <div className="grid h-6 w-6 flex-none place-items-center rounded-md bg-accent text-accent-foreground text-[11px] font-bold">RR</div>
+        <img
+          src={`/brand/repro-relay-mark-${resolvedMode === "dark" ? "white" : "black"}.png`}
+          alt={collapsed ? "Repro Relay" : ""}
+          width={24}
+          height={24}
+          className="h-6 w-6 flex-none object-contain"
+        />
         {!collapsed && (
           <div className="min-w-0 leading-tight">
             <div className="truncate text-sm font-semibold">Repro Relay</div>

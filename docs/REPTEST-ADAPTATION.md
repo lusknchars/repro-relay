@@ -1,8 +1,8 @@
 # Supplied Reptest frontend and desktop
 
-The initial adaptation at `f4e4656` was rejected because it changed the supplied composition. The default web and macOS desktop frontend now uses the actual `reptest.zip` files in `web/reptest`, including its six screens, components, styles, theme provider and sample data. No Relay layout or CSS wraps these screens.
+The initial adaptation at `f4e4656` was rejected because it changed the supplied composition. The default web and macOS desktop frontend now uses the actual `reptest.zip` files in `web/reptest`, including its six screens, components, styles, theme provider and sample data. No Relay layout or CSS wraps these screens. The subsequent user-requested branding update replaces only the RR placeholder and adds the favicon; the original black/white PNGs and SVG are retained under `public/brand`.
 
-Source archive SHA-256: `e82b16132b20d333228267a2b97e0faa272612780ca40b94da73494a7df5452d`. The original source, HTML, package files, TypeScript configuration and Vite configuration are retained byte for byte. Generated TypeScript cache is excluded. Its own lockfile preserves the supplied React, icon and chart versions.
+Source archive SHA-256: `e82b16132b20d333228267a2b97e0faa272612780ca40b94da73494a7df5452d`. At initial import, the original source, HTML, package files, TypeScript configuration and Vite configuration were retained byte for byte. Later explicit branding edits are limited to the shell logo and HTML favicon. Generated TypeScript cache is excluded. Its own lockfile preserves the supplied React, icon and chart versions.
 
 `vite.relay.config.ts` is the only added integration configuration. It emits separate JS/CSS assets into `web/dist` so Tauri can retain its existing content security policy. It proxies the local API for later integration but the imported screens do not call it. The original single-file Vite configuration remains available in the supplied directory.
 
