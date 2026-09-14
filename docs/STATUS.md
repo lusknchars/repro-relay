@@ -1,5 +1,7 @@
 # Current milestone
 
+Designer handoff, September 14: [the UI/UX brief](DESIGNER-HANDOFF.md) defines a proposed unified Work workspace, connection and billing clarity, evidence-based decisions, context inspection, usage graphs, desktop tools and phone continuity. It separates current implementation from required backend work and future concepts. This is a design deliverable; no UI or runtime behavior changed.
+
 Optional Mem0 memory, September 14: one agent-mode account now provides separate Hermes and Pi working-note scopes. Notes are short, immutable, unverified and journaled locally before sending. Shared reviewed observations still come from Relay's current database records. Retrieval validates scope and exact note contents; forgotten notes stay hidden, and uncertain writes are not automatically repeated. Pi enables the two tools with `--memory mem0`; the dedicated Hermes profile adds them through `runtime.py enable-memory`. Provider authentication remains separate. See [setup and ownership](../integrations/mem0-memory/README.md).
 
 Live Mem0 signup, connection, short-note storage and separate-agent recall passed. Installed Hermes discovered both MCP tools without a model call. Mem0 billing is not yet included in Relay's usage charts, and token savings have not been measured. The account is unclaimed; the owner should run `~/.local/bin/mem0 init --email YOUR_EMAIL` to complete ownership. Hermes still needs its own provider sign-in before a live investigation.
