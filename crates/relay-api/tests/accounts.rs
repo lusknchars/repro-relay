@@ -7,6 +7,276 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use tower::ServiceExt;
 const PASSWORD: &str = "fixture-long-password-2026";
+
+#[sqlx::test(migrations = "./migrations")]
+async fn local_access_needs_no_credentials_and_cannot_bootstrap_a_remote_owner(pool: PgPool) {
+    let app = local(pool.clone());
+    let (s, _, c) = call(&app, false, "POST", "/account/local", "", json!({})).await;
+    assert_eq!(s, 200);
+    let c = cookie(&c);
+    let (_, profile, _) = call(&app, false, "GET", "/account", &c, Value::Null).await;
+    assert_eq!(profile["role"], "owner");
+    assert_eq!(profile["local_access"], true);
+    let (s, _, _) = call(&app, false, "POST", "/account/local", &c, json!({})).await;
+    assert_eq!(s, 200);
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM relay_accounts")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+    let shared = hosted(pool);
+    assert_eq!(
+        call(&shared, true, "POST", "/account/local", "", json!({}))
+            .await
+            .0,
+        403
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn invitation_link_joins_without_password_and_preserves_viewer_boundaries(pool: PgPool) {
+    let (local, owner) = bootstrap(&pool).await;
+    let shared = hosted(pool.clone());
+    let owner_remote = login(&shared, "owner").await;
+    let invitation = invite(&shared, &owner_remote, "/?view=team").await;
+    let join = json!({"token":token(&invitation),"name":"Link teammate"});
+    let (s, _, session) = call(&shared, true, "POST", "/team/join-link", "", join.clone()).await;
+    assert_eq!(s, 200);
+    let session = cookie(&session);
+    let (_, profile, _) = call(&shared, true, "GET", "/account", &session, Value::Null).await;
+    assert_eq!(profile["profile"]["name"], "Link teammate");
+    assert_eq!(profile["role"], "viewer");
+    assert_eq!(
+        call(&shared, true, "POST", "/team/join-link", "", join)
+            .await
+            .0,
+        403
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM relay_accounts")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        2
+    );
+    assert_eq!(
+        call(&shared, true, "POST", "/cases", &session, json!({}))
+            .await
+            .0,
+        403
+    );
+    assert_eq!(
+        call(&shared, true, "POST", "/chat/bridge", &session, json!({}))
+            .await
+            .0,
+        403
+    );
+    assert_eq!(
+        call(
+            &shared,
+            true,
+            "POST",
+            "/team/invites",
+            &session,
+            json!({"return_to":"/"})
+        )
+        .await
+        .0,
+        403
+    );
+    // A local browser with an invited identity is not silently promoted.
+    let local_viewer = session.replace("__Host-relay_account", "relay_account");
+    assert_eq!(
+        call(
+            &local,
+            false,
+            "POST",
+            "/account/local",
+            &local_viewer,
+            json!({})
+        )
+        .await
+        .0,
+        200
+    );
+    assert_eq!(
+        call(&local, false, "GET", "/account", &local_viewer, Value::Null)
+            .await
+            .1["role"],
+        "viewer"
+    );
+    assert_eq!(
+        call(&local, false, "POST", "/cases", &local_viewer, json!({}))
+            .await
+            .0,
+        403
+    );
+    let id = profile["profile"]["id"].as_str().unwrap();
+    assert_eq!(
+        call(
+            &local,
+            false,
+            "POST",
+            &format!("/team/members/{id}/remove"),
+            &owner,
+            json!({})
+        )
+        .await
+        .0,
+        200
+    );
+    assert_eq!(
+        call(&shared, true, "GET", "/chat", &session, Value::Null)
+            .await
+            .0,
+        401
+    );
+}
+
+async fn agent_chat(
+    app: &Router,
+    method: &str,
+    path: &str,
+    key: &str,
+    body: Value,
+) -> (StatusCode, Value) {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(method)
+                .uri(format!("/api/v1{path}"))
+                .header("host", "team.example.com")
+                .header("origin", "https://team.example.com")
+                .header("x-relay-chat-key", key)
+                .header("content-type", "application/json")
+                .body(if body.is_null() {
+                    Body::empty()
+                } else {
+                    Body::from(body.to_string())
+                })
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), 2_000_000).await.unwrap();
+    (status, serde_json::from_slice(&bytes).unwrap())
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn teammates_chat_with_one_revocable_hermes_capability_without_execution_rights(
+    pool: PgPool,
+) {
+    let (local, owner) = bootstrap(&pool).await;
+    let shared = hosted(pool.clone());
+    let owner_remote = login(&shared, "owner").await;
+    let invitation = invite(&shared, &owner_remote, "/?view=team").await;
+    let (_, _, viewer) = call(
+        &shared,
+        true,
+        "POST",
+        "/team/join-link",
+        "",
+        json!({"token":token(&invitation),"name":"Jo"}),
+    )
+    .await;
+    let viewer = cookie(&viewer);
+    let message =
+        json!({"id":uuid::Uuid::new_v4().to_string(),"body":"Help me prioritize today's todo"});
+    for _ in 0..2 {
+        assert_eq!(
+            call(&shared, true, "POST", "/chat", &viewer, message.clone())
+                .await
+                .0,
+            200
+        );
+    }
+    assert_eq!(
+        call(&shared, true, "GET", "/chat", &viewer, Value::Null)
+            .await
+            .1["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let (s, bridge, _) = call(&local, false, "POST", "/chat/bridge", &owner, json!({})).await;
+    assert_eq!(s, 200);
+    let key = bridge["token"].as_str().unwrap();
+    assert_eq!(
+        agent_chat(&shared, "GET", "/chat/pending", "", Value::Null)
+            .await
+            .0,
+        403
+    );
+    let (s, pending) = agent_chat(&shared, "GET", "/chat/pending", key, Value::Null).await;
+    assert_eq!(s, 200);
+    assert_eq!(pending["items"][0]["author"], "Jo");
+    let answer = json!({"request_id":message["id"],"reply_id":uuid::Uuid::new_v4().to_string(),"body":"Fixture reply from connected agent"});
+    for _ in 0..2 {
+        assert_eq!(
+            agent_chat(&shared, "POST", "/chat/replies", key, answer.clone())
+                .await
+                .0,
+            200
+        );
+    }
+    let (_, feed, _) = call(&shared, true, "GET", "/chat", &viewer, Value::Null).await;
+    assert_eq!(feed["items"][0]["reply"], answer["body"]);
+    assert_eq!(feed["connection"]["connected"], true);
+    assert!(!feed.to_string().contains(key));
+    let mut changed = answer;
+    changed["body"] = json!("Overwritten");
+    assert_eq!(
+        agent_chat(&shared, "POST", "/chat/replies", key, changed)
+            .await
+            .0,
+        409
+    );
+    // A chat capability is not a member session and cannot access work or execute.
+    assert_eq!(
+        agent_chat(&shared, "GET", "/workspace/runs", key, Value::Null)
+            .await
+            .0,
+        401
+    );
+    let (_, replacement, _) = call(&local, false, "POST", "/chat/bridge", &owner, json!({})).await;
+    assert_eq!(
+        agent_chat(&shared, "GET", "/chat/pending", key, Value::Null)
+            .await
+            .0,
+        403
+    );
+    let new_key = replacement["token"].as_str().unwrap();
+    assert_eq!(
+        agent_chat(&shared, "GET", "/chat/pending", new_key, Value::Null)
+            .await
+            .0,
+        200
+    );
+    assert_eq!(
+        call(&local, false, "DELETE", "/chat/bridge", &owner, Value::Null)
+            .await
+            .0,
+        200
+    );
+    assert_eq!(
+        agent_chat(&shared, "GET", "/chat/pending", new_key, Value::Null)
+            .await
+            .0,
+        403
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM reach_events WHERE event_type LIKE 'reach.chat.%'"
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        2
+    );
+}
 fn local(pool: PgPool) -> Router {
     relay_api::app(pool)
 }

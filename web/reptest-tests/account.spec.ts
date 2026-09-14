@@ -171,6 +171,11 @@ test("phone sign-in verifies before asking for a name and uses native account tr
       expect(command).toBe("account_request");
       calls.push(args.path);
       const body = args.body || {};
+      if (args.path === "/chat")
+        return {
+          status: 200,
+          body: { items: [], configured: false, connection: null },
+        };
       if (args.path === "/account/phone/start") {
         expect(body).toEqual({ phone: "+55 11 99999 9999" });
         return {

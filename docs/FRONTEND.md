@@ -1,5 +1,9 @@
 # Frontend design
 
+## Local access and the team Hermes
+
+Local startup creates/resumes an administrator session without a login form. Team invitations open a name-only join form. Team also contains one shared Hermes conversation with attributed requests, genuine pending/replied states, connection freshness, and administrator-only connection controls. Existing phone/password accounts remain a secondary access path. See [access boundaries and setup](LOCAL-ACCESS-AND-CHAT.md).
+
 ## Reach
 
 Reach listens to committed todo and meeting-action metadata every two seconds while open. The header reports connection/retry state; new events refresh the queue without replacing the user's open review. The terminal/agent disclosure includes a copyable listener command and explains the MCP event reader. The existing periodic brief refresh remains for team/context changes that do not emit todo events.
@@ -127,3 +131,5 @@ The user's dot-expand example is adapted in `ui/dot-expand-button.tsx` for works
 Run `make check` and `make desktop-build` after workflow changes. Browser coverage includes report capture, observations, memory, handoff freshness, URL persistence, guest isolation, theme persistence, keyboard commands, mobile layout, and fixture investigation controls. Screenshot checks cover the actual dashboard in both themes and mobile case detail. Browser tests do not establish native save-dialog behavior or live Hermes/Latch delivery.
 
 Connections also exposes `./relay doctor` for the local terminal controller. It can inspect case records, start/watch/stop a configured Hermes run, and prepare or dispatch approved repair work. The CLI shares backend records with Agent controls. Git worktree preparation is separate from runtime installation and does not grant a remote runtime access to a local path. See [terminal setup](../integrations/relay-terminal/README.md).
+
+The shell now includes a second, contextual sidebar with related destinations, recorded runtime availability, recent reports outside Work, and the current access role. It opens by default at 1280px or wider, remembers explicit show/hide choices, and stacks above the page when opened on smaller screens. Work retains its existing report list rather than duplicating that list in the context panel.

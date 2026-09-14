@@ -1,5 +1,7 @@
 # Phone sign-in
 
+Phone sign-in is optional. The current app opens local work without login and accepts teammates through name-only invitation links. Twilio is not needed for those paths. See [local access and Hermes chat](LOCAL-ACCESS-AND-CHAT.md).
+
 Open Account in the top-right corner. The first field is Phone number. After a valid text-message code, existing phone accounts sign in immediately; a new account asks for a display name. New teammates also need the workspace invitation. The first owner must be created on the local installation, as before.
 
 ## Connect SMS once

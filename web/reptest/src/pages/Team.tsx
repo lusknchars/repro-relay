@@ -1,4 +1,5 @@
 import { PhoneSignIn } from "@/components/phone-sign-in";
+import { HermesChat } from "@/components/hermes-chat";
 import { Contributions } from "@/components/contributions";
 import { TeamCommunication } from "@/components/team-communication";
 import type { ArchitectureRecord } from "./Architecture";
@@ -40,7 +41,9 @@ export function TeamPage({
   const workspace = useWorkspace();
   // Sign-in must remain usable when workspace data requires authentication.
   const accountState = useLoad(() => api<Account>("/account"), [], 15000);
-  const account = accountState.data;
+  const account = accountState.data?.authenticated
+    ? accountState.data
+    : workspace.data?.account || accountState.data;
   const [mode, setMode] = useState("choose");
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
@@ -121,7 +124,51 @@ export function TeamPage({
           <Button onClick={onArchitecture}>Open architecture</Button>
         </section>
       )}
-      {accountState.loading && !account ? (
+      {invite && account?.enabled ? (
+        <form
+          className="mx-auto grid w-full max-w-sm gap-4 rounded-lg border border-border bg-surface p-5"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void perform("join-link", async () => {
+              const joined = await api<{ return_to: string }>(
+                "/team/join-link",
+                "POST",
+                {
+                  token: invite,
+                  name: name.trim() || account.profile?.name || "Teammate",
+                },
+              );
+              setInvite("");
+              location.assign(joined.return_to);
+            });
+          }}
+        >
+          <h2 className="text-base font-semibold">Join the workspace</h2>
+          <p className="text-sm text-muted">
+            Your invitation gives you access to shared work and the
+            administrator’s Hermes agent. No password or phone number is needed.
+          </p>
+          {!account.authenticated && (
+            <label className="grid gap-1 text-sm">
+              Your name
+              <Input
+                required
+                maxLength={80}
+                autoComplete="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </label>
+          )}
+          <p className="text-xs text-muted">
+            This link admits one teammate. Access stays in this browser for
+            seven days. The administrator can revoke it.
+          </p>
+          <Button type="submit" disabled={!!busy}>
+            Join workspace
+          </Button>
+        </form>
+      ) : accountState.loading && !account ? (
         <p role="status">Loading account…</p>
       ) : accountState.error ? (
         <section className="mx-auto grid max-w-[320px] gap-4 py-8">
@@ -140,7 +187,35 @@ export function TeamPage({
         <p className="text-sm text-muted">
           Accounts are unavailable in this workspace mode.
         </p>
-      ) : !account.authenticated && mode === "choose" ? (
+      ) : !account.authenticated &&
+        account.local_access !== undefined &&
+        mode === "choose" ? (
+        <section className="grid gap-4 rounded-lg border border-border bg-surface p-5">
+          <h2 className="font-semibold">
+            {account.local_access
+              ? "Your local workspace"
+              : "Join with an invitation"}
+          </h2>
+          <p className="text-sm text-muted">
+            {account.local_access
+              ? "Use Relay on this computer without a login. Your administrator profile is stored locally."
+              : "Ask the workspace administrator for an invitation link. It opens the shared workspace without a password or phone verification."}
+          </p>
+          {account.local_access && (
+            <Button
+              disabled={!!busy}
+              onClick={() =>
+                void perform("local", () => api("/account/local", "POST", {}))
+              }
+            >
+              Open local workspace
+            </Button>
+          )}
+          <Button variant="ghost" onClick={() => setMode("phone")}>
+            Existing account access
+          </Button>
+        </section>
+      ) : !account.authenticated && (mode === "choose" || mode === "phone") ? (
         <PhoneSignIn
           account={account}
           invite={invite}
@@ -275,7 +350,12 @@ export function TeamPage({
             <h2 className="text-base font-semibold">{account.profile?.name}</h2>
             <Badge>{account.role}</Badge>
             <span className="text-sm text-muted">
-              {account.profile?.phone || `@${account.profile?.username}`}
+              {account.local_access && account.role === "owner"
+                ? "Local workspace · no login required"
+                : account.profile?.phone ||
+                  (account.profile?.username?.startsWith("link_")
+                    ? "Joined by invitation"
+                    : `@${account.profile?.username}`)}
             </span>
           </div>
           {account.session_persistent === false && (
@@ -284,18 +364,20 @@ export function TeamPage({
               unavailable; you will need to sign in again after closing the app.
             </p>
           )}
-          <Button
-            className="justify-self-start"
-            disabled={!!busy}
-            onClick={() =>
-              void perform("logout", async () => {
-                await api("/account/logout", "POST");
-                setMode("choose");
-              })
-            }
-          >
-            Sign out
-          </Button>
+          {!(account.local_access && account.role === "owner") && (
+            <Button
+              className="justify-self-start"
+              disabled={!!busy}
+              onClick={() =>
+                void perform("logout", async () => {
+                  await api("/account/logout", "POST");
+                  setMode("choose");
+                })
+              }
+            >
+              Sign out
+            </Button>
+          )}
           {invite && (
             <Button
               disabled={!!busy}
@@ -322,7 +404,8 @@ export function TeamPage({
                   >
                     <span>
                       {m.name}
-                      {!m.username.startsWith("phone_") && ` · @${m.username}`}
+                      {!/^(phone_|local_|link_)/.test(m.username) &&
+                        ` · @${m.username}`}
                     </span>
                     <Badge>{m.role}</Badge>
                   </li>
@@ -347,8 +430,9 @@ export function TeamPage({
                   })
                 }
               >
-                Create viewer invitation
+                Invite teammate by link
               </Button>
+              {account.local_access && <p className="text-xs text-muted">These invitation links open this local installation. Remote teammates need a shared HTTPS workspace.</p>}
               {link && (
                 <label className="grid gap-1 text-sm">
                   Invitation link
@@ -388,10 +472,7 @@ export function TeamPage({
         </section>
       )}
       {!accountOnly && account?.authenticated && (
-        <p className="text-xs text-muted">
-          Team chat is not connected. Investigation reports and run reviews
-          remain attached to their case in Work.
-        </p>
+        <HermesChat account={account} />
       )}
     </div>
   );

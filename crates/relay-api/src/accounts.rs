@@ -1,4 +1,5 @@
 //! Accounts for one self-hosted team. Local mode remains trusted loopback access.
+mod access;
 mod phone;
 use crate::{
     ApiError, ApiResult, domain,
@@ -77,13 +78,13 @@ pub async fn identity(pool: &PgPool, h: &HeaderMap, c: &Hosting) -> ApiResult<Op
     Ok(sqlx::query("SELECT s.account_id,m.role FROM account_sessions s LEFT JOIN team_members m ON m.account_id=s.account_id WHERE s.token_hash=$1 AND s.expires_at>now()")
        .bind(hash(t)).fetch_optional(pool).await?.map(|r|Identity{id:r.get("account_id"),role:r.get("role")}))
 }
-async fn require(pool: &PgPool, h: &HeaderMap, c: &Hosting) -> ApiResult<Identity> {
+pub(crate) async fn require(pool: &PgPool, h: &HeaderMap, c: &Hosting) -> ApiResult<Identity> {
     identity(pool, h, c).await?.ok_or(ApiError {
         status: StatusCode::UNAUTHORIZED,
         message: "Sign in to your Relay account.".into(),
     })
 }
-async fn owner(pool: &PgPool, h: &HeaderMap, c: &Hosting) -> ApiResult<Identity> {
+pub(crate) async fn owner(pool: &PgPool, h: &HeaderMap, c: &Hosting) -> ApiResult<Identity> {
     let i = require(pool, h, c).await?;
     if i.role.as_deref() != Some("owner") {
         return Err(denied(
@@ -104,6 +105,8 @@ fn available(c: &Hosting) -> ApiResult<()> {
 pub fn routes() -> Router<PgPool> {
     Router::new()
         .merge(phone::routes())
+        .route("/account/local", post(access::local))
+        .route("/team/join-link", post(access::join))
         .route("/account", get(profile).post(update_profile))
         .route("/account/register", post(register))
         .route("/account/login", post(login))
@@ -131,7 +134,7 @@ async fn profile(
             .await?;
     let Some(i) = identity(&pool, &h, &c).await? else {
         return Ok(Json(
-            json!({"enabled":true,"authenticated":false,"bootstrap_available":bootstrap && c.origin.is_none(),"shared":c.team,"phone_auth":phone_auth.status()}),
+            json!({"enabled":true,"authenticated":false,"local_access":c.origin.is_none(),"bootstrap_available":bootstrap && c.origin.is_none(),"shared":c.team,"phone_auth":phone_auth.status()}),
         ));
     };
     let r = sqlx::query("SELECT username,name,bio,phone FROM relay_accounts WHERE id=$1")
@@ -139,7 +142,7 @@ async fn profile(
         .fetch_one(&pool)
         .await?;
     Ok(Json(
-        json!({"enabled":true,"authenticated":true,"shared":c.team,"phone_auth":phone_auth.status(),"role":i.role,"profile":{"id":i.id,"username":r.get::<String,_>("username"),"name":r.get::<String,_>("name"),"bio":r.get::<String,_>("bio"),"phone":r.get::<Option<String>,_>("phone")}}),
+        json!({"enabled":true,"authenticated":true,"local_access":c.origin.is_none(),"shared":c.team,"phone_auth":phone_auth.status(),"role":i.role,"profile":{"id":i.id,"username":r.get::<String,_>("username"),"name":r.get::<String,_>("name"),"bio":r.get::<String,_>("bio"),"phone":r.get::<Option<String>,_>("phone")}}),
     ))
 }
 #[derive(Deserialize)]
@@ -478,6 +481,10 @@ async fn target(pool: &PgPool, value: &str) -> ApiResult<String> {
                     "architecture",
                     "calendar",
                     "monitoring",
+                    "reach",
+                    "work",
+                    "knowledge",
+                    "settings",
                 ]
                 .contains(&v.as_ref()) => {}
             "case" => {

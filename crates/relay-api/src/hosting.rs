@@ -165,6 +165,23 @@ pub async fn guard(
 ) -> Response {
     let path = request.uri().path().to_owned();
     if config.origin.is_none() {
+        let mutation = !matches!(
+            *request.method(),
+            axum::http::Method::GET | axum::http::Method::HEAD
+        );
+        if mutation
+            && !path.starts_with("/api/v1/account")
+            && !path.starts_with("/api/v1/team")
+            && path != "/api/v1/chat"
+        {
+            match crate::accounts::identity(&pool, request.headers(), &config).await {
+                Ok(Some(i)) if i.role.as_deref() != Some("owner") => return (
+                    StatusCode::FORBIDDEN, Json(json!({"detail":"Teammates can follow work and talk to Hermes. The administrator controls execution and settings."}))
+                ).into_response(),
+                Err(e) => return e.into_response(),
+                _ => {}
+            }
+        }
         if (path.starts_with("/api/v1/account") || path.starts_with("/api/v1/team"))
             && request.method() != axum::http::Method::GET
             && !request
@@ -212,7 +229,13 @@ pub async fn guard(
     }
     if config.team && path.starts_with("/api/v1/") && path != "/api/v1/session" {
         let account_route = path.starts_with("/api/v1/account") || path.starts_with("/api/v1/team");
-        if !account_route {
+        // These two agent endpoints validate their own scoped capability. They
+        // cannot read workspace APIs, change providers, or approve actions.
+        let chat_agent_route = matches!(
+            path.as_str(),
+            "/api/v1/chat/pending" | "/api/v1/chat/replies"
+        );
+        if !account_route && !chat_agent_route {
             let identity = match crate::accounts::identity(&pool, request.headers(), &config).await
             {
                 Ok(Some(i)) if i.role.is_some() => i,
@@ -225,7 +248,9 @@ pub async fn guard(
                     .into_response(),
                 Err(e) => return e.into_response(),
             };
-            if mutation && identity.role.as_deref() != Some("owner") {
+            let chat_request =
+                path == "/api/v1/chat" && request.method() == axum::http::Method::POST;
+            if mutation && !chat_request && identity.role.as_deref() != Some("owner") {
                 return (StatusCode::FORBIDDEN,Json(json!({"detail":"Viewer access can follow saved work. The owner controls changes and agent execution."}))).into_response();
             }
             if let Err(e) = rate_limit(&pool, &format!("account:{}", identity.id), 240).await {

@@ -6,6 +6,7 @@ pub mod autonomy;
 pub mod calendar;
 pub mod case_environment;
 pub mod channels;
+pub mod chat;
 pub mod communication;
 pub mod contributions;
 pub mod domain;
@@ -230,6 +231,7 @@ pub fn app_with_runner(pool: PgPool, hosting: Hosting, runner: runs::Runner) -> 
         .merge(contributions::routes())
         .merge(calendar::routes())
         .merge(reach::routes())
+        .merge(chat::routes())
         .merge(google_calendar::routes())
         .merge(monitoring::routes())
         .merge(automation::routes())

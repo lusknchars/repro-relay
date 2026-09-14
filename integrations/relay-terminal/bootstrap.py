@@ -172,7 +172,7 @@ def run_setup(args):
                     run(['open', str(ROOT / 'target/debug/bundle/macos/Repro Relay.app')], 'Opening Repro Relay')
                 else:
                     webbrowser.open(URL)
-            print('Ready. Open Account in the top-right corner to sign in or create your local account.')
+            print('Ready. Open your local workspace; no login or SMS setup is required. Add teammates through Team invitation links.')
             print('Desktop: target/debug/bundle/macos/Repro Relay.app' if desktop else 'Local app: ' + URL)
             print('Provider accounts are optional. Existing Plow, Pi and memory credentials are unchanged.')
             return 0

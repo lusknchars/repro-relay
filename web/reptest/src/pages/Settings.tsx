@@ -151,11 +151,11 @@ export function SettingsPage({
       </header>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
         <div className="grid gap-1">
-          <h2 className="text-sm font-semibold">Your account</h2>
+          <h2 className="text-sm font-semibold">Workspace access</h2>
           <p className="text-xs text-muted">
             {workspace.data?.account.profile?.name ||
-              "Sign in to manage your profile and team."}{" "}
-            Account sign-in is separate from tool access.
+              "Open locally or join with an invitation."}{" "}
+            Local work needs no login. The administrator manages the team's agent connections.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

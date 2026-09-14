@@ -19,18 +19,27 @@ export async function api<T>(
   body?: unknown,
   key?: string,
 ): Promise<T> {
-  if (desktop && /^\/(account|team)(\/|$)/.test(path)) {
+  if (desktop && /^\/(account|team|chat)(\/|$)/.test(path)) {
     const response = await invoke<{
       status: number;
       body: T & { detail?: string };
       session_persistent: boolean;
-    }>("account_request", { path, method, body: body ?? null }).catch((error) => {
-      throw new Error(typeof error === "string" ? error : "Account connection unavailable.");
-    });
+    }>("account_request", { path, method, body: body ?? null }).catch(
+      (error) => {
+        throw new Error(
+          typeof error === "string" ? error : "Account connection unavailable.",
+        );
+      },
+    );
     if (response.status < 200 || response.status >= 300) {
-      throw new Error(response.body?.detail || `Account request failed (${response.status}).`);
+      throw new Error(
+        response.body?.detail || `Account request failed (${response.status}).`,
+      );
     }
-    return { ...response.body, session_persistent: response.session_persistent };
+    return {
+      ...response.body,
+      session_persistent: response.session_persistent,
+    };
   }
   const response = await fetch(base + path, {
     method,
@@ -58,12 +67,19 @@ export type RunSummary = Pick<
 export type Account = {
   enabled: boolean;
   authenticated: boolean;
+  local_access?: boolean;
   phone_auth?: { available: boolean; provider: string };
   session_persistent?: boolean;
   bootstrap_available?: boolean;
   shared?: boolean;
   role?: string;
-  profile?: { id: string; username: string; name: string; bio: string; phone?: string | null };
+  profile?: {
+    id: string;
+    username: string;
+    name: string;
+    bio: string;
+    phone?: string | null;
+  };
 };
 export type Runner = { available: boolean; reason?: string };
 export function useLoad<T>(
@@ -134,13 +150,21 @@ const Workspace = createContext<ReturnType<
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const state = useLoad(
     async () => {
-      const [cases, runs, runner, account] = await Promise.all([
+      let account = await api<Account>("/account");
+      if (
+        account.local_access &&
+        !account.authenticated &&
+        !location.hash.startsWith("#invite=")
+      ) {
+        await api("/account/local", "POST", {});
+        account = await api<Account>("/account");
+      }
+      const [cases, runs, runner] = await Promise.all([
         api<Case[]>("/cases?limit=100&offset=0"),
         api<{ items: RunSummary[]; next_offset: number | null }>(
           "/workspace/runs",
         ),
         api<Runner>("/runner"),
-        api<Account>("/account"),
       ]);
       return {
         cases,

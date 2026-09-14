@@ -67,7 +67,10 @@ fn valid_token(value: &str) -> bool {
 }
 fn allowed(path: &str, method: &str) -> bool {
     if method == "GET" {
-        return matches!(path, "/account" | "/team");
+        return matches!(path, "/account" | "/team" | "/chat");
+    }
+    if method == "DELETE" {
+        return path == "/chat/bridge";
     }
     if method != "POST" {
         return false;
@@ -77,6 +80,7 @@ fn allowed(path: &str, method: &str) -> bool {
         "/account"
             | "/account/register"
             | "/account/login"
+            | "/account/local"
             | "/account/phone/start"
             | "/account/phone/verify"
             | "/account/phone/complete"
@@ -84,6 +88,9 @@ fn allowed(path: &str, method: &str) -> bool {
             | "/account/password"
             | "/team/invites"
             | "/team/join"
+            | "/team/join-link"
+            | "/chat"
+            | "/chat/bridge"
     ) {
         return true;
     }
@@ -143,10 +150,10 @@ impl AccountClient {
         let mut request = self
             .http
             .request(
-                if method == "GET" {
-                    Method::GET
-                } else {
-                    Method::POST
+                match method {
+                    "GET" => Method::GET,
+                    "DELETE" => Method::DELETE,
+                    _ => Method::POST,
                 },
                 format!("{}{path}", self.origin),
             )
@@ -181,7 +188,12 @@ impl AccountClient {
         while let Some(chunk) = response.chunk().await.map_err(|_| {
             "Account response was interrupted. Check your account before retrying.".to_owned()
         })? {
-            if bytes.len() + chunk.len() > LIMIT {
+            let limit = if path == "/chat" {
+                2 * 1024 * 1024
+            } else {
+                LIMIT
+            };
+            if bytes.len() + chunk.len() > limit {
                 return Err("Account response exceeded its size limit.".into());
             }
             bytes.extend_from_slice(&chunk);
@@ -249,6 +261,13 @@ mod tests {
         }
         assert!(allowed("/team/invites/INV-123/revoke", "POST"));
         assert!(!allowed("/account", "DELETE"));
+        assert!(allowed("/account/local", "POST"));
+        assert!(allowed("/team/join-link", "POST"));
+        assert!(allowed("/chat", "GET"));
+        assert!(allowed("/chat", "POST"));
+        assert!(allowed("/chat/bridge", "DELETE"));
+        assert!(!allowed("/chat/pending", "GET"));
+        assert!(!allowed("/chat/replies", "POST"));
         for path in [
             "/account/phone/start",
             "/account/phone/verify",

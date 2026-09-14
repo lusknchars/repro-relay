@@ -6,7 +6,7 @@ export const guideSteps: { route: Route; title: string; body: string }[] = [
   {
     route: "team",
     title: "Your account and team",
-    body: "Your profile identifies you in this installation. Owners invite teammates here; an invitation grants access to this team's saved work.",
+    body: "Local work opens without a login. Invite teammates by link; they enter a name and join the saved work and shared Hermes conversation. The administrator manages the agent and approves execution.",
   },
   {
     route: "settings",

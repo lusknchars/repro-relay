@@ -3,6 +3,7 @@ import { Activity, Radio, CalendarDays, Workflow, Bell, BookOpen, Menu, Messages
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/theme/ThemeProvider";
 import { Avatar, Badge, Kbd } from "@/components/ui";
+import { WorkspaceContext } from "./WorkspaceContext";
 import { useWorkspace } from "@/lib/live";
 
 export type Route = "work" | "reach" | "team" | "knowledge" | "usage" | "settings" | "setup" | "architecture" | "calendar" | "monitoring";
@@ -12,7 +13,7 @@ const NAV: { id: Route; label: string; icon: typeof Inbox; hint: string }[] = [
   { id: "reach", label: "Reach", icon: Radio, hint: "Call action items, daily todos and follow-ups" },
   { id: "architecture", label: "Architecture", icon: Workflow, hint: "Repository structure, research and team workflows" },
   { id: "calendar", label: "Calendar", icon: CalendarDays, hint: "Planned reviews and recorded agent activity" },
-  { id: "team", label: "Team", icon: MessagesSquare, hint: "Talk with your team around a work record" },
+  { id: "team", label: "Team", icon: MessagesSquare, hint: "Invite teammates and talk to your workspace Hermes" },
   { id: "knowledge", label: "Knowledge", icon: BookOpen, hint: "Reviewed observations and private notes" },
   { id: "monitoring", label: "Monitoring", icon: Activity, hint: "API requests, database health and investigation evidence" },
   { id: "usage", label: "Usage", icon: Gauge, hint: "Tokens, time and cost with coverage" },
@@ -53,6 +54,15 @@ function AmbientAscii({ enabled }: { enabled: boolean }) {
 export function Shell({ route, onRoute, onOpenCustomizer, onOpenAccount, children }: { route: Route; onRoute: (r: Route) => void; onOpenCustomizer: () => void; onOpenAccount: () => void; children: ReactNode }) {
   const { theme, set, resolvedMode } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [contextOpen, setContextOpen] = useState(() => {
+    try { const saved = localStorage.getItem("relay.context-sidebar"); if (saved !== null) return saved === "open"; } catch { /* Storage may be unavailable. */ }
+    return window.matchMedia("(min-width: 1280px)").matches;
+  });
+  const toggleContext = () => setContextOpen(current => {
+    const next = !current;
+    try { localStorage.setItem("relay.context-sidebar", next ? "open" : "closed"); } catch { /* Session state still works. */ }
+    return next;
+  });
   const collapsed = theme.sidebarCollapsed;
   const variant = theme.sidebar;
   const workspace = useWorkspace();
@@ -60,7 +70,7 @@ export function Shell({ route, onRoute, onOpenCustomizer, onOpenAccount, childre
   const active = workspace.data?.runs.filter(r => r.active).length || 0;
   const decisions = 0;
   const problems = workspace.data && !workspace.data.runner.available ? 1 : 0;
-  const name = account?.profile?.name || "Account";
+  const name = account?.profile?.name || (account?.local_access ? "Local workspace" : "Workspace access");
   const project = workspace.data?.cases[0]?.project || "Local workspace";
   const searchWork = () => { onRoute("work"); window.setTimeout(() => window.dispatchEvent(new Event('relay:search-work')), 50); };
 
@@ -193,13 +203,16 @@ export function Shell({ route, onRoute, onOpenCustomizer, onOpenAccount, childre
           <button className="t-control grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-surface-2 md:hidden" aria-label="Open navigation" onClick={() => setMobileOpen(true)}>
             <Menu className="h-4 w-4" />
           </button>
-          <button className="t-control flex h-7 items-center gap-1.5 rounded-md px-2 text-xs hover:bg-surface-2" aria-label="Workspace settings" onClick={() => onRoute("settings")}>
+          <button className="t-control grid h-8 w-8 flex-none place-items-center rounded-md text-muted hover:bg-surface-2" id="workspace-context-toggle" aria-label={contextOpen ? "Hide workspace context" : "Show workspace context"} aria-expanded={contextOpen} aria-controls="workspace-context" onClick={toggleContext}>
+            <PanelLeft className="h-4 w-4" />
+          </button>
+          <button className="t-control flex min-w-0 h-7 items-center gap-1.5 rounded-md px-2 text-xs hover:bg-surface-2" aria-label="Workspace settings" onClick={() => onRoute("settings")}>
             <span className="h-4 w-4 rounded-sm bg-accent-soft" aria-hidden />
             <span className="font-medium">Relay</span>
             <span className="text-faint max-sm:hidden">/</span>
-            <span className="max-sm:hidden">{project}</span>
+            <span className="max-w-32 truncate max-sm:hidden">{project}</span>
             <span className="text-faint">/</span>
-            <span className="mono text-[11px]">workspace</span>
+            <span className="mono text-[11px] max-sm:hidden">workspace</span>
             <ChevronsUpDown className="h-3 w-3 text-muted" />
           </button>
           <div className="ml-auto flex items-center gap-1">
@@ -213,7 +226,7 @@ export function Shell({ route, onRoute, onOpenCustomizer, onOpenAccount, childre
             <button className="t-control grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-foreground" aria-label="Help" onClick={() => onRoute("setup")}>
               <HelpCircle className="h-4 w-4" />
             </button>
-            <button className="t-control grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-foreground" aria-label="Find work" onClick={searchWork}>
+            <button className="t-control hidden h-8 w-8 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-foreground sm:grid" aria-label="Find work" onClick={searchWork}>
               <Command className="h-4 w-4" />
             </button>
             <button
@@ -226,22 +239,25 @@ export function Shell({ route, onRoute, onOpenCustomizer, onOpenAccount, childre
             <button onClick={onOpenCustomizer} className="t-control grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-foreground" aria-label="Customize appearance">
               <SlidersHorizontal className="h-4 w-4" />
             </button>
-            <button className="t-control relative grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-foreground" aria-label="Open work activity" onClick={() => onRoute("work")}>
+            <button className="t-control relative hidden h-8 w-8 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-foreground sm:grid" aria-label="Open work activity" onClick={() => onRoute("work")}>
               <Bell className="h-4 w-4" />
 
             </button>
             <button className="t-control ml-1 flex h-8 items-center gap-2 rounded-md pl-1 pr-2 hover:bg-surface-2" aria-label={`Account: ${name}`} onClick={onOpenAccount}>
               <Avatar name={name} size={24} />
               <span className="hidden text-xs sm:inline">{name}</span>
-              <Badge tone="outline" className="hidden sm:inline-flex">{account?.role || "Sign in"}</Badge>
+              <Badge tone="outline" className="hidden sm:inline-flex">{account?.role || (account?.local_access ? "Local" : "Join")}</Badge>
             </button>
           </div>
         </header>
-        <main className="min-h-0 flex-1 overflow-auto">
+        <div className="flex min-h-0 flex-1 flex-col overflow-auto xl:flex-row xl:overflow-hidden">
+        {contextOpen && <WorkspaceContext route={route} onRoute={onRoute} onClose={() => { toggleContext(); document.getElementById("workspace-context-toggle")?.focus(); }} />}
+        <main className="min-h-0 min-w-0 flex-1 overflow-auto max-xl:flex-none">
           <div className="mx-auto h-full" style={{ maxWidth: "var(--content-max)" }}>
             {children}
           </div>
         </main>
+        </div>
         <nav className="flex h-14 flex-none items-stretch border-t border-border bg-surface md:hidden" aria-label="Phone navigation">
           {NAV.filter(n => ["work", "reach", "team", "usage", "settings"].includes(n.id)).map((n) => {
             const Icon = n.icon;

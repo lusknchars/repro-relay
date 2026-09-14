@@ -12,6 +12,7 @@ import sys
 import tempfile
 import time
 import urllib.error
+import chat
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('reach_call', ROOT / 'integrations/call-context/server.py')
@@ -127,6 +128,10 @@ def main(argv=None):
     listener.add_argument('--once', action='store_true', help='Drain saved events and exit')
     mcp = actions.add_parser('mcp', help='Expose the daily brief and proposal tools to a local agent')
     mcp.add_argument('--allow-workspace-context', action='store_true', help='Explicitly allow this client to read the local team daily queue')
+    connect = actions.add_parser('chat-connect', help='Authorize the local administrator’s Hermes chat bridge; replaces the previous bridge')
+    connect.add_argument('--key-file', type=Path, default=ROOT / '.data/reach/chat-bridge.json')
+    chat_mcp = actions.add_parser('chat-mcp', help='Expose team inbox/replies to the administrator’s Hermes using its private connection file')
+    chat_mcp.add_argument('--key-file', type=Path, default=ROOT / '.data/reach/chat-bridge.json')
     voice = actions.add_parser('call', help='Scoped call-context MCP; the host supplies transcripts, no audio capture')
     voice.add_argument('--case', required=True)
     voice.add_argument('--member', required=True)
@@ -134,11 +139,16 @@ def main(argv=None):
     actions.add_parser('plow-check', help='Check the existing Plow grant without sending a message')
     args = parser.parse_args(argv)
     try:
-        api = call.API(args.api)
+        api = chat.API(args.key_file, call.evidence) if args.action == 'chat-mcp' else call.API(args.api)
         if args.action == 'today':
             print(json.dumps(execute(api, 'reach_daily_brief', {'on': args.on}), indent=2, ensure_ascii=False))
         elif args.action == 'listen':
             listen(api, args.after, args.cursor_file, args.once)
+        elif args.action == 'chat-connect':
+            connection = api.request('POST', '/chat/bridge', {})
+            connection['api'] = api.base
+            save_cursor(args.key_file, json.dumps(connection))
+            print('Hermes chat connection saved privately. Start ./relay reach chat-mcp in your administrator-managed Hermes host. No model was started.')
         elif args.action == 'call':
             if not args.consent:
                 parser.error('Use --consent only after the participant agrees to share the selected case.')
@@ -147,9 +157,10 @@ def main(argv=None):
         elif args.action == 'plow-check':
             return subprocess.call([sys.executable, str(ROOT / 'integrations/plow/bridge.py'), '--config', str(ROOT / '.data/plow/bridge.json'), 'doctor'])
         else:
-            if not args.allow_workspace_context:
+            if args.action != 'chat-mcp' and not args.allow_workspace_context:
                 parser.error('Use --allow-workspace-context to share the local daily queue with this agent. Use reach call for one-case context.')
-            server = call.evidence.Server(api, manifest=MANIFEST, executor=execute, name='reach')
+            server = call.evidence.Server(api, manifest=chat.MANIFEST if args.action == 'chat-mcp' else MANIFEST,
+                executor=chat.execute if args.action == 'chat-mcp' else execute, name='hermes-team-chat' if args.action == 'chat-mcp' else 'reach')
             while True:
                 line = sys.stdin.buffer.readline(1_000_001)
                 if not line:

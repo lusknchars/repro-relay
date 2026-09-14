@@ -27,6 +27,7 @@ test("monitoring shows measured requests, private-safe details and a pausable co
   await expect(dialog).not.toBeVisible();
   await page.getByLabel("Search request logs").fill("");
   await page.getByRole("button", { name: "Pause live console" }).click();
+  await expect(page.getByRole("button", { name: "Resume live console" })).toBeVisible();
   const before = await consoleView.innerText();
   await page.request.post("/api/v1/cases", {
     data: { title: "private-body-marker" },
