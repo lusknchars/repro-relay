@@ -19,6 +19,7 @@ api:
 	$(CARGO) run -p relay-api
 
 check:
+	python3 -m unittest discover -s integrations/reach -p 'test_*.py' -v
 	python3 -m unittest discover -s integrations/google-calendar -p 'test_*.py' -v
 	python3 -m unittest discover -s integrations/call-context -p 'test_*.py' -v
 	$(MAKE) plow-check

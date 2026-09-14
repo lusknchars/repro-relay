@@ -233,6 +233,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog='relay', description='Relay investigations and approved repairs from your terminal.')
     parser.add_argument('--api', default='http://127.0.0.1:8178/api/v1')
     sub = parser.add_subparsers(dest='action', required=True)
+    reach = sub.add_parser('reach', help='Daily team coordination, MCP and call context')
+    reach.add_argument('reach_args', nargs=argparse.REMAINDER)
     setup = sub.add_parser('setup', help='Install dependencies, start the local service and open Relay')
     setup.add_argument('--check', action='store_true', help='Check prerequisites without installing or starting anything')
     setup.add_argument('--web', action='store_true', help='Use the local web app instead of building the macOS desktop app')
@@ -287,6 +289,8 @@ def main(argv=None):
     monitor.add_argument('case', type=identifier); monitor.add_argument('run', type=identifier); monitor.add_argument('--seconds', type=int, default=600)
     stop = sub.add_parser('stop', help='Request a cooperative stop'); stop.add_argument('run', type=identifier)
     args = parser.parse_args(argv)
+    if args.action == 'reach':
+        return subprocess.call([sys.executable, str(pathlib.Path(__file__).resolve().parents[1] / 'reach/reach.py'), '--api', args.api, *args.reach_args])
     if args.action == 'setup':
         from bootstrap import run_setup
         return run_setup(args)

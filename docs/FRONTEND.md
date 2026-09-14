@@ -1,5 +1,9 @@
 # Frontend design
 
+## Reach
+
+Team opens with Reach, a compact transcript/todo queue and action inspector using the existing supplied theme. Quick todo entry, owner/date review, saved decisions, copyable drafts and local item links use real Rust records. The opened editor retains its reviewed snapshot across polling; stale submissions are rejected. Calls are labelled as supplied transcripts and message drafts are not presented as deliveries. See [Reach](REACH.md).
+
 ## Team integrations and workflow canvas
 
 The workflow view now follows the supplied video: a searchable node library, compact colored nodes, orthogonal connections, step picker, fit control and setup inspector. The four supported stages keep their execution order and human review. Team shows real Git contribution activity, role-based communication preferences and expiring call-context requests. Work records reproduction conditions, and Settings includes Google Calendar OAuth with read-only event loading in Calendar. See [implemented behavior, setup and provider boundaries](TEAM-CALENDAR-CALLS.md).

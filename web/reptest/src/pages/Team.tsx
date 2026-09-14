@@ -1,3 +1,4 @@
+import { Reach } from "@/components/reach";
 import { Contributions } from "@/components/contributions";
 import { TeamCommunication } from "@/components/team-communication";
 import type { ArchitectureRecord } from "./Architecture";
@@ -98,6 +99,7 @@ export function TeamPage({
       <p role="status" className="text-sm text-ok">
         {notice}
       </p>
+      {!accountOnly && <Reach />}
       {!accountOnly && <Contributions />}
       {!accountOnly && <TeamCommunication />}
       {!accountOnly && architecture.data && (
