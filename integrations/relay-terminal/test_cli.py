@@ -24,6 +24,23 @@ class FakeAPI:
 
 
 class TerminalTests(unittest.TestCase):
+    def test_saved_memory_selection_and_explicit_override(self):
+        for enabled in (True, False):
+            api = FakeAPI({'/tool-profile': {'version': 1, 'mem0': enabled}})
+            self.assertEqual(cli.selected_memory(api, None), 'mem0' if enabled else 'off')
+            self.assertEqual(len(api.calls), 1)
+        api = FakeAPI({})
+        for override in ('off', 'mem0'):
+            self.assertEqual(cli.selected_memory(api, override), override)
+        self.assertEqual(api.calls, [])
+
+    def test_unknown_memory_selection_does_not_enable_tools(self):
+        for profile in ({}, {'mem0': 'false'}, {'mem0': 1}, None):
+            with self.assertRaises(ValueError):
+                cli.selected_memory(FakeAPI({'/tool-profile': profile}), None)
+        with self.assertRaises(KeyError):
+            cli.selected_memory(FakeAPI({}), None)
+
     def test_transport_rejects_external_or_credential_urls(self):
         for url in ['https://example.com/api/v1', 'http://localhost/api/v1', 'http://user:token@127.0.0.1/api/v1', 'http://127.0.0.1/api/v1?x=1']:
             with self.assertRaises(ValueError):

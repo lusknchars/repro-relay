@@ -28,6 +28,7 @@ test('WebMCP exposes bounded evidence without granting approval or write tools',
   const errors: string[] = []; page.on('pageerror', e => errors.push(e.message))
   let writes = 0; page.on('request', r => { if (r.method() !== 'GET' && r.url().includes('/autonomy')) writes++ })
   await page.goto('/?view=connections')
+  await page.getByText('Terminal and browser setup', { exact: true }).click()
   await expect(page.getByText('3 browser tools registered')).toBeVisible()
   const status = await invoke(page, 'relay_workspace_status') as { tool_permissions: { approvals: boolean }; capabilities: { model_calls: boolean } }
   expect(status.tool_permissions.approvals).toBe(false)
@@ -55,6 +56,7 @@ test('WebMCP exposes bounded evidence without granting approval or write tools',
 test('legacy preview registers tools and unsupported browsers retain normal guidance', async ({ page }) => {
   await mockWebMCP(page, true)
   await page.goto('/?view=connections')
+  await page.getByText('Terminal and browser setup', { exact: true }).click()
   await expect(page.getByText('3 browser tools registered')).toBeVisible()
   await expect(invoke(page, 'relay_inspect_work', { audit_id: '../AGENTS.md' })).rejects.toThrow('Invalid audit ID')
   await page.setViewportSize({ width: 320, height: 844 })
@@ -81,6 +83,7 @@ test('unsupported WebMCP keeps the human recipe usable', async ({ page }) => {
     Object.defineProperty(navigator, 'modelContext', { value: undefined, configurable: true })
   })
   await page.goto('/?view=connections')
+  await page.getByText('Terminal and browser setup', { exact: true }).click()
   await expect(page.getByText('Not available in this browser')).toBeVisible()
   await page.getByRole('button', { name: 'Run evidence recipe' }).click()
   await expect(page.getByText('Evidence ready for review')).toBeVisible()

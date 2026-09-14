@@ -22,7 +22,7 @@ Mem0 sends a verification code and preserves the existing key and memories. The 
 
 ## Enable for an agent
 
-Pi memory is off by default. From an interactive terminal:
+Pi memory starts off. Enable it for new sessions in Connections → Tools library → Mem0 memory, or override the saved choice from an interactive terminal:
 
 ```sh
 ./relay pi start --profile personal --provider anthropic --memory mem0

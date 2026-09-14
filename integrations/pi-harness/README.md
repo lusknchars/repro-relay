@@ -61,7 +61,7 @@ Approvals, source modifications, tests, reviewed memory publication, worktree ex
 
 ## Optional private memory
 
-Add `--memory mem0` to enable private Pi notes and current reviewed project lookup. See [Mem0 setup and boundaries](../mem0-memory/README.md). This adds two tools to the default three-tool allowlist. The default evidence configuration stays read-only.
+In Connections → Tools library → Mem0 memory, enable private Pi notes and current reviewed project lookup for new sessions. The selection persists in the local workspace and defaults to off. New `./relay pi start` launches read it from the running API. Pass `--memory mem0` or `--memory off` to override the saved selection for one session. An unreadable selection stops startup instead of silently choosing tools. Existing sessions are unchanged. See [Mem0 setup and boundaries](../mem0-memory/README.md). This adds two tools to the default three-tool allowlist. The default evidence configuration stays read-only.
 
 ## Validation
 

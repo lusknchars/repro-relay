@@ -253,6 +253,19 @@ async fn invitation_reopens_case_without_granting_execution_or_guest_data(pool: 
         .0,
         200
     );
+    assert_eq!(
+        call(
+            &shared,
+            true,
+            "PUT",
+            "/tool-profile",
+            &viewer,
+            json!({"version":0,"mem0":true})
+        )
+        .await
+        .0,
+        403
+    );
     for path in [
         "/cases".to_owned(),
         format!("/cases/{}/runs", case["id"].as_str().unwrap()),

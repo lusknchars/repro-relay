@@ -4,6 +4,10 @@ Repro Relay uses the authenticated `@paceui/ultimate-dashboard-template` source 
 
 ## Shared application
 
+Connections opens a searchable Tools library inside the existing PaceUI layout. Eight curated entries explain each tool's purpose, access, cost source and setup action. Category and Enabled in Pi filters, accessible setup dialogs, and mobile layouts reuse Relay controls. Pi/Codex and browser recipes remain under Terminal and browser setup. Hermes and context monitoring link to their existing controls; Plow keeps its working native/web setup dialog.
+
+Mem0 has a persisted enable choice for new Pi sessions. Account authentication remains separate and credentials never enter the web application. The launcher reads `/tool-profile` unless `--memory` explicitly overrides it. Concurrent changes require refreshing the saved selection. The UI does not infer authentication, installation, provider entitlement or message delivery from a saved preference. Costs are explained by source; only existing Hermes telemetry is available in Relay charts.
+
 Connections now offers a Pi / Codex terminal setup selector within the existing template. Pi's launch command opens a dedicated evidence-review session with `/relay` and `/relay-review`. Provider sign-in stays in Pi; the web view does not infer installation or readiness from a copied command. Connection checks, resume instructions and scope are expandable, and Hermes CLI controls remain separately labeled. Pi usage stays in Pi's session, outside Hermes charts. See [the Pi integration](../integrations/pi-harness/README.md).
 
 The native desktop also has [repository tools](DESKTOP-DEVELOPER-WORKSPACE.md) in an expandable bottom bar, available even while the local service is offline. A native folder picker selects the checkout; Changes, Worktrees and Connection keep Git context and runtime availability separate. macOS Terminal opens in that checkout. The panel uses existing theme tokens, keyboard commands and reduced-motion behavior, without adding a dashboard template or browser shell endpoint.

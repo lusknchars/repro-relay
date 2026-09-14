@@ -4,6 +4,7 @@ import { ApprovalButton, type ApprovalState } from './components/ui/approval-but
 import { workspaceGuidance } from './lib/workspace-guidance'
 import { WorkspaceTour } from './components/WorkspaceTour'
 import { WorkspaceGuide } from './components/WorkspaceGuide'
+import { ToolLibrary } from './components/ToolLibrary'
 import { PlowConnection } from './components/PlowConnection'
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import {
@@ -15,7 +16,7 @@ import { AdminLayout, type View } from './components/templates/ultimate-dashboar
 import { PageTitle } from './components/templates/ultimate-dashboard/layouts/page-title'
 import { AIDashboard } from './components/templates/ultimate-dashboard/dashboards/ai'
 import { Table7 } from './components/blocks/dashboard/table/table-7'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './components/ui/card'
+import { Card, CardContent } from './components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './components/ui/tabs'
 import { CaseActivity } from './components/CaseActivity'
 import { EvidencePath } from './components/EvidencePath'
@@ -29,8 +30,6 @@ import type { Case, CaseStatus, Health, Memory, Result } from './types'
 import { useTransition } from './lib/motion'
 import { useWorkspaceCommands, type WorkspaceCommand } from './lib/desktop'
 import { ShortcutHint } from './components/ShortcutHint'
-import plowLogo from './assets/plow-logo.png'
-import hermesLogo from './assets/hermes-logo.webp'
 
 const SessionWorkspace = lazy(() => import('./components/SessionWorkspace').then(module => ({default: module.SessionWorkspace})))
 const InvestigationWorkspace = lazy(() => import('./components/InvestigationWorkspace').then(module => ({default: module.InvestigationWorkspace})))
@@ -265,12 +264,8 @@ export default function App() {
      {view==='handoffs'&&<div className="mt-5 space-y-4">{cases.flatMap(c=>c.handoffs.map(h=><Card key={h.id} className="py-5"><CardContent className="flex flex-wrap items-center justify-between gap-4 px-5"><div><h2 className="text-sm font-medium">{c.title}</h2><p className="text-muted-foreground mt-1 text-xs">{h.role} · Revision {h.case_revision} · {h.status}</p><p className="text-muted-foreground mt-2 text-xs">{h.reason||'Check freshness before using this snapshot.'}</p></div><Button variant="outline" onClick={()=>{openCase(c);setTab('context')}}>Review handoff<ArrowRight/></Button></CardContent></Card>))}
       {!cases.some(c=>c.handoffs.length)&&<Card><CardContent><h2 className="font-medium">No handoffs prepared yet.</h2><p className="text-muted-foreground my-3 text-sm">Open a case, choose Agent context, and prepare a role-specific snapshot.</p><Button variant="outline" onClick={()=>navigate('inbox')}>Go to case inbox</Button></CardContent></Card>}
      </div>}
-     {view==='connections'&&<><WorkspaceGuide connections navigate={navigate} browserTools={browserTools} guest={isGuest}/><div className="mt-5 grid gap-4 md:grid-cols-2">{[
-      [isGuest?'Guest workspace':'Local workspace','Rust API, PostgreSQL history, reviewed memory, and versioned handoffs.',health?'Available':'Disconnected'],
-      ['Hermes investigator','Start, monitor, stop, and reconcile runs from Agent controls. Check the live runtime connection there.',isGuest?'Disabled for guests':'Check runtime in Agent controls'],
-      ['Plow Chat + Latch','Connect your Mac and assistant line for phone reports and approved updates.','Not connected'],
-      ['Owner updates','Channel delivery and destination authorization are not implemented yet.','Not connected'],
-     ].map(([name,description,status])=><Card key={name} className="py-5"><CardHeader className="px-5"><CardTitle className="flex items-center gap-3">{name==='Plow Chat + Latch'&&<img src={plowLogo} alt="" width={60} height={32} className="h-8 w-[60px] shrink-0 rounded object-contain"/>}{name==='Hermes investigator'&&<img src={hermesLogo} alt="" width={32} height={32} className="size-8 shrink-0 rounded bg-white object-contain"/>}{name}</CardTitle><CardDescription>{description}</CardDescription></CardHeader><CardContent className="flex flex-wrap items-center justify-between gap-3 px-5"><Badge variant="outline">{status}</Badge>{name==='Plow Chat + Latch'&&<Button size="sm" onClick={()=>openModal('plow')}>Connect Plow Latch<ArrowRight/></Button>}{name==='Hermes investigator'&&<Button variant="outline" size="sm" onClick={()=>navigate('agents')}>Agent controls<ArrowRight/></Button>}</CardContent></Card>)}</div></>}
+     {view==='connections'&&<><ToolLibrary guest={isGuest} readOnly={viewer} navigate={navigate} openPlow={()=>openModal('plow')} browserTools={browserTools}/><details id="advanced-tool-setup" className="rounded-xl border bg-card p-4"><summary className="min-h-11 cursor-pointer py-3 text-sm font-medium">Terminal and browser setup</summary><WorkspaceGuide connections navigate={navigate} browserTools={browserTools} guest={isGuest}/></details></>}
+
     </>}
     {modal === 'plow' && <Modal title="Connect Plow Latch" close={() => setModal(null)}><PlowConnection guest={isGuest}/></Modal>}
     {modal === 'report' && <Modal title="New bug report" close={() => !busy && setModal(null)}><form onSubmit={createReport}><p className="form-intro">Describe a real problem and what should happen instead.</p><Field label="Report title"><input name="title" required minLength={3} maxLength={160} placeholder="CSV export stops after changing the date range" autoFocus/></Field><div className="form-grid"><Field label="Project"><input name="project" required maxLength={80} placeholder="Your application"/></Field><Field label="Application URL"><input name="url" type="url" required placeholder="https://staging.example.com"/></Field></div><Field label="Current build" hint="Optional now. Required when you record a reproduction."><input name="build" maxLength={160} placeholder="Commit or build identifier"/></Field><Field label="Reported behavior"><textarea name="description" required maxLength={8000} rows={3} placeholder="What happened, and when?"/></Field><Field label="Expected behavior"><textarea name="expected" required maxLength={8000} rows={2} placeholder="What should the application do?"/></Field>{error && <p className="form-error" role="alert">{error}</p>}<div className="dialog-footer"><Button type="button" variant="ghost" onClick={() => setModal(null)} disabled={busy}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save report'}</Button></div></form></Modal>}

@@ -11,6 +11,7 @@ test('terminal setup explains Pi and Codex without changing the active investiga
     } }, configurable: true })
   })
   await page.goto('/?view=connections')
+  await page.getByText('Terminal and browser setup', {exact:true}).click()
   const setup = page.getByRole('region', { name: 'Terminal agent setup' })
   await expect(setup.getByRole('combobox', { name: 'Harness' })).toHaveValue('pi')
   await setup.getByRole('button', { name: 'Copy Pi launch command' }).click()

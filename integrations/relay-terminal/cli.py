@@ -220,6 +220,15 @@ def watch(api, case_id, run_id, seconds):
     return 2
 
 
+def selected_memory(api, override):
+    if override is not None:
+        return override
+    profile = api.call('/tool-profile')
+    if not isinstance(profile, dict) or type(profile.get('mem0')) is not bool:
+        raise ValueError('Could not read the saved Tools library selection. Refresh Connections or use --memory off explicitly.')
+    return 'mem0' if profile['mem0'] else 'off'
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='relay', description='Relay investigations and approved repairs from your terminal.')
     parser.add_argument('--api', default='http://127.0.0.1:8178/api/v1')
@@ -234,7 +243,7 @@ def main(argv=None):
         pi_command.add_argument('--provider', help='Optional Pi provider name; doctor checks local credential readiness without refreshing')
     pi_start.add_argument('--model', help='Optional Pi model name; use /model inside Pi')
     pi_start.add_argument('--resume', action='store_true', help='Continue the latest Relay Pi session')
-    pi_start.add_argument('--memory', choices=('off', 'mem0'), default='off', help='Enable private Mem0 notes and current reviewed project recall')
+    pi_start.add_argument('--memory', choices=('off', 'mem0'), default=None, help='Override the saved Tools library choice for this session')
     sub.add_parser('doctor', help='Check the API and investigator connection without starting work')
     sub.add_parser('cases', help='List saved cases')
     case = sub.add_parser('case', help='Inspect case, runs, evidence and repair plans'); case.add_argument('case', type=identifier)
@@ -279,6 +288,8 @@ def main(argv=None):
     api = API(args.api)
     if args.action == 'pi':
         from pi_harness import run
+        if args.pi_action == 'start':
+            args.memory = selected_memory(api, args.memory)
         return run(args)
     if args.action == 'doctor':
         emit({'health': api.call('/health'), 'investigator': api.call('/runner'),
