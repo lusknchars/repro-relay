@@ -120,8 +120,10 @@ export function UsagePage() {
           return (
             <div key={c.name} className="rounded-lg border border-border bg-surface p-4">
               <div className="flex items-center gap-2.5">
-                {c.name === "Hermes / Moonshot" ? <IntegrationLogo provider="hermes" size={32} /> : <span className="grid h-8 w-8 place-items-center rounded-md border border-border"><Icon className="h-4 w-4" /></span>}
+                {c.name === "Mem0" ? <div className="min-w-0"><IntegrationLogo provider="mem0" size={20} label="Mem0" /><div className="truncate text-xs text-muted">{c.sub}</div></div> : <>
+                {c.name === "Hermes / Moonshot" ? <IntegrationLogo provider="hermes" size={32} /> : c.name === "Pi / Kimi" ? <IntegrationLogo provider="pi" size={32} /> : <span className="grid h-8 w-8 place-items-center rounded-md border border-border"><Icon className="h-4 w-4" /></span>}
                 <div className="min-w-0"><div className="truncate text-sm font-medium">{c.name}</div><div className="truncate text-xs text-muted">{c.sub}</div></div>
+                </>}
               </div>
               <div className="mt-3 flex items-baseline gap-1.5">
                 <span className="tnum text-2xl font-semibold tracking-tight">{spent === 0 && hasUnknown(c.rs) ? "—" : money(spent)}</span>
@@ -243,12 +245,12 @@ export function UsagePage() {
               ] as const).map((a) => (
                 <div key={a.name} className={cn("grid gap-4 rounded-lg border p-4", a.dark ? "border-transparent bg-foreground text-background" : "border-border bg-surface")}>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="flex items-center gap-2 text-sm font-semibold">{a.name === "Hermes" ? <IntegrationLogo provider="hermes" size={24} /> : <Sparkles className="h-4 w-4" />} {a.name}</span>
+                    <span className="flex items-center gap-2 text-sm font-semibold"><IntegrationLogo provider={a.name === "Hermes" ? "hermes" : "pi"} size={24} /> {a.name}</span>
                     <Badge tone={a.tone} dot>{a.status}</Badge>
                   </div>
                   <div className="grid grid-cols-3 gap-2 text-xs">
                     <div><div className={cn("text-[11px]", a.dark ? "text-background/60" : "text-muted")}>Model</div><div className="mono">{a.model}</div></div>
-                    <div><div className={cn("text-[11px]", a.dark ? "text-background/60" : "text-muted")}>Provider</div><div>{a.provider}</div></div>
+                    <div><div className={cn("text-[11px]", a.dark ? "text-background/60" : "text-muted")}>Provider</div><div className="flex items-center gap-1.5">{a.provider === "Moonshot" && <IntegrationLogo provider="moonshot" size={16} />}{a.provider}</div></div>
                     <div><div className={cn("text-[11px]", a.dark ? "text-background/60" : "text-muted")}>Runs</div><div className="tnum">{a.rs.length}</div></div>
                   </div>
                   <div className="flex items-baseline justify-between">

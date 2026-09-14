@@ -57,7 +57,7 @@ export function SetupPage({ onFinish }: { onFinish: () => void }) {
                   ["pi", "Pi", "Terminal client for reviewing evidence with Kimi as the model provider — not a second investigator."],
                 ] as const).map(([v, n, d]) => (
                   <button key={v} role="radio" aria-checked={runtime === v} onClick={() => setRuntime(v)} className={cn("t-control grid gap-1 rounded-md border p-3 text-left", runtime === v ? "border-accent bg-accent-soft/50" : "border-border hover:border-border-strong")}>
-                    <div className="flex items-center gap-2 text-sm font-medium">{v === "hermes" && <IntegrationLogo provider="hermes" size={24} />}{n}</div>
+                    <div className="flex items-center gap-2 text-sm font-medium"><IntegrationLogo provider={v} size={24} />{n}</div>
                     <div className="text-xs text-muted">{d}</div>
                   </button>
                 ))}
@@ -76,7 +76,7 @@ export function SetupPage({ onFinish }: { onFinish: () => void }) {
           {step === 2 && (
             <div className="grid gap-4">
               <h2 className="text-base font-semibold">Choose the model provider</h2>
-              <Segmented ariaLabel="Provider" value={provider} onChange={setProvider} options={[{ value: "moonshot", label: "Moonshot (kimi-k3)" }, { value: "anthropic", label: "Anthropic" }]} />
+              <Segmented ariaLabel="Provider" value={provider} onChange={setProvider} options={[{ value: "moonshot", label: <span className="flex items-center gap-1.5"><IntegrationLogo provider="moonshot" size={18} />Moonshot (kimi-k3)</span> }, { value: "anthropic", label: "Anthropic" }]} />
               <Field label="API key" htmlFor="key" hint="Entered through a private field, stored masked, never shown in shared files."><Input id="key" type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="Paste key" autoComplete="off" /></Field>
               <div className="rounded-md border border-border p-3 text-xs text-muted">Provider credits and plan or subscription limits are different balances. A key can be valid while the prepaid balance is empty.</div>
               <p className="text-xs text-muted">Done when: a key is present. This does not verify a request — step 6 does.</p>
@@ -98,7 +98,7 @@ export function SetupPage({ onFinish }: { onFinish: () => void }) {
           )}
           {step === 4 && (
             <div className="grid gap-3">
-              <h2 className="text-base font-semibold">Memory is optional</h2>
+              <h2 className="flex items-center gap-2 text-base font-semibold"><IntegrationLogo provider="mem0" size={24} label="Mem0" />Memory is optional</h2>
               <div className="grid gap-2" role="radiogroup" aria-label="Memory">
                 {([
                   ["existing", "Connect an existing Mem0 account", "Shown first. Uses your own key; nothing is duplicated."],

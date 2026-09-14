@@ -1,13 +1,23 @@
-/** Supplied artwork; adjacent labels provide the accessible name. */
-export function IntegrationLogo({ provider, size = 24 }: { provider: "hermes" | "plow"; size?: number }) {
+const artwork = {
+  mem0: { file: "mem0-logo.svg", background: "#fff", aspect: 3760 / 1050 },
+  hermes: { file: "hermes-logo.webp", background: "#fff", aspect: 1 },
+  plow: { file: "plow-logo.png", background: "#171715", aspect: 121 / 63 },
+  pi: { file: "pi-logo.svg", background: "#171715", aspect: 1 },
+  moonshot: { file: "moonshot-logo.png", background: "#fff", aspect: 1 },
+} as const;
+
+/** Supplied artwork; use a label only when no adjacent name is shown. */
+export function IntegrationLogo({ provider, size = 24, label = "" }: { provider: keyof typeof artwork; size?: number; label?: string }) {
+  const logo = artwork[provider];
+  const width = Math.round(size * logo.aspect);
   return (
     <img
-      src={`/brand/${provider}-logo.${provider === "hermes" ? "webp" : "png"}`}
-      alt=""
-      width={provider === "plow" ? Math.round(size * 1.92) : size}
+      src={`/brand/${logo.file}`}
+      alt={label}
+      width={width}
       height={size}
       className="inline-block flex-none rounded-sm object-contain"
-      style={{ width: provider === "plow" ? Math.round(size * 1.92) : size, height: size, background: provider === "hermes" ? "#fff" : "#171715" }}
+      style={{ width, height: size, background: logo.background }}
     />
   );
 }
