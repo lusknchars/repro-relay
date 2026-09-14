@@ -22,6 +22,6 @@ export function AIDashboard({cases,memories,guest,navigate}:{cases:Case[];memori
    {view:'inbox' as const,title:'Pick up an investigation',detail:cases.filter(c=>['new','needs_context','blocked'].includes(c.status)).length+' cases awaiting more evidence.',icon:Inbox},
    {view:'memory' as const,title:'Use reviewed context',detail:'Inspect evidence before carrying it into another case.',icon:BookOpen},
    {view:'handoffs' as const,title:'Prepare the next step',detail:'Check build and assignment freshness before a handoff.',icon:FileCheck2},
-  ].map(item=><Card key={item.view} className="py-5"><CardContent className="px-5"><item.icon className="mb-3 size-5 text-muted-foreground"/><h2 className="text-sm font-medium">{item.title}</h2><p className="text-muted-foreground mt-2 text-xs">{item.detail}</p><Button variant="link" className="mt-3 h-auto px-0" onClick={()=>navigate(item.view)}>Open workspace<ArrowUpRight/></Button></CardContent></Card>)}</div>
+  ].map(item=><Card key={item.view} className="relay-card-action py-5"><CardContent className="px-5"><item.icon className="mb-3 size-5 text-muted-foreground"/><h2 className="text-sm font-medium">{item.title}</h2><p className="text-muted-foreground mt-2 text-xs">{item.detail}</p><Button variant="link" className="mt-3 h-auto px-0" onClick={()=>navigate(item.view)}>Open workspace<ArrowUpRight/></Button></CardContent></Card>)}</div>
  </div>
 }
