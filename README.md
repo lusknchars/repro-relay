@@ -2,7 +2,7 @@
 
 Repro Relay connects support and operations reports to agent investigation and developer review. Its web and desktop clients share cases, recorded evidence, project memory, and engineering handoffs.
 
-The default web and desktop clients now use the actual user-supplied Reptest frontend. Its supplied layout and sample data are preserved, with the user-provided Repro Relay mark for branding. It is a design prototype; its displayed agent activity, costs and connections are not live. The existing backend and its working client are retained separately. See [the frontend and desktop integration record](docs/REPTEST-ADAPTATION.md).
+The web and desktop clients use the supplied Reptest interface with persisted cases, investigations, reviewed evidence, usage and connection checks from the Rust/PostgreSQL backend. Account setup opens inside the app. The previous client remains available for regression testing. See [connected behavior](docs/LIVE-WORKSPACE.md).
 
 For the next implementation work, use the [delivery protocol](docs/DELIVERY-PROTOCOL.md), [product depth review](docs/PRODUCT-DEPTH-REVIEW.md), [Orca/Warp interaction benchmark](docs/research/orca-warp-dashboard-benchmark.md), and the user-selected [Vercel configuration benchmark](docs/research/vercel-configuration-benchmark.md). The protocol defines resources, dependencies and acceptance evidence; it does not describe all of those capabilities as shipped.
 
@@ -16,20 +16,31 @@ The [local Plow bridge](integrations/plow/README.md) checks an authorized phone 
 
 ## Run locally
 
-Requires Node 24, Rust stable, Docker Compose, and PostgreSQL client tools (`psql` and `createdb`). macOS desktop builds also require Xcode command-line tools.
+From your checkout, run:
 
 ```sh
-make setup
-make dev
+./relay setup
 ```
 
-Open http://127.0.0.1:5178. The API binds to localhost:8178 and PostgreSQL to localhost:55478. Docker keeps data in the `repro-relay_relay-data` volume. The Compose credentials are for local development only. The API also serves `web/dist` at http://127.0.0.1:8178 after a frontend build.
+On macOS this installs frontend dependencies, starts PostgreSQL, builds the native desktop app and opens it. Click the account button at the top right to sign in or create the first owner's account. Sign-in stays inside the app. Later accounts need a team invitation.
 
-For an existing PostgreSQL server, export `DATABASE_URL` before running `make api`. Environment variables are read from the process; `.env.example` is documentation, not an automatically loaded config file.
+Source builds require Python 3.9+, Node 24+, Rust stable, and Docker with Compose. macOS desktop builds also require Xcode command-line tools. Setup lists missing prerequisites. It does not install system software, start a model, or create external accounts.
+
+```sh
+./relay setup --check         # Check prerequisites without changing anything
+./relay setup --web           # Open the local web app on any supported host
+./relay setup --no-open       # Build/start without opening a window
+```
+
+Linux and Windows use the web app by default. In Windows PowerShell, run `python relay setup --web`. Its interface and API share `http://127.0.0.1:8178`; signing in does not redirect to another address. Docker keeps local PostgreSQL data on port 55478 in the `repro-relay_relay-data` volume. Setup reuses a healthy running API and preserves the database and provider configuration. If you changed backend source while an older API is running, restart that service to load the new binary. A setup-started service records its PID and private log in `.data/setup/`.
+
+For an existing PostgreSQL server, export `DATABASE_URL` before setup. It then skips Docker. Environment variables are read from the process; `.env.example` is documentation, not an automatically loaded configuration file. This command configures a trusted local installation, not a public hosted deployment.
+
+For hot-reload development, run `make dev` after setup. For tests, the existing `make setup` also installs Chromium and prepares the test database. See [account setup and sharing](docs/ACCOUNTS-AND-TEAM.md) for local versus hosted account access.
 
 ## Try the retained backend workflow
 
-Run `npm run dev:legacy --prefix web -- --port 5179` with the API running, then open localhost:5179. The workflow and investigator instructions below apply to that retained client. The default Reptest screens are not wired to these APIs yet.
+Run `npm run dev:legacy --prefix web -- --port 5179` with the API running, then open localhost:5179. The workflow and investigator instructions below apply to that retained client. The default Reptest screens use the same persisted API; this walkthrough describes the retained client.
 
 1. Create a bug report and name its current build.
 2. Record what you observed. A reproduced result requires steps, a build, an evidence URL, and a named author.
@@ -57,7 +68,7 @@ make desktop-build
 open 'target/debug/bundle/macos/Repro Relay.app'
 ```
 
-The bundled app loads the supplied frontend directly and works offline as a prototype. `make desktop` starts desktop development with Vite. Web and desktop share the same supplied source; there is no separate approximation of its layout. The existing Tauri native commands remain in Rust but need integration with the new screens. The app is a local debug build, not a signed or notarized distribution.
+The bundled app loads the frontend directly and connects to its local service for account and workspace data. `make desktop` starts desktop development with Vite. Web and desktop share the same supplied source; there is no separate approximation of its layout. The existing Tauri native commands remain in Rust but need integration with the new screens. The app is a local debug build, not a signed or notarized distribution.
 
 ## Check
 

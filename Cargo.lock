@@ -3494,9 +3494,15 @@ dependencies = [
 name = "relay-desktop"
 version = "0.2.0"
 dependencies = [
+ "axum",
+ "relay-api",
+ "reqwest",
  "rfd",
+ "rustls",
+ "security-framework",
  "serde",
  "serde_json",
+ "sqlx",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",

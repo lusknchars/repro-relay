@@ -1,11 +1,12 @@
 import { useState } from "react";
+import { ArrowLeft, LogIn, UserPlus } from "lucide-react";
+import { useTheme } from "@/theme/ThemeProvider";
 import { Badge, Button, Input } from "@/components/ui";
 import {
   api,
   useLoad,
   useWorkspace,
   errorText,
-  desktop,
   type Account,
 } from "@/lib/live";
 type Team = {
@@ -17,12 +18,13 @@ type Team = {
     expires_at: string;
   }[];
 };
-export function TeamPage() {
+export function TeamPage({ accountOnly = false }: { accountOnly?: boolean }) {
+  const { resolvedMode } = useTheme();
   const workspace = useWorkspace();
   // Sign-in must remain usable when workspace data requires authentication.
   const accountState = useLoad(() => api<Account>("/account"), [], 15000);
   const account = accountState.data;
-  const [mode, setMode] = useState("login");
+  const [mode, setMode] = useState("choose");
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -57,13 +59,13 @@ export function TeamPage() {
     }
   }
   return (
-    <div className="grid gap-5 p-4 md:p-6">
-      <header>
+    <div className={accountOnly ? "grid gap-4 p-6 sm:p-10" : "grid gap-5 p-4 md:p-6"}>
+      {!accountOnly && <header>
         <h1 className="text-xl font-semibold">Team</h1>
         <p className="text-sm text-muted">
           Account, team access, and invitations to this workspace.
         </p>
-      </header>
+      </header>}
       {(error || team.error || accountState.error) && (
         <p role="alert" className="text-danger">
           {error || team.error || accountState.error}
@@ -72,29 +74,37 @@ export function TeamPage() {
       <p role="status" className="text-sm text-ok">
         {notice}
       </p>
-      {desktop ? (
-        <section className="rounded-lg border border-border bg-surface p-4">
-          <p className="text-sm">
-            Manage account cookies and invitations in the browser on this Mac.
-          </p>
-          <a
-            href="http://127.0.0.1:5178/?view=team"
-            className="mt-3 inline-block text-sm text-accent-text underline"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Open account settings in browser
-          </a>
-        </section>
-      ) : accountState.loading && !account ? (
+      {accountState.loading && !account ? (
         <p role="status">Loading account…</p>
+      ) : accountState.error ? (
+        <section className="mx-auto grid max-w-[320px] gap-4 py-8">
+          <h2 className="text-base font-semibold">Connect your local workspace</h2>
+          <p className="text-sm text-muted">Run this command from your Repro Relay checkout, then retry.</p>
+          <code className="rounded-md border border-border bg-surface p-3 text-sm">./relay setup</code>
+          <Button onClick={accountState.refresh}>Retry connection</Button>
+        </section>
       ) : !account?.enabled ? (
         <p className="text-sm text-muted">
           Accounts are unavailable in this workspace mode.
         </p>
+      ) : !account.authenticated && mode === "choose" ? (
+        <section className="mx-auto grid w-full max-w-[320px] gap-4 py-8 text-center">
+          <div className="mb-7 flex items-center justify-center gap-2.5">
+            <img src={`/brand/repro-relay-mark-${resolvedMode === "dark" ? "white" : "black"}.png`} alt="" width={32} height={32} className="h-8 w-8 object-contain" />
+            <span className="text-xl font-semibold tracking-tight">Repro Relay</span>
+          </div>
+          <h2 className="mb-1 text-sm font-medium">Choose a way to sign in or sign up</h2>
+          <Button variant="outline" className="h-12 w-full justify-center rounded-lg bg-surface text-foreground" onClick={() => setMode("login")}>
+            <LogIn className="h-4 w-4" aria-hidden /> Sign in to Relay
+          </Button>
+          <Button variant="outline" className="h-12 w-full justify-center rounded-lg bg-surface text-foreground" onClick={() => setMode("register")}>
+            <UserPlus className="h-4 w-4" aria-hidden /> {account.bootstrap_available ? "Create account" : "Join your team"}
+          </Button>
+          <p className="mt-3 text-xs leading-relaxed text-muted">{account.shared ? "Use your account for this team workspace." : "Your account stays on this installation. Sign in here to manage your profile and team."}</p>
+        </section>
       ) : !account.authenticated ? (
         <form
-          className="grid max-w-lg gap-3 rounded-lg border border-border bg-surface p-5"
+          className="mx-auto grid w-full max-w-[320px] gap-4 py-5"
           onSubmit={(e) => {
             e.preventDefault();
             void perform("auth", async () => {
@@ -106,12 +116,15 @@ export function TeamPage() {
               setPassword("");
               if (mode === "register") {
                 setInvite("");
-                history.replaceState(null, "", "/?view=team");
+                const url = new URL(location.href);
+                url.hash = "";
+                history.replaceState(null, "", url);
               }
               setNotice("Account connected.");
             });
           }}
         >
+          <Button type="button" variant="ghost" className="justify-self-start" disabled={!!busy} onClick={() => {setMode("choose"); setError(""); setPassword("");}}><ArrowLeft className="h-4 w-4" aria-hidden /> Back</Button>
           <h2 className="text-base font-semibold">
             {mode === "login" ? "Sign in" : "Create account"}
           </h2>
@@ -128,7 +141,8 @@ export function TeamPage() {
             Password
             <Input
               required
-              minLength={15}
+              minLength={mode === "login" ? 1 : 15}
+              maxLength={128}
               type="password"
               autoComplete={
                 mode === "login" ? "current-password" : "new-password"
@@ -137,6 +151,7 @@ export function TeamPage() {
               onChange={(e) => setPassword(e.target.value)}
             />
           </label>
+          {mode !== "login" && <p className="text-xs text-muted">Use at least 15 characters. A few words work well.</p>}
           {mode !== "login" && (
             <>
               <label className="grid gap-1 text-sm">
@@ -149,11 +164,15 @@ export function TeamPage() {
               </label>
               {!account.bootstrap_available && (
                 <label className="grid gap-1 text-sm">
-                  Invitation token
+                  Invitation link or token
                   <Input
                     required
                     value={invite}
-                    onChange={(e) => setInvite(e.target.value)}
+                    onChange={(e) => {
+                      const value = e.target.value.trim();
+                      try { setInvite(new URLSearchParams(new URL(value).hash.slice(1)).get("invite") || value); }
+                      catch { setInvite(value); }
+                    }}
                   />
                 </label>
               )}
@@ -165,6 +184,7 @@ export function TeamPage() {
           <Button
             type="button"
             variant="ghost"
+            disabled={!!busy}
             onClick={() => setMode(mode === "login" ? "register" : "login")}
           >
             {mode === "login" ? "Create an account" : "Use existing account"}
@@ -179,12 +199,14 @@ export function TeamPage() {
               @{account.profile?.username}
             </span>
           </div>
+          {account.session_persistent === false && <p role="status" className="text-xs text-muted">Signed in for this app session. Secure session storage is unavailable; you will need to sign in again after closing the app.</p>}
           <Button
             className="justify-self-start"
             disabled={!!busy}
             onClick={() =>
               void perform("logout", async () => {
                 await api("/account/logout", "POST");
+                setMode("choose");
               })
             }
           >
@@ -205,7 +227,7 @@ export function TeamPage() {
               Accept workspace invitation
             </Button>
           )}
-          {account.role === "owner" && (
+          {!accountOnly && account.role === "owner" && (
             <>
               <h3 className="text-sm font-semibold">Members</h3>
               <ul className="divide-y divide-border">
@@ -280,10 +302,10 @@ export function TeamPage() {
           )}
         </section>
       )}
-      <p className="text-xs text-muted">
+      {!accountOnly && account?.authenticated && <p className="text-xs text-muted">
         Team chat is not connected. Investigation reports and run reviews remain
         attached to their case in Work.
-      </p>
+      </p>}
     </div>
   );
 }

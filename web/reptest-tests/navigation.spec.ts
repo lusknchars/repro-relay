@@ -40,6 +40,7 @@ test('sign-in stays available when workspace reads require authentication', asyn
  await page.route('**/api/v1/account', route => route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({enabled:true,authenticated:false,shared:true,bootstrap_available:false})}));
  await page.route('**/api/v1/cases?*', route => route.fulfill({status:401,contentType:'application/json',body:JSON.stringify({detail:'Sign in to view this workspace.'})}));
  await page.goto('/?view=team');
+ await page.getByRole('button',{name:'Sign in to Relay',exact:true}).click();
  await expect(page.getByRole('heading',{name:'Sign in',exact:true})).toBeVisible();
  await expect(page.getByLabel('Username',{exact:true})).toBeVisible();
 });

@@ -1,5 +1,10 @@
 # Relay from your terminal
 
+Start a source installation with `./relay setup`. It builds and opens the macOS desktop app, or the web app on other platforms. Use `./relay setup --check` for a read-only prerequisites check and `./relay setup --web` to choose the browser. The first build needs Node 24+, Rust, Python 3.9+, Docker/Compose or an existing `DATABASE_URL`, and Xcode command-line tools for macOS desktop.
+
+Setup preserves existing data and provider credentials. It reuses a healthy API on port 8178, refuses to stop an unknown process occupying that port, and skips unchanged dependency installations after its first run. Account creation happens inside Relay. No Plow activation, provider billing or model run is part of installation. Runtime logs and the service PID are under ignored `.data/setup/`; these are local operational files, not artifacts to publish.
+
+
 Run these commands from the Repro Relay checkout. Python 3 and Git are enough for the CLI. The local API and PostgreSQL must be running; `make dev` starts them with the web interface and context monitor. You can close the browser while the services continue.
 
 ```sh

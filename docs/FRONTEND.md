@@ -2,7 +2,9 @@
 
 ## Current default: supplied Reptest files
 
-The default web and Tauri clients use the supplied Reptest shell, theme and visual components from `web/reptest`. Their pages now read the Rust/PostgreSQL backend rather than the ZIP's example records. See [connected behavior and remaining release work](LIVE-WORKSPACE.md). Work, Team, Knowledge, Usage and Settings provide recorded investigations, browser accounts/invitations, reviewed memory, usage graphs and local connection controls. Supplied logos and appearance preferences are retained. The previous client remains under `web/src` and `dev:legacy` for regression testing.
+The default web and Tauri clients use the supplied Reptest shell, theme and visual components from `web/reptest`. Their pages now read the Rust/PostgreSQL backend rather than the ZIP's example records. See [connected behavior and remaining release work](LIVE-WORKSPACE.md). Work, Team, Knowledge, Usage and Settings provide recorded investigations, in-app accounts/invitations, reviewed memory, usage graphs and local connection controls. Supplied logos and appearance preferences are retained. The previous client remains under `web/src` and `dev:legacy` for regression testing.
+
+The account chooser follows the user-supplied Kiro screenshot: centered Relay branding, a short heading, and outlined sign-in/create-account choices. It uses existing theme tokens, not another dashboard template. The top-right profile control opens a native HTML dialog with keyboard dismissal and focus restoration. Desktop authentication uses the bounded native account transport; local accounts no longer open a browser. OAuth choices are omitted until backed by configured providers.
 
 ## Previous client, retained for backend integration
 

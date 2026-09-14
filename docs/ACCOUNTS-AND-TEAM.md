@@ -10,7 +10,13 @@ Relay supports one shared team per installation. Accounts attach to the existing
 
 Use 3–40 ASCII letters, numbers, underscores or hyphens for the username and 15–128 characters for the password. Usernames are case insensitive. Use **My profile** in the menu to edit your display name and short description. **Password & security** opens password settings. There is no email field or email verification.
 
-The desktop app opens account management in the browser on its local API server, `http://127.0.0.1:8178`. This uses browser session cookies without depending on cross-site cookies inside the native webview. The API must be running with a built frontend. Remote team sign-in currently runs in the web app; the native desktop client still connects to its local API.
+The top-right account button opens a centered sign-in chooser inside the app. Choose Sign in to Relay, or Create account for the first owner. Later users choose Join your team and supply an invitation link. The Team page retains membership and invitation controls. Opening or closing the account dialog preserves the selected work view.
+
+Desktop account requests go through a native, loopback-only HTTP client. Its strict route allowlist covers account and team operations. Session cookies stay in Rust and never enter renderer storage; on macOS the session is saved in Keychain. If secure storage is unavailable, sign-in lasts for that app process and the interface says so. Other desktop platforms currently use this session-only fallback. Passwords are not persisted by the desktop client. Sign-out revokes the server session and clears the saved session. The web client continues using HttpOnly cookies on its own origin.
+
+Run `./relay setup` from a source checkout to build and open the local app. `--check` checks prerequisites; `--web` serves the web interface and API on the same local address. No provider keys are needed to create a Relay account. Relay sign-in is separate from Plow phone ownership, Pi provider authentication, and Mem0 access. Google, GitHub and organization SSO are not implemented and are not presented as working choices.
+
+The native desktop still connects to its local API. Remote team sign-in requires a hosted web deployment. Local mode remains a trusted-machine workspace; creating a profile does not turn loopback development APIs into a public multi-user service.
 
 Local mode trusts access from this computer. Signing out of a profile does not lock the local workspace. Use authenticated team mode before exposing the service to another computer.
 

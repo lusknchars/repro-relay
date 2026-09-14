@@ -9,6 +9,7 @@ import {
 } from "react";
 export type { Case, InvestigationRun, Memory } from "../../../src/types";
 import type { Case, InvestigationRun } from "../../../src/types";
+import { invoke } from "@tauri-apps/api/core";
 
 export const desktop = "__TAURI_INTERNALS__" in window;
 const base = desktop ? "http://127.0.0.1:8178/api/v1" : "/api/v1";
@@ -18,6 +19,19 @@ export async function api<T>(
   body?: unknown,
   key?: string,
 ): Promise<T> {
+  if (desktop && /^\/(account|team)(\/|$)/.test(path)) {
+    const response = await invoke<{
+      status: number;
+      body: T & { detail?: string };
+      session_persistent: boolean;
+    }>("account_request", { path, method, body: body ?? null }).catch((error) => {
+      throw new Error(typeof error === "string" ? error : "Account connection unavailable.");
+    });
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(response.body?.detail || `Account request failed (${response.status}).`);
+    }
+    return { ...response.body, session_persistent: response.session_persistent };
+  }
   const response = await fetch(base + path, {
     method,
     credentials: "include",
@@ -44,6 +58,7 @@ export type RunSummary = Pick<
 export type Account = {
   enabled: boolean;
   authenticated: boolean;
+  session_persistent?: boolean;
   bootstrap_available?: boolean;
   shared?: boolean;
   role?: string;

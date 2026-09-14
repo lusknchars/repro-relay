@@ -233,6 +233,10 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog='relay', description='Relay investigations and approved repairs from your terminal.')
     parser.add_argument('--api', default='http://127.0.0.1:8178/api/v1')
     sub = parser.add_subparsers(dest='action', required=True)
+    setup = sub.add_parser('setup', help='Install dependencies, start the local service and open Relay')
+    setup.add_argument('--check', action='store_true', help='Check prerequisites without installing or starting anything')
+    setup.add_argument('--web', action='store_true', help='Use the local web app instead of building the macOS desktop app')
+    setup.add_argument('--no-open', action='store_true', help='Set up services without opening a window')
     pi = sub.add_parser('pi', help='Connect the Pi terminal harness to Relay evidence')
     pi_actions = pi.add_subparsers(dest='pi_action', required=True)
     pi_doctor = pi_actions.add_parser('doctor', help='Check Pi installation, local evidence and optional provider credentials; no model call')
@@ -283,6 +287,9 @@ def main(argv=None):
     monitor.add_argument('case', type=identifier); monitor.add_argument('run', type=identifier); monitor.add_argument('--seconds', type=int, default=600)
     stop = sub.add_parser('stop', help='Request a cooperative stop'); stop.add_argument('run', type=identifier)
     args = parser.parse_args(argv)
+    if args.action == 'setup':
+        from bootstrap import run_setup
+        return run_setup(args)
     if hasattr(args, 'seconds') and not 1 <= args.seconds <= 3600:
         parser.error('--seconds must be between 1 and 3600')
     api = API(args.api)

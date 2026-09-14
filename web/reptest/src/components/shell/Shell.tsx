@@ -46,7 +46,7 @@ function AmbientAscii({ enabled }: { enabled: boolean }) {
   );
 }
 
-export function Shell({ route, onRoute, onOpenCustomizer, children }: { route: Route; onRoute: (r: Route) => void; onOpenCustomizer: () => void; children: ReactNode }) {
+export function Shell({ route, onRoute, onOpenCustomizer, onOpenAccount, children }: { route: Route; onRoute: (r: Route) => void; onOpenCustomizer: () => void; onOpenAccount: () => void; children: ReactNode }) {
   const { theme, set, resolvedMode } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
   const collapsed = theme.sidebarCollapsed;
@@ -226,7 +226,7 @@ export function Shell({ route, onRoute, onOpenCustomizer, children }: { route: R
               <Bell className="h-4 w-4" />
 
             </button>
-            <button className="t-control ml-1 flex h-8 items-center gap-2 rounded-md pl-1 pr-2 hover:bg-surface-2" aria-label={`Account: ${name}`} onClick={() => onRoute("team")}>
+            <button className="t-control ml-1 flex h-8 items-center gap-2 rounded-md pl-1 pr-2 hover:bg-surface-2" aria-label={`Account: ${name}`} onClick={onOpenAccount}>
               <Avatar name={name} size={24} />
               <span className="hidden text-xs sm:inline">{name}</span>
               <Badge tone="outline" className="hidden sm:inline-flex">{account?.role || "Sign in"}</Badge>

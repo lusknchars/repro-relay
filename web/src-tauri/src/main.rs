@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod account;
 mod repository;
 
 #[tauri::command]
@@ -57,6 +58,9 @@ async fn save_packet(content: String, name: String) -> Result<bool, String> {
 }
 fn main() {
     tauri::Builder::default()
+        .manage(
+            account::AccountClient::new().expect("Could not initialize the local account client"),
+        )
         .manage(repository::RepositoryState::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(
@@ -72,6 +76,7 @@ fn main() {
         // Keep native commands available without presenting inert menu actions.
         .invoke_handler(tauri::generate_handler![
             save_packet,
+            account::account_request,
             open_plow_latch,
             repository::repository_status,
             repository::select_repository,
