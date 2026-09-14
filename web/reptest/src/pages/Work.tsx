@@ -1,6 +1,15 @@
+import "./Work.css";
 import { CaseEnvironment } from "@/components/case-environment";
 import { useEffect, useRef, useState } from "react";
-import { RefreshCw, ArrowLeft, Play, Square, Search } from "lucide-react";
+import {
+  RefreshCw,
+  ArrowLeft,
+  Play,
+  Square,
+  TriangleAlert,
+  Link2,
+  ChevronRight,
+} from "lucide-react";
 import { Button, Badge, Input } from "@/components/ui";
 import { IntegrationLogo } from "@/components/integration-logo";
 import {
@@ -27,6 +36,27 @@ type Evidence = {
   latest_review?: { decision: string };
   sources_available?: boolean;
 };
+type RunReview = {
+  id: string;
+  run_id: string;
+  reviewer: string;
+  decision: string;
+  feedback: string;
+  created_at: string;
+};
+type Repair = {
+  id: string;
+  status: string;
+  input: { base_commit: string; allowed_paths: string[]; environment: string };
+  approved_by: string | null;
+};
+function remembered(key: string, fallback: string) {
+  try {
+    return sessionStorage.getItem(`relay.work.${key}`) || fallback;
+  } catch {
+    return fallback;
+  }
+}
 type EvidencePage = { items: Evidence[]; next_cursor?: number | null };
 const active = (r: InvestigationRun) =>
   !["completed", "failed", "cancelled"].includes(r.status);
@@ -43,6 +73,11 @@ function Detail({ item, onBack }: { item: Case; onBack: () => void }) {
     () => api<InvestigationRun[]>(`/cases/${item.id}/runs`),
     [item.id],
     5000,
+  );
+  const reviews = useLoad(
+    () => api<RunReview[]>(`/cases/${item.id}/run-reviews`),
+    [item.id],
+    10000,
   );
   const [chosen, setChosen] = useState("");
   const run = runs.data?.find((r) => r.id === chosen) ?? runs.data?.[0];
@@ -89,6 +124,7 @@ function Detail({ item, onBack }: { item: Case; onBack: () => void }) {
       await api(path, "POST", body, key);
       setNotice(`${label} recorded.`);
       runs.refresh();
+      reviews.refresh();
       details.refresh();
       workspace.refresh();
     } catch (e) {
@@ -102,29 +138,72 @@ function Detail({ item, onBack }: { item: Case; onBack: () => void }) {
     workspace.data?.account.role !== "viewer";
   const page = details.data as EvidencePage | undefined;
   const events = page?.items || [];
+  const needsAttention = run && ["failed", "attention"].includes(run.status);
+  const runReviews =
+    reviews.data?.filter((review) => review.run_id === run?.id) || [];
+  const warning = run?.context_stale
+    ? {
+        title: "Evidence changed since this attempt",
+        detail:
+          "The report or its context has changed. Investigate the current revision before reviewing this result.",
+      }
+    : needsAttention
+      ? {
+          title: "Investigation needs attention",
+          detail: run.detail || "Inspect the recorded attempt before retrying.",
+        }
+      : workspace.data &&
+          !workspace.data.runner.available &&
+          !(run && active(run))
+        ? {
+            title: "Hermes runtime unavailable",
+            detail:
+              workspace.data.runner.reason ||
+              "Connect the investigation runtime in Settings to start work. Saved evidence remains available.",
+          }
+        : null;
   return (
     <section
-      className="flex min-w-0 flex-1 flex-col overflow-auto"
+      className="work-detail flex min-w-0 flex-1 flex-col"
       aria-label="Selected work"
     >
-      <header className="grid gap-2 border-b border-border bg-surface p-4">
+      <header className="work-heading grid gap-2 border-b border-border bg-surface px-4 py-3">
         <Button className="justify-self-start md:hidden" onClick={onBack}>
-          <ArrowLeft size={14} />
-          Work history
+          <ArrowLeft size={14} /> Work history
         </Button>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="mono text-xs text-muted">
-            {item.id} · revision {item.revision}
-          </span>
-          <Badge>{item.status.replace(/_/g, " ")}</Badge>
+        <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+          <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-2">
+            <span title={item.id} className="mono max-w-28 shrink-0 truncate text-xs text-muted">{item.id}</span>
+            <h2 className="min-w-0 break-words text-base font-semibold">
+              {item.title}
+            </h2>
+          </div>
+          <Button
+            size="sm"
+            onClick={async () => {
+              const url = new URL(location.href);
+              url.search = new URLSearchParams({ case: item.id }).toString();
+              try {
+                await navigator.clipboard.writeText(url.href);
+                setNotice(
+                  "Work link copied. Teammates need access to this workspace.",
+                );
+              } catch {
+                setNotice(`Work link: ${url.href}`);
+              }
+            }}
+          >
+            <Link2 size={13} /> Share link
+          </Button>
         </div>
-        <h2 className="text-lg font-semibold">{item.title}</h2>
-        <div className="flex flex-wrap gap-3 text-xs text-muted">
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted">
           <span>{item.project}</span>
+          <span>Revision {item.revision}</span>
           <span className="mono break-all">
             {item.build || "Build not recorded"}
           </span>
-          <span>Updated {when(item.updated_at)}</span>
+          <span>Report: {item.status.replace(/_/g, " ")}</span>
+          <span>Last confirmed {when(run?.checked_at || item.updated_at)}</span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <IntegrationLogo provider="hermes" size={20} />
@@ -190,12 +269,6 @@ function Detail({ item, onBack }: { item: Case; onBack: () => void }) {
             Refresh
           </Button>
         </div>
-        {!workspace.data?.runner.available && (
-          <p className="text-xs text-muted">
-            {workspace.data?.runner.reason || "Runtime connection unavailable."}{" "}
-            Open Settings for connection steps.
-          </p>
-        )}
         <p role="status" className="text-xs text-ok">
           {notice}
         </p>
@@ -205,11 +278,39 @@ function Detail({ item, onBack }: { item: Case; onBack: () => void }) {
           </p>
         )}
       </header>
-      <div className="grid min-h-0 flex-1 xl:grid-cols-[minmax(280px,0.9fr)_minmax(0,1.1fr)]">
-        <section className="grid min-w-0 grid-cols-1 content-start gap-4 [overflow-wrap:anywhere] border-b border-border p-4 xl:border-r xl:border-b-0">
+      {warning && (
+        <div
+          role="status"
+          aria-label="Investigation warning"
+          className={cn(
+            "work-warning flex flex-wrap items-start gap-2 border-b px-4 py-3 text-sm",
+            needsAttention
+              ? "border-danger/20 bg-danger/5 text-danger"
+              : "border-warn/20 bg-warn/5",
+          )}
+        >
+          <TriangleAlert size={16} className="mt-0.5 shrink-0" aria-hidden />
+          <div className="min-w-0 flex-1">
+            <strong className="font-medium">{warning.title}</strong>
+            <p className="mt-1 text-xs text-muted [overflow-wrap:anywhere]">
+              {warning.detail}
+            </p>
+          </div>
+          <a
+            href="/?view=settings"
+            className="shrink-0 border border-border bg-surface px-2 py-1 text-xs text-foreground hover:border-border-strong"
+          >
+            Open connections
+          </a>
+        </div>
+      )}
+      <div className="work-panes grid min-h-0 flex-1">
+        <section
+          aria-label="Work conversation"
+          className="work-conversation flex min-w-0 flex-col gap-5 [overflow-wrap:anywhere] border-b border-border p-4"
+        >
           <h3 className="text-sm font-semibold">Conversation and decisions</h3>
-          <CaseEnvironment key={item.id} item={item} canWrite={!!canWrite} />
-          <article className="rounded-md border border-border p-3">
+          <article className="work-message">
             <Badge tone="outline">Reported behavior</Badge>
             <p className="mt-2 whitespace-pre-wrap text-sm">
               {item.description}
@@ -220,7 +321,7 @@ function Detail({ item, onBack }: { item: Case; onBack: () => void }) {
             </p>
           </article>
           {item.observations.map((o) => (
-            <article key={o.id} className="rounded-md border border-border p-3">
+            <article key={o.id} className="work-message">
               <div className="text-xs text-muted">
                 {o.author} · Human observation · {when(o.at)}
               </div>
@@ -253,7 +354,7 @@ function Detail({ item, onBack }: { item: Case; onBack: () => void }) {
             </p>
           )}
           {run && (
-            <article className="grid gap-2 rounded-md border border-border p-3">
+            <article className="work-message grid gap-2">
               <div className="flex flex-wrap items-center gap-2 text-sm">
                 <IntegrationLogo provider="hermes" size={20} />
                 {run.execution_kind === "local_validation"
@@ -271,9 +372,29 @@ function Detail({ item, onBack }: { item: Case; onBack: () => void }) {
               </p>
             </article>
           )}
+          {reviews.error && (
+            <p className="text-xs text-danger" role="alert">
+              Review history: {reviews.error}
+            </p>
+          )}
+          {runReviews.map((review) => (
+            <article key={review.id} className="work-message">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                <strong>{review.reviewer}</strong>
+                <time>{when(review.created_at)}</time>
+                <Badge tone="outline">
+                  {review.decision.replace(/_/g, " ")}
+                </Badge>
+              </div>
+              <p className="mt-2 whitespace-pre-wrap text-sm">
+                {review.feedback}
+              </p>
+            </article>
+          ))}
+          <CaseEnvironment key={item.id} item={item} canWrite={!!canWrite} />
           {run?.status === "completed" &&
             run.execution_kind !== "local_validation" && (
-              <section className="grid gap-2 rounded-md border border-border p-3">
+              <section className="work-review mt-auto grid gap-2 border-t border-border pt-4">
                 <h3 className="text-sm font-semibold">
                   Review this investigation
                 </h3>
@@ -334,9 +455,12 @@ function Detail({ item, onBack }: { item: Case; onBack: () => void }) {
               </section>
             )}
         </section>
-        <section className="min-w-0 p-4">
+        <section
+          aria-label="Evidence inspector"
+          className="work-inspector min-w-0 p-4"
+        >
           <div
-            className="mb-4 flex flex-wrap gap-1"
+            className="work-tabs mb-4 flex flex-wrap gap-4 border-b border-border"
             role="tablist"
             aria-label="Investigation evidence"
           >
@@ -351,16 +475,40 @@ function Detail({ item, onBack }: { item: Case; onBack: () => void }) {
               <button
                 key={p}
                 role="tab"
+                id={`work-tab-${p}`}
+                aria-controls="work-evidence-panel"
+                tabIndex={p === pane ? 0 : -1}
                 aria-selected={p === pane}
+                onKeyDown={(event) => {
+                  const tabs = [
+                    "findings",
+                    "changes",
+                    "tests",
+                    "activity",
+                    "tools",
+                    "context",
+                  ];
+                  let next = tabs.indexOf(p);
+                  if (event.key === "ArrowRight")
+                    next = (next + 1) % tabs.length;
+                  else if (event.key === "ArrowLeft")
+                    next = (next + tabs.length - 1) % tabs.length;
+                  else if (event.key === "Home") next = 0;
+                  else if (event.key === "End") next = tabs.length - 1;
+                  else return;
+                  event.preventDefault();
+                  setPane(tabs[next]);
+                  document.getElementById(`work-tab-${tabs[next]}`)?.focus();
+                }}
                 onClick={() => setPane(p)}
                 className={cn(
-                  "t-control rounded-md px-3 py-2 text-xs capitalize",
+                  "t-control border-b-2 px-0 py-2 text-xs capitalize",
                   p === pane
-                    ? "bg-accent-soft text-accent-text"
-                    : "text-muted hover:bg-surface-2",
+                    ? "border-accent text-foreground"
+                    : "border-transparent text-muted hover:text-foreground",
                 )}
               >
-                {p}
+                {p === "context" ? "Context used" : p}
               </button>
             ))}
           </div>
@@ -371,11 +519,84 @@ function Detail({ item, onBack }: { item: Case; onBack: () => void }) {
             </p>
           )}
           {details.data !== undefined && (
-            <div role="tabpanel" className="grid gap-3">
-              {pane === "context" || pane === "changes" ? (
-                <Records value={details.data} />
+            <div
+              role="tabpanel"
+              id="work-evidence-panel"
+              aria-labelledby={`work-tab-${pane}`}
+              className="grid gap-3"
+            >
+              {pane === "context" ? (
+                <>
+                  <h3 className="text-sm font-semibold">Context used</h3>
+                  <p className="text-xs text-muted">
+                    {run
+                      ? "Frozen context supplied to the selected attempt."
+                      : "Current report context. No attempt has started."}
+                  </p>
+                  <Records value={details.data} />
+                </>
+              ) : pane === "changes" ? (
+                <>
+                  <h3 className="text-sm font-semibold">Isolated changes</h3>
+                  {Array.isArray(details.data) &&
+                    (details.data as Repair[]).map((plan) => (
+                      <article
+                        key={plan.id}
+                        className="border border-border p-3 text-sm"
+                      >
+                        <div className="flex flex-wrap justify-between gap-2">
+                          <strong>{plan.id}</strong>
+                          <Badge tone="outline">
+                            {plan.status.replace(/_/g, " ")}
+                          </Badge>
+                        </div>
+                        <p className="mt-2 text-xs text-muted">
+                          Base {plan.input.base_commit} ·{" "}
+                          {plan.input.environment}
+                        </p>
+                        <ul className="my-2 space-y-1 font-mono text-xs">
+                          {plan.input.allowed_paths.map((path) => (
+                            <li key={path}>{path}</li>
+                          ))}
+                        </ul>
+                        <p className="text-xs text-muted">
+                          {plan.approved_by
+                            ? `Approval recorded by ${plan.approved_by}`
+                            : "No approval recorded"}
+                        </p>
+                        <details className="mt-3 text-xs">
+                          <summary className="cursor-pointer">
+                            Inspect repair record
+                          </summary>
+                          <Records value={plan} />
+                        </details>
+                      </article>
+                    ))}
+                  {Array.isArray(details.data) && !details.data.length && (
+                    <p className="text-sm text-muted">
+                      No repair plan recorded for this report.
+                    </p>
+                  )}
+                  <p className="text-xs text-muted">
+                    A recorded plan is not proof of execution or a verified fix.
+                  </p>
+                </>
               ) : (
                 <>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <h3 className="text-sm font-semibold">
+                      {pane === "findings"
+                        ? "Findings and evidence"
+                        : pane === "tests"
+                          ? "Test receipts"
+                          : pane === "activity"
+                            ? "Recorded activity"
+                            : "Tool records"}
+                    </h3>
+                    <span className="text-[11px] text-muted">
+                      Selected attempt
+                    </span>
+                  </div>
                   {events
                     .filter(
                       (e) => pane !== "tests" || e.event_type === "test_result",
@@ -383,7 +604,7 @@ function Detail({ item, onBack }: { item: Case; onBack: () => void }) {
                     .map((e) => (
                       <article
                         key={e.id}
-                        className="grid gap-2 rounded-md border border-border p-3"
+                        className="work-evidence-row grid gap-2 border border-border p-3"
                       >
                         <div className="flex flex-wrap gap-2">
                           <Badge tone="outline">
@@ -438,7 +659,7 @@ function Detail({ item, onBack }: { item: Case; onBack: () => void }) {
                   {!events.filter(
                     (e) => pane !== "tests" || e.event_type === "test_result",
                   ).length && (
-                    <p className="rounded-md border border-border p-4 text-sm text-muted">
+                    <p className="border border-border p-4 text-sm text-muted">
                       No {pane} recorded for this attempt.
                     </p>
                   )}
@@ -473,8 +694,16 @@ function Detail({ item, onBack }: { item: Case; onBack: () => void }) {
 }
 export function WorkPage() {
   const workspace = useWorkspace();
-  const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState("all");
+  const [query, setQuery] = useState(() => remembered("query", ""));
+  const [filter, setFilter] = useState(() => remembered("filter", "all"));
+  useEffect(() => {
+    try {
+      sessionStorage.setItem("relay.work.query", query);
+      sessionStorage.setItem("relay.work.filter", filter);
+    } catch {
+      /* In-memory filtering still works. */
+    }
+  }, [query, filter]);
   const [selected, setSelected] = useState(
     new URLSearchParams(location.search).get("case") || "",
   );
@@ -506,19 +735,58 @@ export function WorkPage() {
     ? cases.find((c) => c.id === selected) ||
       (linked.data?.id === selected ? linked.data : undefined)
     : cases[0];
+  const isWorking = (id: string) =>
+    workspace.data?.runs.some((run) => run.case_id === id && run.active);
+  const isBlocked = (id: string) => {
+    const latest = workspace.data?.runs.find((run) => run.case_id === id);
+    return latest && ["failed", "attention"].includes(latest.status);
+  };
+  const matchesFilter = (c: Case, f: string) =>
+    f === "all" ||
+    (f === "working"
+      ? isWorking(c.id)
+      : f === "blocked"
+        ? c.status === "blocked" || isBlocked(c.id)
+        : c.status === f);
   const list = cases.filter(
     (c) =>
-      (filter === "all" || c.status === filter) &&
+      matchesFilter(c, filter) &&
       (c.id + " " + c.title + " " + c.project)
         .toLowerCase()
         .includes(query.toLowerCase()),
   );
+  function selectCase(id: string) {
+    setSelected(id);
+    setListOpen(false);
+    history.replaceState(null, "", `/?case=${encodeURIComponent(id)}`);
+  }
   return (
-    <div className="flex h-full min-h-0">
+    <div
+      className="work-desk flex h-full min-h-0"
+      onKeyDown={(event) => {
+        if (
+          event.metaKey ||
+          event.ctrlKey ||
+          event.altKey ||
+          event.target instanceof HTMLInputElement ||
+          event.target instanceof HTMLTextAreaElement ||
+          event.target instanceof HTMLSelectElement ||
+          (event.target as HTMLElement).isContentEditable
+        )
+          return;
+        if (event.key !== "j" && event.key !== "k") return;
+        const index = list.findIndex((c) => c.id === item?.id);
+        const next = list[index + (event.key === "j" ? 1 : -1)];
+        if (next) {
+          event.preventDefault();
+          selectCase(next.id);
+        }
+      }}
+    >
       <section
         aria-label="Work history"
         className={cn(
-          "flex min-h-0 w-full flex-none flex-col border-r border-border bg-surface md:w-[360px] lg:w-[400px]",
+          "work-history flex min-h-0 w-full flex-none flex-col border-r border-border bg-surface",
           !listOpen && "hidden md:flex",
         )}
       >
@@ -534,23 +802,31 @@ export function WorkPage() {
             onChange={(e) => setQuery(e.target.value)}
           />
           <div className="flex flex-wrap gap-1">
-            {["all", "new", "blocked", "reproduced", "needs_context"].map(
-              (f) => (
-                <button
-                  key={f}
-                  aria-pressed={filter === f}
-                  className={cn(
-                    "rounded-md px-2 py-1 text-xs",
-                    filter === f
-                      ? "bg-accent-soft text-accent-text"
-                      : "text-muted",
-                  )}
-                  onClick={() => setFilter(f)}
-                >
-                  {f.replace(/_/g, " ")}
-                </button>
-              ),
-            )}
+            {[
+              "all",
+              "new",
+              "working",
+              "blocked",
+              "reproduced",
+              "needs_context",
+            ].map((f) => (
+              <button
+                key={f}
+                aria-pressed={filter === f}
+                className={cn(
+                  "border border-border px-1.5 py-1 text-[11px] capitalize",
+                  filter === f
+                    ? "bg-accent-soft text-accent-text"
+                    : "text-muted",
+                )}
+                onClick={() => setFilter(f)}
+              >
+                {f.replace(/_/g, " ")}{" "}
+                <span className="tnum">
+                  {cases.filter((c) => matchesFilter(c, f)).length}
+                </span>
+              </button>
+            ))}
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-auto">
@@ -571,27 +847,43 @@ export function WorkPage() {
             <button
               key={c.id}
               className={cn(
-                "t-control grid w-full gap-2 border-b border-l-2 border-border p-4 text-left hover:bg-surface-2",
+                "work-history-row t-control grid w-full gap-1.5 border-b border-l-2 border-border px-3 py-3 text-left hover:bg-surface-2",
                 c.id === item?.id
                   ? "border-l-accent bg-accent-soft/40"
                   : "border-l-transparent",
               )}
-              onClick={() => {
-                setSelected(c.id);
-                setListOpen(false);
-                history.replaceState(
-                  null,
-                  "",
-                  `/?case=${encodeURIComponent(c.id)}`,
-                );
-              }}
+              aria-pressed={c.id === item?.id}
+              onClick={() => selectCase(c.id)}
             >
-              <span className="text-xs text-muted">
-                {c.id} · {c.project}
+              <span className="flex min-w-0 items-start justify-between gap-2">
+                <span className="min-w-0 truncate text-sm font-medium">
+                  {c.title}
+                </span>
+                <span
+                  className={cn(
+                    "shrink-0 border px-1 py-0.5 text-[10px]",
+                    isBlocked(c.id) || c.status === "blocked"
+                      ? "border-danger/20 bg-danger/5 text-danger"
+                      : isWorking(c.id)
+                        ? "border-ok/20 bg-ok/5 text-ok"
+                        : "border-border text-muted",
+                  )}
+                >
+                  {isBlocked(c.id)
+                    ? "Attention"
+                    : isWorking(c.id)
+                      ? "Working"
+                      : c.status.replace(/_/g, " ")}
+                </span>
               </span>
-              <span className="text-sm font-medium">{c.title}</span>
-              <span className="text-xs text-muted">
-                {c.status.replace(/_/g, " ")} · {when(c.updated_at)}
+              <span className="line-clamp-1 text-xs text-muted">
+                {c.description}
+              </span>
+              <span className="flex items-center justify-between gap-2 text-[11px] text-muted">
+                <span className="truncate">
+                  {c.id} · {when(c.updated_at)}
+                </span>
+                <ChevronRight size={12} className="shrink-0" />
               </span>
             </button>
           ))}
@@ -606,6 +898,9 @@ export function WorkPage() {
           {cases.length} records
           {workspace.data?.moreCases ? " · Latest 100 shown" : ""} · Refreshes
           every 15 seconds
+          <p className="mt-1 text-[11px]">
+            Filters survive refresh · J / K to move
+          </p>
         </div>
       </section>
       <div

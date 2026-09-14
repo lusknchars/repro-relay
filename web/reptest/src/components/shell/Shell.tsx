@@ -203,9 +203,9 @@ export function Shell({ route, onRoute, onOpenCustomizer, onOpenAccount, childre
           <button className="t-control grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-surface-2 md:hidden" aria-label="Open navigation" onClick={() => setMobileOpen(true)}>
             <Menu className="h-4 w-4" />
           </button>
-          <button className="t-control grid h-8 w-8 flex-none place-items-center rounded-md text-muted hover:bg-surface-2" id="workspace-context-toggle" aria-label={contextOpen ? "Hide workspace context" : "Show workspace context"} aria-expanded={contextOpen} aria-controls="workspace-context" onClick={toggleContext}>
+          {route !== "work" && <button className="t-control grid h-8 w-8 flex-none place-items-center rounded-md text-muted hover:bg-surface-2" id="workspace-context-toggle" aria-label={contextOpen ? "Hide workspace context" : "Show workspace context"} aria-expanded={contextOpen} aria-controls="workspace-context" onClick={toggleContext}>
             <PanelLeft className="h-4 w-4" />
-          </button>
+          </button>}
           <button className="t-control flex min-w-0 h-7 items-center gap-1.5 rounded-md px-2 text-xs hover:bg-surface-2" aria-label="Workspace settings" onClick={() => onRoute("settings")}>
             <span className="h-4 w-4 rounded-sm bg-accent-soft" aria-hidden />
             <span className="font-medium">Relay</span>
@@ -251,7 +251,7 @@ export function Shell({ route, onRoute, onOpenCustomizer, onOpenAccount, childre
           </div>
         </header>
         <div className="flex min-h-0 flex-1 flex-col overflow-auto xl:flex-row xl:overflow-hidden">
-        {contextOpen && <WorkspaceContext route={route} onRoute={onRoute} onClose={() => { toggleContext(); document.getElementById("workspace-context-toggle")?.focus(); }} />}
+        {contextOpen && route !== "work" && <WorkspaceContext route={route} onRoute={onRoute} onClose={() => { toggleContext(); document.getElementById("workspace-context-toggle")?.focus(); }} />}
         <main className="min-h-0 min-w-0 flex-1 overflow-auto max-xl:flex-none">
           <div className="mx-auto h-full" style={{ maxWidth: "var(--content-max)" }}>
             {children}

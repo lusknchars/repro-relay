@@ -1,0 +1,91 @@
+.work-desk {
+  --work-line: var(--border);
+  background: var(--background);
+}
+.work-history {
+  width: 100%;
+}
+.work-detail {
+  container-type: inline-size;
+  overflow: auto;
+}
+.work-heading {
+  flex: none;
+}
+.work-heading [role="status"]:empty {
+  display: none;
+}
+.work-desk button,
+.work-desk input,
+.work-desk textarea,
+.work-desk select,
+.work-desk article,
+.work-desk details,
+.work-desk pre,
+.work-desk .work-heading span[class*="rounded"] {
+  border-radius: 2px;
+}
+.work-desk .work-history-row {
+  border-radius: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+.work-desk button:focus-visible,
+.work-desk a:focus-visible,
+.work-desk summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.work-message {
+  line-height: 1.65;
+}
+.work-conversation,
+.work-inspector {
+  background: var(--background);
+}
+.work-conversation {
+  border-right: 0;
+}
+.work-evidence-row + .work-evidence-row {
+  margin-top: -0.75rem;
+}
+.work-tabs {
+  align-content: start;
+}
+.work-tabs button {
+  border-radius: 0;
+}
+.work-warning {
+  flex: none;
+}
+.work-review {
+  background: var(--surface);
+}
+
+@media (min-width: 768px) {
+  .work-history {
+    width: clamp(240px, 22vw, 330px);
+  }
+}
+@container (min-width: 720px) {
+  .work-panes {
+    grid-template-columns: minmax(0, 0.86fr) minmax(0, 1.14fr);
+  }
+  .work-conversation {
+    border-right: 1px solid var(--border);
+    border-bottom: 0;
+  }
+}
+@media (min-width: 1280px) {
+  .work-panes {
+    overflow: auto;
+  }
+  .work-conversation,
+  .work-inspector {
+    overflow-y: auto;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .work-desk .t-control {
+    transition: none;
+  }
+}
