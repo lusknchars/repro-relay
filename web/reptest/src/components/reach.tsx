@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowUpRight, Check, Copy, Plus, RefreshCw } from "lucide-react";
 import { Button, Input, Badge } from "@/components/ui";
 import { api, errorText, useLoad, useWorkspace } from "@/lib/live";
+import { useReachEvents } from "@/lib/reach-events";
 type Person = { id: string; name: string; role: string };
 type Action = {
   title: string;
@@ -49,6 +50,7 @@ export function Reach() {
     15000,
   );
   const [item, setItem] = useState<Item>();
+  const listener = useReachEvents(feed.refresh);
   useEffect(() => {
     if (!item && selected) {
       const found = feed.data?.items.find((i) => i.id === selected);
@@ -161,6 +163,13 @@ export function Reach() {
           <p className="mt-1 text-xs text-muted">
             Turn call notes into owned actions. Keep your todos and message
             drafts together.
+          </p>
+          <p
+            aria-live="polite"
+            className="mt-2 text-xs text-muted"
+            data-testid="reach-listener"
+          >
+            {listener}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -427,6 +436,7 @@ export function Reach() {
             </p>
             {[
               "./relay reach today",
+              "./relay reach listen --cursor-file .data/reach/listener.cursor",
               "./relay reach mcp --allow-workspace-context",
               "./relay reach plow-check",
             ].map((command) => (
@@ -440,12 +450,15 @@ export function Reach() {
               </div>
             ))}
             <p>
-              The workspace MCP exposes the daily brief and action proposals.
-              Hermes can suggest actions; decisions stay here.
+              The listener prints new todo and meeting events as JSON lines. The
+              workspace MCP exposes reach_events, the daily brief and action
+              proposals. Hermes can read new events and suggest actions;
+              decisions stay here. Connecting the listener does not start a
+              model.
             </p>
             <p>
-              For a call, select its case and participant in Team → Call context.
-              Use{" "}
+              For a call, select its case and participant in Team → Call
+              context. Use{" "}
               <code>
                 ./relay reach call --case CASE_ID --member MEMBER_UUID --consent
               </code>{" "}

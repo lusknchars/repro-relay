@@ -1,5 +1,9 @@
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
+from contextlib import redirect_stdout
+import io
+from pathlib import Path
+import tempfile
 import reach
 
 class ReachTests(unittest.TestCase):
@@ -22,7 +26,51 @@ class ReachTests(unittest.TestCase):
         for bad in ({**args, 'status': 'planned'}, {**args, 'id': '../decision'}):
             with self.assertRaises(ValueError):
                 reach.execute(api, 'reach_propose_action', bad)
-        self.assertEqual({tool['name'] for tool in reach.MANIFEST}, {'reach_daily_brief', 'reach_propose_action'})
+        self.assertEqual({tool['name'] for tool in reach.MANIFEST}, {'reach_events', 'reach_daily_brief', 'reach_propose_action'})
+
+    def test_events_reject_invalid_cursors(self):
+        api = Mock()
+        for value in ('-1', '1&x=1', 0, '9223372036854775808', '', True):
+            with self.assertRaises(ValueError):
+                reach.execute(api, 'reach_events', {'after': value})
+        api.request.assert_not_called()
+        reach.execute(api, 'reach_events', {'after': '42'})
+        api.request.assert_called_once_with('GET', '/reach/events?after=42')
+
+    def test_listener_drains_pages_and_resumes_checkpoint(self):
+        api = Mock()
+        api.request.side_effect = [
+            {'items': [{'cursor': '1'}], 'cursor': '1', 'has_more': True},
+            {'items': [{'cursor': '2'}], 'cursor': '2', 'has_more': False},
+            {'items': [], 'cursor': '2', 'has_more': False},
+        ]
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'checkpoint'
+            output = io.StringIO()
+            with redirect_stdout(output):
+                reach.listen(api, checkpoint=path, once=True)
+                reach.listen(api, checkpoint=path, once=True)
+            self.assertEqual(path.read_text().strip(), '2')
+            self.assertEqual(output.getvalue().splitlines(), ['{"cursor": "1"}', '{"cursor": "2"}'])
+            self.assertEqual([c.args[1] for c in api.request.call_args_list], [
+                '/reach/events?after=0', '/reach/events?after=1', '/reach/events?after=2'])
+
+    def test_listener_retries_without_advancing_and_failed_output_does_not_checkpoint(self):
+        api = Mock()
+        api.request.side_effect = [OSError('offline'), {'items': [], 'cursor': '4', 'has_more': False}]
+        with patch.object(reach.time, 'sleep', side_effect=[None, KeyboardInterrupt]), patch('sys.stderr', io.StringIO()):
+            with self.assertRaises(KeyboardInterrupt):
+                reach.listen(api, after='4')
+        self.assertEqual([c.args[1] for c in api.request.call_args_list], ['/reach/events?after=4'] * 2)
+        api.request.side_effect = None
+        api.request.return_value = {'items': [{'cursor': '5'}], 'cursor': '5', 'has_more': False}
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'cursor'
+            path.write_text('4\n')
+            with patch('builtins.print', side_effect=BrokenPipeError):
+                with self.assertRaises(BrokenPipeError):
+                    reach.listen(api, checkpoint=path, once=True)
+            self.assertEqual(path.read_text(), '4\n')
 
     def test_mcp_rejects_send_tool_and_requires_initialize(self):
         api = Mock()

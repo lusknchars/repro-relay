@@ -1,4 +1,5 @@
 //! Daily coordination from existing evidence. Proposals never approve execution or delivery.
+mod events;
 use crate::{
     ApiError, ApiResult, Tx,
     hosting::{Hosting, Workspace},
@@ -19,6 +20,7 @@ use sqlx::{PgPool, Row};
 pub fn routes() -> Router<PgPool> {
     Router::new()
         .route("/reach", get(list))
+        .route("/reach/events", get(events::list))
         .route("/reach/{id}/proposal", put(propose))
         .route("/reach/{id}/decision", put(decide))
 }

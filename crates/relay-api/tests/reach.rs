@@ -124,6 +124,26 @@ async fn reach_proposals_decisions_retry_and_source_freshness(pool: PgPool) {
     assert_eq!(brief(&app).await["items"][0]["stale"], true);
     decision["version"] = json!(2);
     assert_eq!(call(&app, "PUT", &path, decision, None).await.0, 409);
+    let (_, events) = call(&app, "GET", "/reach/events?after=0", Value::Null, None).await;
+    let kinds: Vec<_> = events["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["event_type"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            "reach.todo.created",
+            "reach.action.proposed",
+            "reach.action.planned"
+        ]
+    );
+    assert!(!events.to_string().contains("+15555550123"));
+    assert!(!events.to_string().contains("message_draft"));
+    let (_, replay) = call(&app, "GET", "/reach/events?after=2", Value::Null, None).await;
+    assert_eq!(replay["items"].as_array().unwrap().len(), 1);
+    assert_eq!(replay["cursor"], "3");
 }
 #[sqlx::test(migrations = "./migrations")]
 async fn reach_call_sources_assignment_and_invalid_actions(pool: PgPool) {
@@ -214,6 +234,18 @@ async fn reach_call_sources_assignment_and_invalid_actions(pool: PgPool) {
     );
     let (_, original) = call(&app, "GET", &format!("/cases/{case}"), Value::Null, None).await;
     assert_eq!(original["status"], "new"); // Completing a todo cannot verify a case.
+    let (_, events) = call(&app, "GET", "/reach/events?after=0", Value::Null, None).await;
+    assert_eq!(
+        events["items"][0]["event_type"],
+        "reach.meeting_action.recorded"
+    );
+    assert_eq!(events["items"][0]["source_id"], item["id"]);
+    assert_eq!(events["items"][2]["event_type"], "reach.action.done");
+    assert!(
+        !events
+            .to_string()
+            .contains("Please test the mobile navigation")
+    );
 }
 #[sqlx::test(migrations = "./migrations")]
 async fn reach_has_no_guest_data_or_mutation(pool: PgPool) {
@@ -226,4 +258,94 @@ async fn reach_has_no_guest_data_or_mutation(pool: PgPool) {
     );
     let (status, _) = call(&guest, "GET", "/reach?on=2026-09-14", Value::Null, None).await;
     assert!(status == 403 || status == 401);
+    let (status, _) = call(&guest, "GET", "/reach/events?after=0", Value::Null, None).await;
+    assert!(status == 403 || status == 401);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn reach_event_pages_are_committed_scoped_and_immutable(pool: PgPool) {
+    let app = relay_api::app(pool.clone());
+    let (case, _, _) = setup(&app).await;
+    pin(&app, &case).await;
+    // A rolled-back source must not notify listeners or consume a cursor.
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query("INSERT INTO calendar_pins(workspace_id,id,version,payload) VALUES('local','rolled-back',1,'{}')")
+        .execute(&mut *tx).await.unwrap();
+    tx.rollback().await.unwrap();
+    sqlx::query("INSERT INTO calendar_pins(workspace_id,id,version,payload) SELECT 'local','page-'||n,1,'{}' FROM generate_series(1,101) n")
+        .execute(&pool).await.unwrap();
+    let (_, first) = call(&app, "GET", "/reach/events?after=0", Value::Null, None).await;
+    assert_eq!(first["items"].as_array().unwrap().len(), 100);
+    assert_eq!(first["cursor"], "100");
+    assert_eq!(first["has_more"], true);
+    let (_, second) = call(&app, "GET", "/reach/events?after=100", Value::Null, None).await;
+    assert_eq!(second["items"].as_array().unwrap().len(), 2);
+    assert_eq!(second["cursor"], "102");
+    assert_eq!(second["has_more"], false);
+    for after in ["-1", "wat", "103"] {
+        assert!(
+            call(
+                &app,
+                "GET",
+                &format!("/reach/events?after={after}"),
+                Value::Null,
+                None
+            )
+            .await
+            .0
+            .is_client_error()
+        );
+    }
+    assert!(
+        sqlx::query("UPDATE reach_events SET event_type='fake' WHERE cursor=1")
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    assert!(
+        sqlx::query("DELETE FROM reach_events WHERE cursor=1")
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    // A different workspace's notifications never enter the local cursor space.
+    sqlx::query("INSERT INTO workspaces(id) VALUES('other-events')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO calendar_pins(workspace_id,id,version,payload) VALUES('other-events','private',1,'{}')").execute(&pool).await.unwrap();
+    let (_, empty) = call(&app, "GET", "/reach/events?after=102", Value::Null, None).await;
+    assert_eq!(empty["items"], json!([]));
+    assert_eq!(empty["head"], "102");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn reach_cursors_cannot_commit_out_of_order(pool: PgPool) {
+    let mut first = pool.begin().await.unwrap();
+    sqlx::query(
+        "INSERT INTO calendar_pins(workspace_id,id,version,payload) VALUES('local','first',1,'{}')",
+    )
+    .execute(&mut *first)
+    .await
+    .unwrap();
+    let other_pool = pool.clone();
+    let mut second = tokio::spawn(async move {
+        sqlx::query("INSERT INTO calendar_pins(workspace_id,id,version,payload) VALUES('local','second',1,'{}')")
+            .execute(&other_pool).await.unwrap();
+    });
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(100), &mut second)
+            .await
+            .is_err()
+    );
+    first.commit().await.unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), second)
+        .await
+        .unwrap()
+        .unwrap();
+    let app = relay_api::app(pool);
+    let (_, events) = call(&app, "GET", "/reach/events?after=0", Value::Null, None).await;
+    assert_eq!(events["items"][0]["source_id"], "calendar-first");
+    assert_eq!(events["items"][1]["source_id"], "calendar-second");
+    assert_eq!(events["cursor"], "2");
 }

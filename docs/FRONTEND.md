@@ -2,6 +2,8 @@
 
 ## Reach
 
+Reach listens to committed todo and meeting-action metadata every two seconds while open. The header reports connection/retry state; new events refresh the queue without replacing the user's open review. The terminal/agent disclosure includes a copyable listener command and explains the MCP event reader. The existing periodic brief refresh remains for team/context changes that do not emit todo events.
+
 Reach is a primary page in the main sidebar and compact mobile navigation, with a transcript/todo queue and action inspector using the existing supplied theme. Quick todo entry, owner/date review, saved decisions, copyable drafts and local item links use real Rust records. The opened editor retains its reviewed snapshot across polling; stale submissions are rejected. Calls are labelled as supplied transcripts and message drafts are not presented as deliveries. See [Reach](REACH.md).
 
 ## Phone-first account entry
