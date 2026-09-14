@@ -158,6 +158,7 @@ class Bridge:
             raise BridgeError("Credential identity does not match the configured Plow line.")
         _, runner = self.relay_call("GET", "/runner")
         return {"plow_grant_checked": True, "line_id": self.line, "chat_id": self.chat,
+                "line_name": identity.get("line", {}).get("display_name"),
                 "latch_advertised": bool(identity.get("mcp_url")), "latch_action_verified": False,
                 "hermes_runner": runner, "phone_delivery_verified": False,
                 "native_iphone_connection": "not_implemented"}

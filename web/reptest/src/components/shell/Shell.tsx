@@ -3,7 +3,7 @@ import { Bell, BookOpen, Menu, MessagesSquare, Rocket, ChevronsUpDown, Command, 
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/theme/ThemeProvider";
 import { Avatar, Badge, Kbd } from "@/components/ui";
-import { connections } from "@/lib/data";
+import { useWorkspace } from "@/lib/live";
 
 export type Route = "work" | "team" | "knowledge" | "usage" | "settings" | "setup";
 
@@ -51,11 +51,19 @@ export function Shell({ route, onRoute, onOpenCustomizer, children }: { route: R
   const [mobileOpen, setMobileOpen] = useState(false);
   const collapsed = theme.sidebarCollapsed;
   const variant = theme.sidebar;
-  const decisions = 1;
-  const problems = connections.filter((c) => c.status === "blocked" || c.status === "missing" || c.status === "unknown").length;
+  const workspace = useWorkspace();
+  const account = workspace.data?.account;
+  const active = workspace.data?.runs.filter(r => r.active).length || 0;
+  const decisions = 0;
+  const problems = workspace.data && !workspace.data.runner.available ? 1 : 0;
+  const name = account?.profile?.name || "Account";
+  const project = workspace.data?.cases[0]?.project || "Local workspace";
+  const searchWork = () => { onRoute("work"); window.setTimeout(() => window.dispatchEvent(new Event('relay:search-work')), 50); };
+
 
   useEffect(() => {
     const fn = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); searchWork(); }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") {
         e.preventDefault();
         set("sidebarCollapsed", !collapsed);
@@ -89,7 +97,7 @@ export function Shell({ route, onRoute, onOpenCustomizer, children }: { route: R
         {!collapsed && (
           <div className="min-w-0 leading-tight">
             <div className="truncate text-sm font-semibold">Repro Relay</div>
-            <div className="truncate text-[11px] text-muted">reptest · prototype</div>
+            <div className="truncate text-[11px] text-muted">Local workspace</div>
           </div>
         )}
       </div>
@@ -97,7 +105,7 @@ export function Shell({ route, onRoute, onOpenCustomizer, children }: { route: R
       <div className={cn("px-2 pb-2", collapsed && "px-1.5")}>
         <button
           className={cn("t-control flex h-8 w-full items-center gap-2 rounded-md border border-border bg-surface-2 px-2 text-xs text-muted hover:text-foreground", collapsed && "justify-center px-0")}
-          aria-label="Search or open command palette"
+          aria-label="Search work records" onClick={searchWork}
         >
           <Search className="h-3.5 w-3.5" />
           {!collapsed && (
@@ -113,7 +121,7 @@ export function Shell({ route, onRoute, onOpenCustomizer, children }: { route: R
         {NAV.map((n) => {
           const Icon = n.icon;
           const current = route === n.id;
-          const count = n.id === "work" ? decisions : n.id === "team" ? 3 : n.id === "settings" ? problems : 0;
+          const count = n.id === "work" ? decisions : n.id === "team" ? 0 : n.id === "settings" ? problems : 0;
           return (
             <button
               key={n.id}
@@ -140,8 +148,8 @@ export function Shell({ route, onRoute, onOpenCustomizer, children }: { route: R
       {!collapsed && (
         <div className="mt-4 px-4">
           <div className="text-[11px] font-medium text-faint">Repository</div>
-          <div className="mt-1 truncate text-xs">acme-billing</div>
-          <div className="mono truncate text-[11px] text-muted">main@8f21c0e · staging-eu</div>
+          <div className="mt-1 truncate text-xs">{project}</div>
+          <div className="mono truncate text-[11px] text-muted">{workspace.data ? `${workspace.data.cases.length} reports loaded` : "Connection unavailable"}</div>
           <button onClick={() => { onRoute("setup"); setMobileOpen(false); }} className="t-control mt-2 flex items-center gap-1.5 text-xs text-accent-text hover:underline">
             <Rocket className="h-3 w-3" /> Replay first-run setup
           </button>
@@ -153,10 +161,10 @@ export function Shell({ route, onRoute, onOpenCustomizer, children }: { route: R
         {!collapsed && (
           <div className="border-t border-border px-3 py-2.5">
             <div className="flex items-center justify-between text-[11px] text-muted">
-              <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-ok" /> Hermes investigating</span>
-              <span className="tnum">$2.46 today</span>
+              <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-ok" /> {active ? `${active} active attempt` : "No active attempt"}</span>
+              <span className="tnum">{workspace.error ? "Offline" : "Recorded state"}</span>
             </div>
-            <div className="mt-1 flex items-center gap-1.5 text-[11px] text-warn"><span className="h-1.5 w-1.5 rounded-full bg-warn" /> 1 provider blocked</div>
+            <div className="mt-1 flex items-center gap-1.5 text-[11px] text-warn"><span className="h-1.5 w-1.5 rounded-full bg-warn" /> {workspace.data?.runner.available ? "Hermes runtime available" : "Hermes runtime unavailable"}</div>
           </div>
         )}
         <button
@@ -181,13 +189,13 @@ export function Shell({ route, onRoute, onOpenCustomizer, children }: { route: R
           <button className="t-control grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-surface-2 md:hidden" aria-label="Open navigation" onClick={() => setMobileOpen(true)}>
             <Menu className="h-4 w-4" />
           </button>
-          <button className="t-control flex h-7 items-center gap-1.5 rounded-md px-2 text-xs hover:bg-surface-2" aria-label="Switch workspace">
+          <button className="t-control flex h-7 items-center gap-1.5 rounded-md px-2 text-xs hover:bg-surface-2" aria-label="Workspace settings" onClick={() => onRoute("settings")}>
             <span className="h-4 w-4 rounded-sm bg-accent-soft" aria-hidden />
-            <span className="font-medium">Acme</span>
+            <span className="font-medium">Relay</span>
             <span className="text-faint max-sm:hidden">/</span>
-            <span className="max-sm:hidden">acme-billing</span>
+            <span className="max-sm:hidden">{project}</span>
             <span className="text-faint">/</span>
-            <span className="mono text-[11px]">main</span>
+            <span className="mono text-[11px]">workspace</span>
             <ChevronsUpDown className="h-3 w-3 text-muted" />
           </button>
           <div className="ml-auto flex items-center gap-1">
@@ -196,14 +204,12 @@ export function Shell({ route, onRoute, onOpenCustomizer, children }: { route: R
               className="t-control hidden h-7 items-center gap-1.5 rounded-md border border-border px-2 text-xs hover:bg-surface-2 md:flex"
               aria-label="Connection state"
             >
-              <span className="h-1.5 w-1.5 rounded-full bg-ok" /> 2 ready
-              <span className="h-1.5 w-1.5 rounded-full bg-warn" /> 1 untested
-              <span className="h-1.5 w-1.5 rounded-full bg-danger" /> 1 blocked
+              <span className={cn("h-1.5 w-1.5 rounded-full", workspace.data ? "bg-ok" : "bg-warn")} /> {workspace.data ? "Workspace connected" : "Connection unavailable"}
             </button>
-            <button className="t-control grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-foreground" aria-label="Help">
+            <button className="t-control grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-foreground" aria-label="Help" onClick={() => onRoute("setup")}>
               <HelpCircle className="h-4 w-4" />
             </button>
-            <button className="t-control grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-foreground" aria-label="Command palette">
+            <button className="t-control grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-foreground" aria-label="Find work" onClick={searchWork}>
               <Command className="h-4 w-4" />
             </button>
             <button
@@ -216,14 +222,14 @@ export function Shell({ route, onRoute, onOpenCustomizer, children }: { route: R
             <button onClick={onOpenCustomizer} className="t-control grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-foreground" aria-label="Customize appearance">
               <SlidersHorizontal className="h-4 w-4" />
             </button>
-            <button className="t-control relative grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-foreground" aria-label="Notifications, 1 needs your decision">
+            <button className="t-control relative grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-foreground" aria-label="Open work activity" onClick={() => onRoute("work")}>
               <Bell className="h-4 w-4" />
-              <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-accent" />
+
             </button>
-            <button className="t-control ml-1 flex h-8 items-center gap-2 rounded-md pl-1 pr-2 hover:bg-surface-2" aria-label="Account: Luskzz, Owner">
-              <Avatar name="Lucas O" size={24} />
-              <span className="hidden text-xs sm:inline">Luskzz</span>
-              <Badge tone="outline" className="hidden sm:inline-flex">Owner</Badge>
+            <button className="t-control ml-1 flex h-8 items-center gap-2 rounded-md pl-1 pr-2 hover:bg-surface-2" aria-label={`Account: ${name}`} onClick={() => onRoute("team")}>
+              <Avatar name={name} size={24} />
+              <span className="hidden text-xs sm:inline">{name}</span>
+              <Badge tone="outline" className="hidden sm:inline-flex">{account?.role || "Sign in"}</Badge>
             </button>
           </div>
         </header>

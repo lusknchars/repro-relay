@@ -1,5 +1,7 @@
 # Supplied Reptest frontend and desktop
 
+Current integration: the supplied visual shell remains the default, and its pages now use recorded backend data. See [the connected workspace milestone](LIVE-WORKSPACE.md). The source-fidelity notes below describe the original import, before this authorized backend integration.
+
 The initial adaptation at `f4e4656` was rejected because it changed the supplied composition. The default web and macOS desktop frontend now uses the actual `reptest.zip` files in `web/reptest`, including its six screens, components, styles, theme provider and sample data. No Relay layout or CSS wraps these screens. The subsequent user-requested branding update replaces the RR placeholder, adds the favicon and supplies Hermes/Plow/Pi/Moonshot/Mem0 identity artwork; the original black/white PNGs and SVG are retained under `public/brand`.
 
 Source archive SHA-256: `e82b16132b20d333228267a2b97e0faa272612780ca40b94da73494a7df5452d`. At initial import, the original source, HTML, package files, TypeScript configuration and Vite configuration were retained byte for byte. Later explicit branding edits replace the shell logo and HTML favicon and add Hermes/Plow/Pi/Moonshot/Mem0 artwork beside agent and connection identities, without restructuring the supplied screens. Generated TypeScript cache is excluded. Its own lockfile preserves the supplied React, icon and chart versions.

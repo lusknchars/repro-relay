@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
 
-// The supplied source and lockfile remain unchanged. Separate assets let the
+// Preserve the supplied theme and layout. Separate assets let the
 // desktop keep its existing CSP without permitting inline JavaScript.
 export default defineConfig({
   plugins: [react(), tailwindcss()],

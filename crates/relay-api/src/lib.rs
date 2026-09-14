@@ -11,6 +11,7 @@ pub mod runs;
 pub mod sessions;
 pub mod tool_profile;
 pub mod usage;
+pub mod workspace_view;
 use axum::{
     Extension, Json, Router,
     extract::{DefaultBodyLimit, Path, Query, State},
@@ -221,6 +222,7 @@ pub fn app_with_runner(pool: PgPool, hosting: Hosting, runner: runs::Runner) -> 
         .merge(sessions::routes())
         .merge(autonomy::routes())
         .merge(tool_profile::routes())
+        .merge(workspace_view::routes())
         .route("/runner", get(runs::capabilities))
         .route("/cases/{id}/runs", get(runs::list).post(runs::start))
         .route("/cases/{id}/inspections", post(runs::record_inspection))

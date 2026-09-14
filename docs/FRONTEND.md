@@ -2,7 +2,7 @@
 
 ## Current default: supplied Reptest files
 
-The default web and Tauri clients now render the actual user-supplied ZIP from `web/reptest`, without the prior adaptation. See [source fidelity, commands and integration boundaries](REPTEST-ADAPTATION.md). The supplied layout and sample data are preserved. The user-supplied Repro Relay mark now replaces the RR placeholder, using black in light mode and white in dark mode; the favicon and desktop app icon use the same mark. Hermes uses the supplied artwork in Work, Team, Usage, setup and connection identities. Plow uses the supplied lime logo in its connection list, detail and follow-up section. Pi, Moonshot and Mem0 also use their supplied SVG/PNG in connections, setup and usage. All original artwork is preserved; Pi has a dark tile and Moonshot a light tile for contrast. Decorative images are labeled by adjacent text; the standalone Mem0 wordmark has its own accessible name. Their backend connections are still pending. The previous working client is retained under `web/src` and `dev:legacy` for integration and regression testing.
+The default web and Tauri clients use the supplied Reptest shell, theme and visual components from `web/reptest`. Their pages now read the Rust/PostgreSQL backend rather than the ZIP's example records. See [connected behavior and remaining release work](LIVE-WORKSPACE.md). Work, Team, Knowledge, Usage and Settings provide recorded investigations, browser accounts/invitations, reviewed memory, usage graphs and local connection controls. Supplied logos and appearance preferences are retained. The previous client remains under `web/src` and `dev:legacy` for regression testing.
 
 ## Previous client, retained for backend integration
 

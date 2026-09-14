@@ -32,6 +32,12 @@ During the initial local setup, the same pinned CLI may already be installed at 
 
 The official [Plow CLI](https://github.com/plow-pbc/plow-agents/tree/8ce907e220ab67018d6857e8054a41eed4ecd279) owns account activation, line provisioning, credential rotation, and revocation. This project does not duplicate those authentication endpoints.
 
+## Automatic configuration
+
+After installing the official CLI above, reuse an existing line with `python3 integrations/plow/connect.py --login`, or explicitly request a new line with `python3 integrations/plow/connect.py --login --new-line`. Complete the ownership text printed by Plow. The helper then verifies the account's sole line and owner chat and writes the private bridge configuration. Multiple lines require `--line LINE_ID`. Existing occupied lines and differently bound configurations are preserved.
+
+If this Mac is already authorized, use **Settings → Plow + Latch → Connect authorized Plow account**, or run `python3 integrations/plow/connect.py`. The helper finds the official CLI at either `.data/tools/plow-agents` or the pinned checkout above. It does not send messages or launch Hermes. Check connection returns the line's name, grant-check time and whether Latch was advertised; Mac actions and phone delivery remain separately unverified.
+
 ## Configure and check
 
 ```sh
