@@ -72,6 +72,46 @@ The controller does not generate code by itself or manufacture candidate/test re
 
 Every mutation retains the existing local-workspace and version checks. `--api http://127.0.0.1:8178/api/v1` selects another literal loopback API. Redirects, environment proxies, remote URLs and URL credentials are rejected. API bodies are bounded. No raw shell-command endpoint is exposed.
 
+## Execution ledger: inform, govern, observe
+
+Prepared repairs now have a persistent local ledger, based on the workflow in [this paper review](../../docs/research/execution-ledger-paper.md). It records state without another model call. These commands are adapter primitives; users do not need another prompt or per-change direction form.
+
+```sh
+./relay ledger state FIX-RETURNED-ID --repo /absolute/path/to/target-repository
+./relay ledger read FIX-RETURNED-ID src/customer.ts --repo /absolute/path/to/target-repository --start 1 --end 80
+./relay ledger command FIX-RETURNED-ID --repo /absolute/path/to/target-repository --category test -- npm test
+./relay ledger history FIX-RETURNED-ID --repo /absolute/path/to/target-repository
+```
+
+The example path and test command are placeholders. `command` records a proposal and returns a decision; **it does not execute the command or grant permission**. Repeated tests receive a nudge and still require execution if authorized. Search, modification, and unknown command proposals also remain executable; no generic shell-result cache is enabled.
+
+`state` rechecks previously observed files, lists recent observations and command summaries, and counts returned/reused reads. `read` returns the requested UTF-8 lines and an observation receipt. A later exact request can pass `--visible-receipt LED-RETURNED-ID`; only an unchanged file, identical range, and the caller's declaration that this receipt is still visible in the active context permit reference-only reuse. After context compaction or restart, omit visibility unless the adapter knows the earlier output remains available. The ledger cannot independently inspect the model's context.
+
+External edits, deletion, inaccessible files, and changed/restored content observed between requests invalidate older observations. Changes are recorded without inventing an author. Freshness is checked at the read boundary; another process can change a file afterward. Only inspected files are covered. Reuse still hashes the file, so this is output deduplication, not an assertion of reduced filesystem I/O or token savings.
+
+An adapter can record a command's outcome after execution:
+
+```sh
+./relay ledger outcome FIX-RETURNED-ID --repo /absolute/path/to/target-repository --proposal LED-COMMAND-ID --exit-code 1 --output-file /absolute/path/to/captured-output.txt
+```
+
+Outcomes are immutable and idempotent for the same proposal. They are labeled `caller_reported`, remain separate from repair verification, and do not update a case or mark a fix successful. `history --after CURSOR --limit 50` pages through observations, file changes, reuse decisions, proposals, and outcomes. Full command output is retrieved on demand instead of repeated in each state view.
+
+The first access creates `.relay-worktrees/<repository-hash>/.ledger/<plan-id>.sqlite3`, outside the candidate checkout. It is bound to the repository/worktree and original repair contract, including the base and acceptance hash; changing plan status/version does not erase history. Modified candidate files and commits descending from the approved base are supported. Revoked or unapproved plans reject CLI ledger access. Original acceptance and edit permissions remain the runtime's responsibility.
+
+The file is owner-readable/writable and retains selected file contents and reported output. This is local adapter state, separate from the PostgreSQL case history. It is not a security boundary against another process running as the same user. Limits are 1,000 records, 2 MiB per inspected file, 200 lines/64 KiB per read, and 64 KiB per outcome. Failed, oversized, binary, or symlinked reads are rejected without reusable receipts. No-follow file reads currently require POSIX; native Windows ledger access is unsupported and must not be advertised as tested.
+
+### Hermes adapter contract still to connect
+
+1. Bind the runtime to the approved worktree and original acceptance checks.
+2. Call `state` before an agent turn and pass the compact state view to the existing agent.
+3. Route supported file reads through `read`; track receipt visibility through context changes. Route command proposals through `command`, then apply existing runtime permissions and execute authorized commands.
+4. Record actual command outcomes with their provenance. Publish candidate and protected-verification evidence through the existing backend contracts.
+
+Until these hooks are installed and exercised, `runtime_hook_connected` remains `false`. This module does not intercept Hermes automatically, sandbox a process, perform a repair, or measure token savings. Compare equivalent tasks and actual provider usage before claiming an improvement.
+
 ## Validation
 
 `make terminal-check` exercises loopback-only transport, stable mutation identities, dispatch gates, observer behavior, repository/base binding, changed-checkout preservation, and plan creation without executing tests. Git checks use temporary fixture repositories. A protocol-fixture run does not prove a live Hermes correction.
+
+Ledger tests exercise exact/context-visible reuse, external changes, deletion/restoration, restart persistence, contract isolation, candidate commits, revocation, unsafe/failed reads, capacity rollback, unsuppressed tests, reported outcome immutability, and paginated history. They use temporary files and real Git worktrees, with no model invocation.

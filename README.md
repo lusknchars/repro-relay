@@ -94,3 +94,5 @@ See the [deployment plan and launch checklist](docs/deployment/public-beta.md). 
 ## Local investigation and repair controls
 
 Run `./relay doctor` from this checkout, then `./relay cases` and `./relay --help`. The CLI reads the same records as the app, starts and watches configured Hermes investigations, prepares isolated Git worktrees, and dispatches approved repair stages. See [terminal setup and runtime requirements](integrations/relay-terminal/README.md). A worktree is a separate checkout, not an installed or sandboxed coding runtime.
+
+`./relay ledger` adds local execution state for prepared repairs: fresh file observations, conditional read reuse, command proposals, and reported outcomes. It makes no model calls and never suppresses tests. Hermes action interception still needs the documented runtime adapter hooks; local ledger support alone does not establish live correction or token savings.

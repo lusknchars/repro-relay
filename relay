@@ -2,4 +2,7 @@
 """Repository-local entry point; no installation or global configuration needed."""
 import pathlib
 import runpy
-runpy.run_path(str(pathlib.Path(__file__).resolve().parent / 'integrations/relay-terminal/cli.py'), run_name='__main__')
+import sys
+directory = pathlib.Path(__file__).resolve().parent / 'integrations/relay-terminal'
+sys.path.insert(0, str(directory))
+runpy.run_path(str(directory / 'cli.py'), run_name='__main__')

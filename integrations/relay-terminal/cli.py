@@ -4,12 +4,14 @@ import hashlib
 import json
 import pathlib
 import re
+import sqlite3
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from execution_ledger import Ledger
 
 TERMINAL = {'completed', 'failed', 'cancelled'}
 
@@ -142,6 +144,32 @@ def inspect_case(api, case_id):
             'view_path': '/?view=agents&case=' + case_id}
 
 
+def repair_ledger(plan, source):
+    if plan['status'] not in {'approved', 'repair_dispatched', 'candidate_recorded', 'verification_dispatched', 'checks_reported_passed', 'checks_reported_failed'}:
+        raise ValueError('Ledger access requires an approved, non-revoked repair contract.')
+    repo = repository(source)
+    if str(repo) != plan['input']['repository']:
+        raise ValueError('This repository does not match the repair contract.')
+    base = plan['input']['base_commit']
+    if not re.fullmatch(r'[a-fA-F0-9]{40}|[a-fA-F0-9]{64}', base):
+        raise ValueError('The repair must name an exact base commit.')
+    namespace = hashlib.sha256(str(repo).encode()).hexdigest()[:16]
+    parent = repo.parent / '.relay-worktrees' / namespace
+    destination = parent / identifier(plan['id'])
+    if any(path.is_symlink() for path in (parent.parent, parent, destination)):
+        raise ValueError('Worktree destinations must not be symlinks.')
+    if not destination.is_dir():
+        raise ValueError('Prepare this approved checkout with relay worktree first.')
+    common = git(destination, 'rev-parse', '--path-format=absolute', '--git-common-dir')
+    source_common = git(repo, 'rev-parse', '--path-format=absolute', '--git-common-dir')
+    if (repository(destination) != destination or pathlib.Path(common).resolve() != pathlib.Path(source_common).resolve()
+            or git(destination, 'merge-base', base, 'HEAD').lower() != base.lower()):
+        raise ValueError('Checkout does not belong to this repository and repair base.')
+    # Dirty files and candidate commits are expected. Never reset or recreate the checkout.
+    anchor = {key: plan[key] for key in ('id', 'case_id', 'owner_version', 'build', 'input', 'acceptance_hash')}
+    return Ledger(destination, parent / '.ledger' / (plan['id'] + '.sqlite3'), anchor)
+
+
 def make_plan(api, case_id, finding_id, spec_path):
     raw = pathlib.Path(spec_path).read_bytes()
     if len(raw) > 65536:
@@ -203,6 +231,27 @@ def main(argv=None):
     plan.add_argument('case', type=identifier); plan.add_argument('--finding', required=True, type=identifier); plan.add_argument('--spec', required=True)
     worktree = sub.add_parser('worktree', help='Prepare a separate checkout for an approved plan')
     worktree.add_argument('plan', type=identifier); worktree.add_argument('--repo', required=True)
+    ledger = sub.add_parser('ledger', help='Inspect and record local repair execution state without model calls')
+    ledger_actions = ledger.add_subparsers(dest='ledger_action', required=True)
+    for action in ('state', 'read', 'command', 'outcome', 'history'):
+        action_parser = ledger_actions.add_parser(action)
+        action_parser.add_argument('plan', type=identifier)
+        action_parser.add_argument('--repo', required=True)
+        if action == 'read':
+            action_parser.add_argument('path')
+            action_parser.add_argument('--start', type=int, default=1)
+            action_parser.add_argument('--end', type=int, default=200)
+            action_parser.add_argument('--visible-receipt', action='append', default=[], type=identifier)
+        elif action == 'command':
+            action_parser.add_argument('--category', choices=('test', 'search', 'modify', 'unknown'), default='unknown')
+            action_parser.add_argument('argv', nargs='+')
+        elif action == 'outcome':
+            action_parser.add_argument('--proposal', required=True, type=identifier)
+            action_parser.add_argument('--exit-code', required=True, type=int)
+            action_parser.add_argument('--output-file', required=True)
+        elif action == 'history':
+            action_parser.add_argument('--after', type=int, default=0)
+            action_parser.add_argument('--limit', type=int, default=50)
     approve = sub.add_parser('approve', help='Approve the exact reviewed plan version')
     approve.add_argument('plan', type=identifier); approve.add_argument('--version', required=True, type=int); approve.add_argument('--actor', required=True)
     repair = sub.add_parser('repair', help='Dispatch the next approved repair or verification stage')
@@ -237,6 +286,22 @@ def main(argv=None):
         emit(api.call('/repairs/' + args.plan))
     elif args.action == 'worktree':
         emit(prepare_worktree(api.call('/repairs/' + args.plan), args.repo))
+    elif args.action == 'ledger':
+        state = repair_ledger(api.call('/repairs/' + args.plan), args.repo)
+        if args.ledger_action == 'state':
+            emit(state.inform())
+        elif args.ledger_action == 'read':
+            emit(state.read(args.path, args.start, args.end, args.visible_receipt))
+        elif args.ledger_action == 'command':
+            emit(state.govern_command(args.argv, args.category))
+        elif args.ledger_action == 'history':
+            emit(state.history(args.after, args.limit))
+        else:
+            with open(args.output_file, 'rb') as output:
+                raw = output.read(65537)
+            if len(raw) > 65536:
+                raise ValueError('Command output exceeds 64 KiB; preserve the full output elsewhere.')
+            emit(state.outcome(args.proposal, args.exit_code, raw.decode('utf8')))
     elif args.action == 'approve':
         emit(api.call('/repairs/' + args.plan + '/commands', {'action': 'approve', 'version': args.version, 'actor': args.actor}))
     elif args.action == 'stop':
@@ -261,6 +326,6 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         emit({'watch_ended': True, 'agent_stopped': False, 'next': 'Use relay stop RUN-ID to request an agent stop.'})
         sys.exit(130)
-    except (ValueError, OSError, subprocess.SubprocessError) as error:
+    except (ValueError, OSError, sqlite3.Error, subprocess.SubprocessError) as error:
         print(json.dumps({'error': str(error)}, ensure_ascii=True), file=sys.stderr)
         sys.exit(1)
