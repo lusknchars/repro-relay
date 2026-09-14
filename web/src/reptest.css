@@ -1,0 +1,94 @@
+/* Visual adaptation of the user-supplied reptest.zip. Existing Relay controls and data remain authoritative. */
+:root {
+ --brand:#2f6fed;--canvas:#f7f7f8;--surface:#fff;--sidebar:#fff;--surface-soft:#f1f1f3;--tint:#e8f0ff;
+ --ink:#17171c;--muted:#6b6b78;--border:#e4e4e8;--focus:#2f6fed;--accent-text:#2159c9;
+ --effect-blue:#2f6fed;--effect-opacity:.18;--relay-radius:8px;--relay-font-scale:100%;--relay-content-max:100%;
+ --card-edge:var(--border);--card-rim:var(--brand);--card-shadow:transparent;--card-sheen:transparent;
+}
+:root[data-theme=dark] {
+ --canvas:#0f1013;--surface:#16171b;--sidebar:#16171b;--surface-soft:#1c1d22;--tint:#1a2542;
+ --ink:#ececf1;--muted:#9a9aa6;--border:#30313a;--focus:#8fb0ff;--accent-text:#8fb0ff;
+ --brand:#396ddd;--effect-blue:#5b8cff;--effect-opacity:.18;
+ --card-edge:var(--border);--card-rim:var(--effect-blue);--card-shadow:transparent;--card-sheen:transparent;
+}
+:root[data-accent=teal] {--brand:#087d77;--accent-text:#08655f;--tint:#e0f5f4;--effect-blue:#0f8f8a;--focus:#0f8f8a}
+:root[data-theme=dark][data-accent=teal] {--brand:#087d77;--accent-text:#6fe0da;--tint:#10302f;--effect-blue:#2fc4bd;--focus:#6fe0da}
+:root[data-accent=violet] {--brand:#6d4fe0;--accent-text:#5637c4;--tint:#eee9ff;--effect-blue:#6d4fe0;--focus:#6d4fe0}
+:root[data-theme=dark][data-accent=violet] {--brand:#7352db;--accent-text:#beaeff;--tint:#241d45;--effect-blue:#9b84ff;--focus:#beaeff}
+html {font-size:var(--relay-font-scale)}
+body {background:var(--canvas);font-variant-numeric:tabular-nums}
+.reptest-shell {background:var(--canvas);font-size:.875rem}
+.reptest-shell [data-slot=sidebar-inset] {background:var(--canvas)}
+.reptest-topbar {min-height:52px;box-shadow:none;background:var(--surface)}
+.reptest-workspace {width:100%;max-width:var(--relay-content-max);margin-inline:auto;padding:24px;gap:0}
+.reptest-panel {min-width:0;border:1px solid var(--border);border-radius:var(--relay-radius);background:var(--surface)}
+.reptest-sidebar-search {display:flex;align-items:center;gap:8px;width:100%;min-height:44px;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--surface-soft);font-size:12px;color:var(--muted)}
+.reptest-sidebar [data-slot=sidebar-menu-button][data-active=true] {background:var(--tint);color:var(--accent-text)}
+.reptest-sidebar [data-slot=sidebar-menu-button] {font-size:13px;gap:10px}
+.reptest-sidebar .reptest-work-link {font-size:12px;color:var(--muted)}
+.reptest-sidebar[data-state=collapsed] .reptest-sidebar-label {display:none}
+.reptest-sidebar[data-state=collapsed] [data-slot=sidebar-header] {padding:8px}
+.reptest-sidebar[data-state=collapsed] .reptest-sidebar-search {justify-content:center;padding:4px;border:0;background:transparent}
+.reptest-sidebar .sidebar-ascii {top:45%;opacity:.12;mask-image:linear-gradient(transparent,#000 70%,transparent)}
+.reptest-shell :is([data-slot=card],.relay-card,.memory-card,.case-detail) {border-radius:var(--relay-radius);box-shadow:none;background-image:none;border-color:var(--border)}
+.reptest-shell :is([data-slot=card],.relay-card,.memory-card,.case-detail)::before {display:none}
+.reptest-shell :is([data-slot=card],.relay-card,.memory-card,.case-detail)::after {box-shadow:none;border-color:var(--brand);transition:opacity 140ms}
+.reptest-shell :is([data-slot=button], [data-slot=sidebar-menu-button]) {transition:background-color 140ms,color 140ms,border-color 140ms;box-shadow:none}
+.reptest-shell [data-slot=button]:hover {transform:none}
+.reptest-shell [data-slot=button]::before {display:none}
+.reptest-shell [data-slot=button][data-variant=default] {background-image:none}
+.reptest-shell [data-slot=button] {border-radius:calc(var(--relay-radius) * .75)}
+.reptest-workspace.configuration-workspace>div:has(>div>h1) {border:0;padding:0;background:none;border-radius:0}
+.reptest-shell .configuration-background {background:var(--canvas);opacity:.35}
+.reptest-shell .tool-library {margin-top:28px}
+.reptest-shell .tool-library article {padding:18px}
+.reptest-shell .tool-library h2 {font-size:1.25rem}
+.reptest-shell .investigation-workspace {border-radius:var(--relay-radius);grid-template-columns:minmax(200px,.7fr) minmax(340px,1.9fr) minmax(240px,.95fr)}
+.reptest-shell .investigation-workspace .iw-inbox {background:var(--surface)}
+.reptest-shell .investigation-workspace .iw-inbox-heading {padding:16px 12px}
+.reptest-shell .investigation-workspace .iw-case-list {padding:0;gap:0}
+.reptest-shell .investigation-workspace .iw-case {border:0;border-bottom:1px solid var(--border);border-radius:0;padding:14px 12px;gap:5px}
+.reptest-shell .investigation-workspace .iw-case.iw-selected {background:var(--tint);box-shadow:inset 2px 0 var(--brand)}
+.reptest-shell .investigation-workspace .iw-investigation {padding:20px;gap:18px}
+.reptest-shell .investigation-workspace .iw-context {padding:20px 16px;background:var(--surface)}
+.reptest-shell .investigation-workspace .iw-caption {font-size:12px}
+.reptest-shell .investigation-workspace .iw-eyebrow {font-size:11px;letter-spacing:.05em}
+.reptest-shell .investigation-workspace .iw-state-banner {padding:12px;border-radius:6px}
+.reptest-shell .investigation-workspace .iw-review {background:var(--surface-soft);border-radius:6px}
+.reptest-shell .memory-grid {gap:0;border:1px solid var(--border);border-radius:var(--relay-radius);overflow:hidden}
+.reptest-shell .memory-card {border:0;border-bottom:1px solid var(--border);border-radius:0;padding:20px}
+.reptest-shell .reptest-usage .investigation-cost {padding:20px;border:1px solid var(--border);background:var(--surface)}
+.reptest-shell .reptest-usage .iw-section-heading {display:flex;align-items:center;gap:10px}
+.reptest-shell .reptest-usage .iw-section-heading h3 {display:flex;align-items:center;gap:10px;font-size:16px;font-weight:600}
+.reptest-shell .reptest-usage .iw-section-heading svg {width:18px}
+.reptest-shell .reptest-usage .iw-caption {color:var(--muted);line-height:1.6;margin:12px 0}
+.reptest-shell .reptest-usage .iw-details {border:1px solid var(--border);border-radius:6px;margin-top:12px;padding:12px}
+.reptest-shell .reptest-usage .iw-details summary {min-height:44px;display:flex;align-items:center;font-size:13px;font-weight:500}
+.reptest-shell .reptest-usage pre {white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}
+.reptest-footer {opacity:.8}
+.reptest-phone-nav {display:none}
+.appearance-panel :is(button,select) {min-height:44px}
+.appearance-panel input[type=checkbox] {width:20px;height:20px;accent-color:var(--brand)}
+[data-density=compact] .reptest-shell .tool-library article {padding:14px}
+[data-density=compact] .reptest-shell :is([data-slot=table-cell],[data-slot=table-head]) {padding-top:6px;padding-bottom:6px}
+[data-density=compact] .reptest-shell .investigation-workspace .iw-case {padding-block:10px}
+[data-motion=reduce] *,[data-motion=reduce] *::before,[data-motion=reduce] *::after {animation:none!important;transition:none!important;scroll-behavior:auto!important}
+@media(min-width:768px) { .reptest-shell [data-slot=sidebar-menu-button] {min-height:36px} }
+@media(max-width:1200px) { .reptest-shell .investigation-workspace {grid-template-columns:minmax(190px,.65fr) minmax(0,1.7fr)} .reptest-shell .investigation-workspace .iw-context {grid-column:2;border-top:1px solid var(--border)} }
+@media(max-width:767px) {
+ .reptest-workspace {padding:16px 12px 76px}
+ .reptest-topbar>div {padding-inline:10px;gap:4px}
+ .reptest-phone-nav {display:flex;position:fixed;bottom:0;left:0;right:0;min-height:60px;padding-bottom:env(safe-area-inset-bottom);z-index:35;border-top:1px solid var(--border);background:var(--surface)}
+ .reptest-phone-nav button {display:flex;flex:1;min-width:44px;min-height:56px;align-items:center;justify-content:center;flex-direction:column;gap:4px;font-size:10px;color:var(--muted)}
+ .reptest-phone-nav button[aria-current=page] {color:var(--accent-text);background:var(--tint)}
+ .reptest-phone-nav svg {width:18px;height:18px}
+ .reptest-footer {padding-bottom:70px}
+ .reptest-shell .investigation-workspace {display:flex;flex-direction:column}
+ .reptest-shell .investigation-workspace>:is(aside,section) {width:100%;border-left:0;border-right:0}
+ .reptest-shell .investigation-workspace .iw-inbox .iw-case-list {max-height:240px;overflow:auto}
+ .reptest-shell .investigation-workspace .iw-investigation,.reptest-shell .investigation-workspace .iw-context {padding:16px}
+}
+@media(min-width:1100px) {
+ .reptest-shell .reptest-usage .usage-charts {grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+ .reptest-shell .reptest-usage .usage-chart-toolbar,.reptest-shell .reptest-usage .usage-charts>.iw-details {grid-column:1/-1}
+}

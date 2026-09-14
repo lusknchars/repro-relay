@@ -273,7 +273,7 @@ export default function AsciiWaves() {
     const themeObserver=new MutationObserver(theme);
     resizeObserver.observe(host);
     intersection.observe(host);
-    themeObserver.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+    themeObserver.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme','data-accent']});
     media.addEventListener('change',sync);
     document.addEventListener('visibilitychange',sync);
     renderer.domElement.addEventListener('webglcontextlost',contextLost);

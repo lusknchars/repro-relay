@@ -4,6 +4,8 @@ Repro Relay uses the authenticated `@paceui/ultimate-dashboard-template` source 
 
 ## Shared application
 
+The user-supplied `reptest.zip` now guides the shared shell and visual tokens. [The adaptation record](REPTEST-ADAPTATION.md) maps its screens to working Relay features. Work, Team, Knowledge, Usage and Settings are the five primary destinations; detailed work views remain available below them. Usage has a dedicated case/attempt view using recorded Hermes telemetry. Team uses existing account/invitation controls. Prototype messages, balances and successful connections are not imported. The appearance panel persists device preferences for color, spacing, sidebar layout, text size and effects, with reduced-motion support. Mobile has five bottom destinations.
+
 Connections opens a searchable Tools library inside the existing PaceUI layout. Eight curated entries explain each tool's purpose, access, cost source and setup action. Category and Enabled in Pi filters, accessible setup dialogs, and mobile layouts reuse Relay controls. Pi/Codex and browser recipes remain under Terminal and browser setup. Hermes and context monitoring link to their existing controls; Plow keeps its working native/web setup dialog.
 
 Mem0 has a persisted enable choice for new Pi sessions. Account authentication remains separate and credentials never enter the web application. The launcher reads `/tool-profile` unless `--memory` explicitly overrides it. Concurrent changes require refreshing the saved selection. The UI does not infer authentication, installation, provider entitlement or message delivery from a saved preference. Costs are explained by source; only existing Hermes telemetry is available in Relay charts.

@@ -60,7 +60,7 @@ test('report, review memory, export, reject a stale handoff, and reload on mobil
   await page.screenshot({path:'test-results/activity-mobile.png',fullPage:true,animations:'disabled'})
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true)
   await page.setViewportSize({width:1440,height:960})
-  await page.getByRole('button',{name:/Project memory/}).click()
+  await page.getByRole('button',{name:'Knowledge',exact:true}).click()
   await expect(page.locator('.memory-card').filter({hasText:title})).toHaveCount(0)
   await page.reload()
   await expect(page.getByRole('heading',{name:'Project memory',exact:true})).toBeVisible()

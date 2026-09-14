@@ -2,6 +2,8 @@ import type { CaseStatus } from '../types'
 import type { View } from '../components/templates/ultimate-dashboard/layouts'
 
 export const workspaceGuidance: Record<View, { short: string; purpose: string }> = {
+  usage: { short: 'Reported costs and tokens', purpose: 'Inspect spending on one problem, compare attempts and understand missing reports.' },
+  team: { short: 'Profiles and shared access', purpose: 'Manage your profile and invite teammates back to saved work.' },
   overview: { short: 'What needs attention', purpose: 'See which reports need evidence and pick up the next investigation.' },
   inbox: { short: 'Triage reported problems', purpose: 'Compare report status, inspect the evidence, and open the investigation for a case.' },
   agents: { short: 'Findings, tests and usage', purpose: 'Follow one case from the reported problem to findings, test evidence, and your review.' },

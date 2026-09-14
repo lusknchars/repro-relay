@@ -311,3 +311,8 @@ The supplied discovery/library screenshots add a concrete requirement: users sho
 The implemented Connections library now contains eight curated tools with search, categories, setup actions and an Enabled in Pi filter. Mem0 selection persists and affects the next Pi launch. Pi, Kimi, Hermes, context monitoring, Plow/Latch and WebMCP retain their separate setup/runtime boundaries. Design a clear detail inspector with connection evidence, permission scope, cost source and the next action. Preserve the existing PaceUI component foundation, Relay blue, keyboard focus and mobile layouts.
 
 A general tool marketplace, arbitrary package installation, provider OAuth inside Relay, and combined third-party spending charts still require backend work. Do not present those as working in the redesign. See `web/src/components/ToolLibrary.tsx` for the current behavior.
+
+
+## Supplied reptest implementation
+
+The September 14 `reptest.zip` adaptation is now recorded in [REPTEST-ADAPTATION.md](REPTEST-ADAPTATION.md). Its compact shell, primary navigation, appearance controls, dedicated Usage screen and Team entry are implemented against existing Relay features. The fictional work records, conversations and cost metrics in the archive are not application data. Use the adaptation map when designing the remaining work/conversation and team messaging interactions.

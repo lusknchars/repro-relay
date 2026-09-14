@@ -108,3 +108,8 @@ Docs: https://pro.reactbits.dev/docs/components/perspective-grid
 License: https://pro.reactbits.dev/license
 
 This component retains its React Bits Pro product license. As with ASCII Waves, do not publish its source in an open source repository or relicense it under the project's MIT license. No public redistribution was performed.
+
+
+## User-supplied reptest prototype
+
+The user provided `reptest.zip` as a frontend adaptation reference on September 14, 2026. Its shell, appearance settings and semantic colors informed the implementation in `web/src/components/reptest`, `web/src/reptest.css` and the existing PaceUI layouts. The archive describes itself as a PaceUI/shadcn recomposition. Existing PaceUI licensing and notices remain applicable. Sample business records and the archive's dependency tree were not imported. See `docs/REPTEST-ADAPTATION.md` for provenance and the implementation map.

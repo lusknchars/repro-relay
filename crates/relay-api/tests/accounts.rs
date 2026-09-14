@@ -456,6 +456,10 @@ async fn invitation_expiry_revocation_and_redirects_fail_closed(pool: PgPool) {
             422
         );
     }
+    for target in ["/?view=team", "/?view=usage"] {
+        let link = invite(&shared, &owner, target).await;
+        assert!(link["url"].as_str().unwrap().contains("#invite="));
+    }
     let invitation = invite(&shared, &owner, "/").await;
     assert_eq!(
         call(

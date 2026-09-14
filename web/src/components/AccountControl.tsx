@@ -14,7 +14,7 @@ function currentTarget(fallback: string) {
   const source = new URLSearchParams(window.location.search), result = new URLSearchParams()
   const view = source.get('view') || 'overview'
   result.set('view', view)
-  const key = view === 'sessions' ? 'audit' : ['agents','inbox'].includes(view) ? 'case' : ''
+  const key = view === 'sessions' ? 'audit' : ['agents','inbox','usage'].includes(view) ? 'case' : ''
   if (key && source.get(key)) result.set(key, source.get(key)!)
   return source.size ? '/?' + result.toString() : fallback
 }

@@ -30,7 +30,8 @@ export function WorkspaceTour({ view, navigate, guest }: { view: View; navigate:
     wasActive.current = active
   }, [view, active, ref])
   function save(next: string) { setState(next); try { localStorage.setItem(key, next) } catch { /* Tour remains usable without storage. */ } }
-  if (!active && view !== 'overview') return null
+  if ((!active && view !== 'overview') || (active && !page)) return null
+  if (!active && state !== 'new') return <section aria-label="Workspace guide" className="reptest-panel my-4 flex flex-wrap items-center justify-between gap-3 px-4 py-2"><p className="text-sm text-muted-foreground">Your work, evidence and connected tools.</p><div className="flex gap-2"><Button ref={startButton} variant="ghost" className="min-h-11" onClick={() => {save('active');navigate('overview')}}>Replay guided tour</Button><Button variant="outline" className="min-h-11" onClick={() => navigate('connections')}>Go to connections</Button></div></section>
   return <section ref={ref} aria-label="Workspace guide" className="relay-card scroll-mt-20 my-5 rounded-xl border bg-card p-5 sm:p-6">
     <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground"><Compass className="size-4"/>{active ? `WORKSPACE TOUR · ${index + 1} OF ${pages.length}` : 'START HERE'}</div>
     <h2 ref={heading} tabIndex={-1} className="text-xl font-medium outline-none">{active ? page.title : 'Get to know your Relay workspace'}</h2>

@@ -1,3 +1,5 @@
+import { AccountPanel } from './components/AccountControl'
+import { UsageWorkspace } from './components/reptest/UsageWorkspace'
 import { AccountGate } from './components/AccountControl'
 import { useRelayWebMCP } from './lib/webmcp'
 import { ApprovalButton, type ApprovalState } from './components/ui/approval-button'
@@ -75,7 +77,7 @@ export default function App() {
   const browserTools = useRelayWebMCP(session?.mode === 'local' && session.authenticated && !!health)
   const [selectedId, setSelectedId] = useState(()=>new URLSearchParams(window.location.search).get('case') || '')
   const [related, setRelated] = useState<Memory[]>([])
-  const [view, setView] = useState<View>(()=>{ const params=new URLSearchParams(window.location.search); const v=params.get('view'); return ['overview','inbox','agents','sessions','memory','handoffs','connections'].includes(v||'') ? v as View : params.has('case') ? 'inbox' : 'overview' })
+  const [view, setView] = useState<View>(()=>{ const params=new URLSearchParams(window.location.search); const v=params.get('view'); return ['overview','inbox','agents','sessions','memory','handoffs','connections','usage','team'].includes(v||'') ? v as View : params.has('case') ? 'inbox' : 'overview' })
   const [tab, setTab] = useState<'evidence' | 'context' | 'handoff' | 'activity'>('evidence')
   const [showCase, setShowCase] = useState(new URLSearchParams(window.location.search).has('case'))
   const [query, setQuery] = useState('')
@@ -107,7 +109,7 @@ export default function App() {
   }, [modal, busy, health, viewer]))
   useEffect(()=>{
     const url = new URL(window.location.href)
-    if(selectedId&&((view==='inbox'&&showCase)||view==='agents'))url.searchParams.set('case',selectedId)
+    if(selectedId&&((view==='inbox'&&showCase)||['agents','usage'].includes(view)))url.searchParams.set('case',selectedId)
     else url.searchParams.delete('case')
     if(view!=='sessions'){url.searchParams.delete('session');url.searchParams.delete('audit')}
     if(view==='overview')url.searchParams.delete('view');else url.searchParams.set('view',view)
@@ -218,16 +220,16 @@ export default function App() {
   if (session?.mode === 'team' && !session.authenticated) return <AccountGate/>
   if (session?.mode === 'guest' && !session.authenticated) return <GuestGate ready={openWorkspace}/>
   const isGuest = session?.mode === 'guest'
-  const titles:Record<View,string>={sessions:'Autonomous work',overview:'Investigation overview',inbox:'Case inbox',agents:'Agent controls',memory:'Project memory',handoffs:'Handoffs',connections:'Connections'}
+  const titles:Record<View,string>={sessions:'Autonomous work',overview:'Investigation overview',inbox:'Case inbox',agents:'Agent controls',memory:'Project memory',handoffs:'Handoffs',connections:'Connections',usage:'Usage',team:'Team'}
   return <AdminLayout view={view} navigate={navigate} search={focusCaseSearch} guest={isGuest} connected={!!health}>
-    <PageTitle title={titles[view]} description={workspaceGuidance[view].purpose} endContent={view!=='sessions' && <ShortcutHint label="Create a report" keys="Shift N"><Button onClick={()=>openModal('report')} disabled={!health || viewer}><Plus/>New report</Button></ShortcutHint>}/>
+    <PageTitle title={titles[view]} description={workspaceGuidance[view].purpose} endContent={!['sessions','usage','team','connections','memory'].includes(view) && <ShortcutHint label="Create a report" keys="Shift N"><Button onClick={()=>openModal('report')} disabled={!health || viewer}><Plus/>New report</Button></ShortcutHint>}/>
     {viewer && <p role="status" className="notice">Viewer access · Follow the shared history and live run status. The workspace owner controls changes and agent execution.</p>}
     {isGuest && <div className="mt-5"><BetaFeedback/></div>}
     {error && <div className="notice error" role="alert">{error}<Button variant="ghost" size="sm" onClick={()=>void action(openWorkspace)}>Retry connection</Button></div>}
     {notice && <div ref={noticeRef} className="notice" role="status"><Check size={16}/>{notice}</div>}
     {loading ? <div className="loading" role="status">Opening your workspace…</div> : <>
      <WorkspaceTour key={isGuest ? 'guest' : 'local'} view={view} navigate={navigate} guest={isGuest}/>
-     {view==='overview' && <><AIDashboard cases={cases} guest={isGuest} navigate={navigate}/><div className="mt-5"><Table7 compact cases={cases} open={openCase} investigate={openInvestigation} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter}/></div></>}
+     {view==='overview' && <><div className="mt-5"><Table7 compact cases={cases} open={openCase} investigate={openInvestigation} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter}/></div><details className="reptest-panel mt-4 p-4"><summary className="min-h-11 cursor-pointer py-3 text-sm font-medium">Workspace activity and investigator</summary><AIDashboard cases={cases} guest={isGuest} navigate={navigate}/></details></>}
      {view==='inbox' && <div className="mt-5">{showCase&&selected ? <section className="case-detail rounded-xl border bg-card" aria-label="Selected case">
             <button className="mobile-back" onClick={()=>setShowCase(false)}><ArrowLeft size={16}/>All reports<span>{cases.length}</span></button><div className="detail-heading"><div className="detail-kicker"><span title={selected.id}>{selected.id.slice(0,11)}</span><span>Revision {selected.revision}</span></div><h2>{selected.title}</h2><Button variant="outline" className="my-3 min-h-11" onClick={()=>openInvestigation(selected)}>View investigation<ArrowRight/></Button><div className="detail-meta"><Status value={selected.status}/><span>{selected.project}</span><span>{time(selected.created_at)}</span></div></div>
             <Tabs className="case-tabs" value={tab} onValueChange={value=>{
@@ -254,6 +256,8 @@ export default function App() {
             </TabsContent>
             </Tabs>
           </section> : <Table7 cases={cases} open={openCase} investigate={openInvestigation} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} searchRef={searchRef}/>}</div>}
+     {view==='usage'&&<UsageWorkspace cases={cases} selectedId={selectedId} onSelect={setSelectedId} open={openInvestigation}/>}
+     {view==='team'&&<div className="reptest-team mt-5 grid gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(240px,1fr)]"><div className="reptest-panel p-5">{isGuest?<p className="text-sm text-muted-foreground">Team accounts and invitations are available in your local or shared team workspace.</p>:'__TAURI_INTERNALS__' in window?<a className="text-sm underline" href="http://127.0.0.1:8178/?view=team#account">Open account and team controls in the browser</a>:<AccountPanel initialSection="team" returnTo={selectedId?'/?view=agents&case='+encodeURIComponent(selectedId):'/?view=team'}/>}</div><aside className="reptest-panel self-start p-5"><h2 className="font-semibold">Shared work, shared evidence</h2><p className="mt-3 text-sm leading-6 text-muted-foreground">An invitation brings your teammate back to the saved work. Viewer access can follow results; the owner controls changes and agent execution.</p><p className="mt-3 text-sm leading-6 text-muted-foreground">Team chat and direct messages from the prototype are not connected yet.</p><Button variant="outline" className="mt-4" onClick={()=>navigate('inbox')}>Choose a case to share<ArrowRight/></Button></aside></div>}
      {view==='sessions' && <Suspense fallback={<p role="status">Loading automatic work…</p>}><SessionWorkspace guest={isGuest} readOnly={viewer} /></Suspense>}
      {view==='agents' && <Suspense fallback={<Card className="mt-5"><CardContent role="status">Loading the investigation workspace…</CardContent></Card>}><InvestigationWorkspace cases={cases} selectedId={selectedId} onSelect={setSelectedId} guest={isGuest || viewer} onOpenCase={openCase} onNewReport={()=>openModal('report')} onRefresh={refresh}/></Suspense>}
 {view === 'memory' && <section className="memory-view"><div className="memory-heading"><div><h2>Reviewed observations</h2><p>References for investigation. These entries do not establish a root cause or a verified fix.</p></div><label className="search"><Search size={16}/><input aria-label="Search memory" placeholder="Search observations…" value={query} onChange={e => setQuery(e.target.value)}/></label></div>

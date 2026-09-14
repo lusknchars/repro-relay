@@ -258,7 +258,7 @@ const PerspectiveGrid: React.FC<PerspectiveGridProps> = ({
     const themeObserver = new MutationObserver(() => {
       const next=themeColor(); uniforms.uColor.value.set(next.r,next.g,next.b); draw();
     });
-    themeObserver.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+    themeObserver.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme','data-accent']});
     const intersection = new IntersectionObserver(entries => { visible=entries[0]?.isIntersecting??false; sync(); });
     const contextLost = (event: Event) => { event.preventDefault(); lost=true; container.dataset.renderer='fallback'; sync(); };
     const contextRestored = () => { lost=false; container.dataset.renderer='webgl'; handleResize(); sync(); };

@@ -4,6 +4,8 @@ import App from './App'
 import './styles.css'
 import './design.css'
 import './card-interactions.css'
+import './reptest.css'
+import { AppearanceProvider } from './components/reptest/Appearance'
 import { initializeTheme } from './components/ThemeToggle'
 import { DesktopWorkbench } from './components/DesktopWorkbench'
 import { DesktopStartup } from './components/DesktopStartup'
@@ -12,7 +14,7 @@ import { TooltipProvider } from './components/ui/tooltip'
 initializeTheme()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode><TooltipProvider><DesktopStartup><App /></DesktopStartup><DesktopWorkbench/></TooltipProvider></React.StrictMode>,
+  <React.StrictMode><AppearanceProvider><TooltipProvider><DesktopStartup><App /></DesktopStartup><DesktopWorkbench/></TooltipProvider></AppearanceProvider></React.StrictMode>,
 )
 
 if ('__TAURI_INTERNALS__' in window) {
