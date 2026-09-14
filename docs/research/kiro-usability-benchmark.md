@@ -33,3 +33,7 @@ Do not ask users to write another task prompt to move through these stages. Obta
 A user should open a status queue, inspect a case, reach its investigation, and find the relevant evidence without selecting a provider or creating a new task. Keyboard and 320-pixel phone layouts must expose the same actions. Navigating or opening a disclosure must never start an investigation, send a message, approve a proposal, or turn unknown testing into a passing result.
 
 Automated browser coverage is not a complete accessibility certification. VoiceOver/NVDA sessions with users, physical devices, and Windows/Edge verification remain separate release checks.
+
+## Desktop reference update
+
+The user's September 14 recording identifies Kiro Crew as the closer desktop reference. Its persistent session list, brief activity labels, terminal entry and connection indicators inform [the native developer workspace](../DESKTOP-DEVELOPER-WORKSPACE.md). Earlier status-card recommendations above are historical; the user subsequently removed those cards. Relay keeps its existing PaceUI template and case history.

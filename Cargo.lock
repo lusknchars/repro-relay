@@ -3495,10 +3495,14 @@ name = "relay-desktop"
 version = "0.2.0"
 dependencies = [
  "rfd",
+ "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
  "tauri-plugin-window-state",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]

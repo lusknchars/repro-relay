@@ -1,6 +1,6 @@
 {
   "identifier": "main-window",
-  "description": "Local workspace window; no shell or filesystem access from the webview.",
+  "description": "Local workspace window with bounded native repository inspection and terminal handoff; no general shell or filesystem interface.",
   "windows": [
     "main"
   ],

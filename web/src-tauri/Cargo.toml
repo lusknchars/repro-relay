@@ -13,3 +13,9 @@ tauri = { version = "2", features = [] }
 rfd = "0.15"
 tauri-plugin-opener = "2"
 tauri-plugin-window-state = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["process", "time", "io-util", "macros"] }
+
+[dev-dependencies]
+tempfile = "3"

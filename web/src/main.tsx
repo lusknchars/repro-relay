@@ -5,13 +5,14 @@ import './styles.css'
 import './design.css'
 import './card-interactions.css'
 import { initializeTheme } from './components/ThemeToggle'
+import { DesktopWorkbench } from './components/DesktopWorkbench'
 import { DesktopStartup } from './components/DesktopStartup'
 import { TooltipProvider } from './components/ui/tooltip'
 
 initializeTheme()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode><TooltipProvider><DesktopStartup><App /></DesktopStartup></TooltipProvider></React.StrictMode>,
+  <React.StrictMode><TooltipProvider><DesktopStartup><App /></DesktopStartup><DesktopWorkbench/></TooltipProvider></React.StrictMode>,
 )
 
 if ('__TAURI_INTERNALS__' in window) {

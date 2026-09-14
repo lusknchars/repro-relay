@@ -4,6 +4,8 @@ Repro Relay uses the authenticated `@paceui/ultimate-dashboard-template` source 
 
 ## Shared application
 
+The native desktop also has [repository tools](DESKTOP-DEVELOPER-WORKSPACE.md) in an expandable bottom bar, available even while the local service is offline. A native folder picker selects the checkout; Changes, Worktrees and Connection keep Git context and runtime availability separate. macOS Terminal opens in that checkout. The panel uses existing theme tokens, keyboard commands and reduced-motion behavior, without adding a dashboard template or browser shell endpoint.
+
 Web and Tauri render the same React, TypeScript, Vite, Tailwind application. PaceUI supplies the sidebar, sticky top bar, page title, footer, AI dashboard composition, statistic cards, chart cards, and table layout. Their source is in `web/src/components/templates/ultimate-dashboard` and `web/src/components/blocks/dashboard`.
 
 The overview starts with a guided tour invitation instead of directing new users immediately into automatic work. The seven-step tour visits Overview, Connections, Autonomous work, Case inbox, Agent controls, Project memory, and Handoffs in place. Back, Next, Skip, and Replay remain available without running operations. Tour state is saved separately for local and guest mode in browser storage; ordinary navigation stays available throughout.

@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod repository;
+
 use tauri::{
     Emitter,
     menu::{Menu, MenuItem, Submenu},
@@ -60,6 +62,7 @@ async fn save_packet(content: String, name: String) -> Result<bool, String> {
 }
 fn main() {
     tauri::Builder::default()
+        .manage(repository::RepositoryState::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_window_state::Builder::default()
@@ -83,21 +86,44 @@ fn main() {
                 MenuItem::with_id(app, "find-case", "Find a case", true, Some("CmdOrCtrl+K"))?;
             let connections =
                 MenuItem::with_id(app, "connections", "Connections", true, Some("CmdOrCtrl+,"))?;
+            let repository = MenuItem::with_id(
+                app,
+                "open-repository",
+                "Open repository…",
+                true,
+                Some("CmdOrCtrl+Shift+O"),
+            )?;
+            let tools = MenuItem::with_id(
+                app,
+                "repository-tools",
+                "Repository tools",
+                true,
+                Some("CmdOrCtrl+J"),
+            )?;
             menu.append(&Submenu::with_items(
                 app,
                 "Workspace",
                 true,
-                &[&report, &find, &connections],
+                &[&repository, &tools, &report, &find, &connections],
             )?)?;
             Ok(menu)
         })
         .on_menu_event(|app, event| {
             let command = event.id().as_ref();
-            if matches!(command, "new-report" | "find-case" | "connections") {
+            if matches!(
+                command,
+                "new-report" | "find-case" | "connections" | "repository-tools" | "open-repository"
+            ) {
                 let _ = app.emit_to("main", "workspace-command", command);
             }
         })
-        .invoke_handler(tauri::generate_handler![save_packet, open_plow_latch])
+        .invoke_handler(tauri::generate_handler![
+            save_packet,
+            open_plow_latch,
+            repository::repository_status,
+            repository::select_repository,
+            repository::open_repository_terminal
+        ])
         .run(tauri::generate_context!())
         .expect("Repro Relay could not start its desktop window");
 }

@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 
-export type WorkspaceCommand = 'new-report' | 'find-case' | 'connections'
+export type WorkspaceCommand = 'new-report' | 'find-case' | 'connections' | 'repository-tools' | 'open-repository'
 
 export function useWorkspaceCommands(handle: (command: WorkspaceCommand) => void) {
   useEffect(() => {
