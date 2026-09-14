@@ -3,6 +3,7 @@ import { lazy, Suspense } from 'react';
 import { Bot, GitBranch, LayoutDashboard, Inbox, BookOpen, FileCheck2, Settings2, CircleDot, MessageSquare } from 'lucide-react';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 import type { View } from './index';
+import { workspaceGuidance } from '@/lib/workspace-guidance';
 const AsciiWaves=lazy(()=>import('@/components/react-bits/ascii-waves'));
 const items: {id: View; label: string; icon: typeof Bot}[] = [
  {id:'overview',label:'Overview',icon:LayoutDashboard},
@@ -27,8 +28,8 @@ export function DemoAdminSidebar({view,navigate,guest,connected}: {view:View;nav
   </SidebarHeader>
   <SidebarContent><nav aria-label="Workspace"><SidebarMenu className="mt-2 mb-2 gap-0.5 px-2">
    <SidebarMenuItem className="text-muted-foreground mb-2 px-2 text-xs font-medium uppercase tracking-wide">Workspace</SidebarMenuItem>
-   {items.map(item=><SidebarMenuItem key={item.id}><SidebarMenuButton isActive={view===item.id} aria-current={view===item.id?'page':undefined} onClick={()=>go(item.id)} className="h-11 px-2.5 py-2 md:h-9">
-    <item.icon/><span>{item.label}</span>
+   {items.map(item=><SidebarMenuItem key={item.id}><SidebarMenuButton isActive={view===item.id} aria-current={view===item.id?'page':undefined} aria-label={item.label} aria-describedby={`nav-purpose-${item.id}`} onClick={()=>go(item.id)} className="h-auto min-h-14 items-start px-2.5 py-2.5">
+    <item.icon className="mt-0.5"/><span className="flex min-w-0 flex-col gap-0.5"><span>{item.label}</span><span id={`nav-purpose-${item.id}`} className="text-[11px] font-normal text-muted-foreground">{workspaceGuidance[item.id].short}</span></span>
    </SidebarMenuButton></SidebarMenuItem>)}
   </SidebarMenu></nav></SidebarContent>
   <SidebarFooter className="border-t p-3">

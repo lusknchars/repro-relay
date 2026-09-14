@@ -94,6 +94,23 @@ function CaseInvestigation({ item, guest, onOpenCase, session, onRefresh }: { it
   const previewCurrent = preview && preview.case_revision === item.revision && preview.owner_version === item.owner_version && preview.build === item.build && preview.follow_up_review_id === followUpReviewId
   const canStart = !guest && !!runner?.available && !activeRun && !!item.build.trim() && !!previewCurrent && !busy && !pending && loaded && !readError
   const counts = contextCounts(preview?.context)
+  const nextAction = !loaded ? 'Loading the saved investigation…'
+    : readError ? 'Saved history could not be refreshed. Wait for reconnection before making a decision.'
+    : pending ? 'Confirm the pending request before starting more work.'
+    : activeRun ? 'An investigation is active. Follow its progress below.'
+    : stale ? 'The source has changed. Inspect the current case before using this result.'
+    : current?.output?.trim() ? 'Read the findings and their evidence, then record your review.'
+    : guest ? 'Inspect saved evidence here. Running Hermes requires your local workspace.'
+    : !item.build.trim() ? 'Open the case and name the build that should be investigated.'
+    : !runner ? 'Checking whether the investigator is available…'
+    : !runner.available ? 'Connect Hermes before starting. Open Run controls to check its connection.'
+    : !previewCurrent ? 'Open Run controls and refresh the source context before starting.'
+    : 'Your case is ready. Open Run controls to start the investigation.'
+  function jump(id: string) {
+    const target = document.getElementById(id)
+    target?.focus({ preventScroll: true })
+    target?.scrollIntoView({ block: 'start', behavior: 'instant' })
+  }
 
   function selectRun(id: string) {
     setRunId(id); session.selectedRuns.set(item.id, id); setAnnouncement(''); setError('')
@@ -210,30 +227,37 @@ function CaseInvestigation({ item, guest, onOpenCase, session, onRefresh }: { it
   return <>
     <section className="iw-investigation" aria-label="Agent investigation">
       <header className="iw-case-heading"><div><span className="iw-eyebrow">{item.project || 'WORKSPACE'} <ChevronRight aria-hidden="true" /> INVESTIGATION</span><h2>{item.title}</h2></div><Button variant="outline" onClick={() => onOpenCase(item)}><FileText />Open case</Button></header>
-      <div className="iw-state-banner">{localValidation ? <ClipboardList aria-hidden="true" /> : <img src={hermesLogo} width={42} height={42} alt="" />}<div><strong>{localValidation ? 'Local validation' : 'Hermes investigator'}</strong><p role="status" aria-live="polite">{announcement || (current ? runLabels[current.status] || current.status : loaded ? 'Ready for your first investigation' : 'Loading investigation history…')}</p></div>{current && <span className={`iw-dot ${isRunActive(current.status) ? 'iw-active' : ''}`} aria-hidden="true" />}</div>
+      <div className="iw-orientation"><h3>Next step</h3><p>{nextAction}</p><nav aria-label="Sections in this investigation">
+        <Button variant="outline" disabled={!loaded} onClick={() => jump('iw-findings')}>Findings</Button>
+        <Button variant="outline" disabled={!current} onClick={() => jump('iw-test-evidence')}>Test evidence</Button>
+        <Button variant="outline" disabled={!current} onClick={() => jump('iw-usage')}>Token cost</Button>
+        <Button variant="outline" onClick={() => jump('iw-run-controls')}>Run controls</Button>
+      </nav>{!current && <p className="iw-caption">Test evidence and usage appear when an investigation has been recorded.</p>}</div>
+      <div className="iw-state-banner">{localValidation ? <ClipboardList aria-hidden="true" /> : <img src={hermesLogo} width={42} height={42} alt="" />}<div><strong>{localValidation ? 'Local validation' : 'Hermes investigator'}</strong><p role="status" aria-live="polite">{announcement || (current ? runLabels[current.status] || current.status : loaded ? runner?.available && !guest ? 'Ready for your first investigation' : 'Investigator setup needed' : 'Loading investigation history…')}</p></div>{current && <span className={`iw-dot ${isRunActive(current.status) ? 'iw-active' : ''}`} aria-hidden="true" />}</div>
       {readError && <div className="iw-warning"><p>{readError}</p><p>Saved information may be out of date. Refreshing automatically.</p></div>}
       {error && <p className="iw-error" role="alert">{error}</p>}
       {pending && !busy && <div className="iw-warning"><p>A {pending.label} request has an unconfirmed outcome. Its original request is retained.</p><Button variant="outline" onClick={() => void submit(pending)}><RefreshCw />Retry pending request</Button></div>}
       <div className="iw-problem"><div><span className="iw-eyebrow">REPORTED PROBLEM</span><p>{item.description || 'No problem description was supplied.'}</p></div><div><span className="iw-eyebrow">EXPECTED BEHAVIOR</span><p>{item.expected || 'No expected behavior was supplied.'}</p></div></div>
       {runs.length > 0 && <label className="iw-field iw-history-picker"><span><History aria-hidden="true" />Investigation history</span><select aria-label="Investigation history" value={current?.id || ''} onChange={event => selectRun(event.target.value)}>{runs.map((run, index) => <option key={run.id} value={run.id}>{index === 0 ? 'Latest · ' : ''}{date(run.created_at)} · {runLabels[run.status] || run.status}</option>)}</select></label>}
-      {current && <InvestigationCost key={current.id} run={current} runs={runs} />}
       {current ? <>
         {stale && <div className="iw-warning"><strong>Source context has changed</strong><p>This investigation used build {current.build}, revision {current.case_revision}. The case is now on build {item.build || 'unnamed'}, revision {item.revision}. Its proposal cannot be reviewed as current evidence.</p></div>}
-        <div className="iw-section-heading"><h3>{localValidation ? 'Validation results' : 'Agent findings'}</h3><span className="iw-tag">{latestReview ? reviewLabels[latestReview.decision] : localValidation ? 'Locally recorded results' : 'Agent proposal'}</span></div>
+        <div className="iw-section-heading iw-jump-target" id="iw-findings" tabIndex={-1}><h3>{localValidation ? 'Validation results' : 'Agent findings'}</h3><span className="iw-tag">{latestReview ? reviewLabels[latestReview.decision] : localValidation ? 'Locally recorded results' : 'Agent proposal'}</span></div>
         <p className="iw-subtle">{current.detail}</p>
         {current.output?.trim() ? <><div className="iw-proposal"><pre>{current.output}</pre></div><p className="iw-caption">{localValidation ? `Local validation attributed to ${inspectorName(current.context)} (locally supplied identity). Inspect any recorded evidence below; this is not a live Hermes investigation or independent verification.` : 'Agent-generated proposal. A review records your decision; it does not verify a fix or publish memory.'}</p></> : <div className="iw-empty-panel"><ClipboardList aria-hidden="true" /><p>{isRunActive(current.status) ? 'Hermes has not returned findings yet. Its saved run progress appears below.' : 'This run did not return a proposal. Inspect its history before starting another investigation.'}</p></div>}
         {!guest && isRunActive(current.status) && <div className="iw-actions"><Button variant="outline" disabled={!!busy || !!pending || current.status === 'stopping'} pending={busy === 'stop'} onClick={() => void runAction('stop')}><Square />Request stop</Button>{current.status === 'attention' && <Button variant="outline" disabled={!!busy || !!pending} pending={busy === 'reconcile'} onClick={() => void runAction('reconcile')}><RefreshCw />Reconcile run</Button>}</div>}
         <details className="iw-details" open><summary>Saved run progress <span>{current.events.length}</span></summary><p className="iw-caption">{localValidation ? 'Recorded local validation milestones. Inspect the attached logs for the commands and their actual outcomes.' : 'Coordinator state changes are separate from the evidence journal below. They do not independently prove browser actions or repair verification.'}</p><ol className="iw-timeline">{current.events.map(event => <li key={event.sequence}><span className="iw-timeline-mark" aria-hidden="true" /><div><p>{event.detail}</p><time dateTime={event.at}>{date(event.at)}</time></div></li>)}</ol></details>
+        <div id="iw-test-evidence" className="iw-jump-target" tabIndex={-1}><h3>Tests and performance evidence</h3><p className="iw-subtle">Inspect recorded commands, environments, and artifacts. A performance claim needs a measured baseline and a comparison. Missing test results stay unknown.</p></div>
         <InvestigationEvidence key={current.id} runId={current.id} runVersion={current.version} localValidation={localValidation} />
         {reviewable && <form className="relay-card iw-review" onSubmit={saveReview}><div className="iw-section-heading"><h3>{localValidation ? 'Review this result' : 'Review this proposal'}</h3><ShieldCheck aria-hidden="true" /></div><p className="iw-subtle">Tell Hermes what is useful and what it should check next. Your feedback stays attached to this run.</p><div className="iw-form-row"><label className="iw-field">Review decision<select value={draft.decision} disabled={!!busy || !!pending} onChange={event => editDraft({ decision: event.target.value as ReviewDraft['decision'] })}><option value="needs_changes">Needs another check</option><option value="accepted">Review accepted</option><option value="dismissed">Dismiss proposal</option></select></label><label className="iw-field">Reviewer name<input autoComplete="name" required maxLength={120} value={draft.reviewer} disabled={!!busy || !!pending} onChange={event => editDraft({ reviewer: event.target.value })} placeholder="Your name" /></label></div><label className="iw-field">Review feedback<textarea required maxLength={8000} rows={4} value={draft.feedback} disabled={!!busy || !!pending} onChange={event => editDraft({ feedback: event.target.value })} placeholder="Which claim needs evidence? What should Hermes check or correct?" /></label><div className="iw-actions"><ApprovalButton type="submit" label="Save review" successLabel="Review saved" state={reviewState?.id === current.id ? reviewState.state : 'neutral'} disabled={!!busy || !!pending || !draft.reviewer.trim() || !draft.feedback.trim() || !!readError} /><span className="iw-caption">Reviewer name is supplied locally.</span></div></form>}
         {!!currentReviews.length && <details className="iw-details" open><summary>Review history <span>{currentReviews.length}</span></summary>{currentReviews.map(review => <article className="iw-review-record" key={review.id}><div><strong>{reviewLabels[review.decision]}</strong><time dateTime={review.created_at}>{date(review.created_at)}</time></div><p>{review.feedback}</p><small>{review.reviewer} · Local reviewer · Source build {review.build}</small></article>)}</details>}
-      </> : loaded && <div className="iw-empty-panel"><ClipboardList aria-hidden="true" /><h3>No investigation yet</h3><p>Check the context packet, choose a time limit, and start Hermes. Results will remain linked to this case.</p></div>}
+        <div id="iw-usage" className="iw-jump-target" tabIndex={-1}><InvestigationCost key={current.id} run={current} runs={runs}/></div>
+      </> : loaded && <div className="iw-empty-panel iw-jump-target" id="iw-findings" tabIndex={-1}><ClipboardList aria-hidden="true" /><h3>No investigation yet</h3><p>Run controls show whether Hermes is connected and ready. Results and evidence will remain linked to this case.</p></div>}
       <details className="iw-details"><summary>Human-recorded evidence <span>{item.observations.length}</span></summary>{item.observations.length ? item.observations.map(observation => {
         const href = safeEvidenceUrl(observation.evidence_url)
         return <article className="iw-review-record" key={observation.id}><div><strong>{humanStatus[observation.result]}</strong><span>Build {observation.build}</span></div><p>{observation.observed}</p><small>{observation.author} · {date(observation.at)}</small>{observation.steps && <details><summary>Recorded steps</summary><pre>{observation.steps}</pre></details>}{href && <a href={href} target="_blank" rel="noopener noreferrer">Open evidence reference <ArrowRight aria-hidden="true" /></a>}</article>
       }) : <p className="iw-caption">No human observations have been recorded for this case.</p>}<Button variant="outline" onClick={() => onOpenCase(item)}>Record an observation<ArrowRight /></Button></details>
     </section>
-    <aside className="iw-context" aria-label="Investigator context and controls">
+    <aside className="iw-context iw-jump-target" id="iw-run-controls" tabIndex={-1} aria-label="Investigator context and controls">
       <div className="iw-context-heading"><span className="iw-eyebrow">NEXT INVESTIGATION</span><h2>What Hermes will receive</h2><p>Inspect the exact source context before starting.</p></div>
       <Button variant="outline" disabled={!!busy || !!pending} onClick={() => void refreshContext()}><RefreshCw />Refresh context</Button>
       {followUpReviewId && <Button variant="ghost" disabled={!!busy || !!pending} onClick={() => setExcludedReviewId(followUpReviewId)}>Use current case only</Button>}
@@ -241,7 +265,7 @@ function CaseInvestigation({ item, guest, onOpenCase, session, onRefresh }: { it
       {previewError ? <div className="iw-warning"><p>{previewError}</p></div> : !preview ? <p className="iw-subtle">Preparing the current context…</p> : <>
         <dl className="iw-context-facts"><div><dt>Current build</dt><dd>{preview.build || 'Not named'}</dd></div><div><dt>Case revision</dt><dd>{preview.case_revision}</dd></div><div><dt>Source events</dt><dd>{counts.events}</dd></div><div><dt>Reviewed memories</dt><dd>{counts.memories}</dd></div></dl>
         {followUpReviewId && <div className="iw-followup"><RefreshCw aria-hidden="true" /><div><strong>Follow-up context included</strong><p>The previous proposal and your requested corrections accompany the current case context.</p></div></div>}
-        <details className="iw-details iw-packet" open><summary>Exact context packet</summary><pre>{JSON.stringify(preview.context, null, 2)}</pre></details>
+        <details className="iw-details iw-packet"><summary>Exact context packet</summary><pre>{JSON.stringify(preview.context, null, 2)}</pre></details>
         <p className="iw-caption">Starting uses this context snapshot. If its sources change, Relay requires a fresh preview.</p>
         {!previewCurrent && <p className="iw-warning">The case changed since this view loaded. Refresh context to load its current build and revision.</p>}
       </>}

@@ -1,5 +1,6 @@
 import { useRelayWebMCP } from './lib/webmcp'
 import { ApprovalButton, type ApprovalState } from './components/ui/approval-button'
+import { workspaceGuidance } from './lib/workspace-guidance'
 import { WorkspaceTour } from './components/WorkspaceTour'
 import { WorkspaceGuide } from './components/WorkspaceGuide'
 import { PlowConnection } from './components/PlowConnection'
@@ -206,6 +207,8 @@ export default function App() {
     setNotice('Repair packet exported. No external message was sent.')
   }
   function navigate(next: View) { setView(next); setShowCase(false); setQuery(''); setFilter('all'); setError(''); setNotice('') }
+  function openInvestigation(item:Case) { navigate('agents'); setSelectedId(item.id) }
+  function triage(status:string) { navigate('inbox'); setFilter(status) }
   function openCase(item:Case) {setSelectedId(item.id);setView('inbox');setShowCase(true);setTab('evidence')}
   function focusCaseSearch(){setView('inbox');setShowCase(false);setFocusSearch(value=>value+1)}
   const selectedMemory = memories.find(item => item.case_id === selectedId)
@@ -214,15 +217,15 @@ export default function App() {
   const isGuest = session?.mode === 'guest'
   const titles:Record<View,string>={sessions:'Autonomous work',overview:'Investigation overview',inbox:'Case inbox',agents:'Agent controls',memory:'Project memory',handoffs:'Handoffs',connections:'Connections'}
   return <AdminLayout view={view} navigate={navigate} search={focusCaseSearch} guest={isGuest} connected={!!health}>
-    <PageTitle title={titles[view]} description={view==='overview'?'Keep reports, agent work, and evidence in one place.':undefined} endContent={view!=='sessions' && <ShortcutHint label="Create a report" keys="Shift N"><Button onClick={()=>openModal('report')} disabled={!health}><Plus/>New report</Button></ShortcutHint>}/>
+    <PageTitle title={titles[view]} description={workspaceGuidance[view].purpose} endContent={view!=='sessions' && <ShortcutHint label="Create a report" keys="Shift N"><Button onClick={()=>openModal('report')} disabled={!health}><Plus/>New report</Button></ShortcutHint>}/>
     {isGuest && <div className="mt-5"><BetaFeedback/></div>}
     {error && <div className="notice error" role="alert">{error}<Button variant="ghost" size="sm" onClick={()=>void action(openWorkspace)}>Retry connection</Button></div>}
     {notice && <div ref={noticeRef} className="notice" role="status"><Check size={16}/>{notice}</div>}
     {loading ? <div className="loading" role="status">Opening your workspace…</div> : <>
      <WorkspaceTour key={isGuest ? 'guest' : 'local'} view={view} navigate={navigate} guest={isGuest}/>
-     {view==='overview' && <><AIDashboard cases={cases} memories={memories} guest={isGuest} navigate={navigate}/><div className="mt-5"><Table7 compact cases={cases} open={openCase} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter}/></div></>}
+     {view==='overview' && <><AIDashboard cases={cases} memories={memories} guest={isGuest} navigate={navigate} triage={triage}/><div className="mt-5"><Table7 compact cases={cases} open={openCase} investigate={openInvestigation} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter}/></div></>}
      {view==='inbox' && <div className="mt-5">{showCase&&selected ? <section className="case-detail rounded-xl border bg-card" aria-label="Selected case">
-            <button className="mobile-back" onClick={()=>setShowCase(false)}><ArrowLeft size={16}/>All reports<span>{cases.length}</span></button><div className="detail-heading"><div className="detail-kicker"><span title={selected.id}>{selected.id.slice(0,11)}</span><span>Revision {selected.revision}</span></div><h2>{selected.title}</h2><div className="detail-meta"><Status value={selected.status}/><span>{selected.project}</span><span>{time(selected.created_at)}</span></div></div>
+            <button className="mobile-back" onClick={()=>setShowCase(false)}><ArrowLeft size={16}/>All reports<span>{cases.length}</span></button><div className="detail-heading"><div className="detail-kicker"><span title={selected.id}>{selected.id.slice(0,11)}</span><span>Revision {selected.revision}</span></div><h2>{selected.title}</h2><Button variant="outline" className="my-3 min-h-11" onClick={()=>openInvestigation(selected)}>View investigation<ArrowRight/></Button><div className="detail-meta"><Status value={selected.status}/><span>{selected.project}</span><span>{time(selected.created_at)}</span></div></div>
             <Tabs className="case-tabs" value={tab} onValueChange={value=>{
               if(value==='evidence'||value==='context'||value==='handoff'||value==='activity') {
                 setTab(value);setNotice('');setError('')
@@ -246,7 +249,7 @@ export default function App() {
             {tab === 'activity' && <CaseActivity events={selected.events}/>}
             </TabsContent>
             </Tabs>
-          </section> : <Table7 cases={cases} open={openCase} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} searchRef={searchRef}/>}</div>}
+          </section> : <Table7 cases={cases} open={openCase} investigate={openInvestigation} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} searchRef={searchRef}/>}</div>}
      {view==='sessions' && <Suspense fallback={<p role="status">Loading automatic work…</p>}><SessionWorkspace guest={isGuest} /></Suspense>}
      {view==='agents' && <Suspense fallback={<Card className="mt-5"><CardContent role="status">Loading the investigation workspace…</CardContent></Card>}><InvestigationWorkspace cases={cases} selectedId={selectedId} onSelect={setSelectedId} guest={isGuest} onOpenCase={openCase} onNewReport={()=>openModal('report')} onRefresh={refresh}/></Suspense>}
 {view === 'memory' && <section className="memory-view"><div className="memory-heading"><div><h2>Reviewed observations</h2><p>References for investigation. These entries do not establish a root cause or a verified fix.</p></div><label className="search"><Search size={16}/><input aria-label="Search memory" placeholder="Search observations…" value={query} onChange={e => setQuery(e.target.value)}/></label></div>
