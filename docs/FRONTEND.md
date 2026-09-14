@@ -44,6 +44,10 @@ The installed component already uses Three.js directly. Its shader is preserved.
 
 ## Interaction and validation
 
+Overview includes a workspace guide linking directly to automatic work, candidate review, project memory, and Connections. Connections has terminal setup, detected WebMCP availability, and a runnable evidence recipe. These remain inside PaceUI; no task-direction form or extra page was added. The recipe shows progress, connection errors, elapsed time, and the selected audit's review link. Its button works without browser WebMCP support and is unavailable to hosted guests.
+
+The shared [evidence tools](../integrations/relay-tools/README.md) register only for a connected local workspace. They expose status, bounded audit lists, and revision-bound evidence. They cannot approve work or change code. Registration is scoped to the application lifecycle, with cancellation and cleanup. Browser support and terminal session control are separate capabilities; the UI does not infer execution from tool availability.
+
 Dialogs focus the first field, close with Escape, and restore trigger focus. Case tabs support arrow keys. Search and native Workspace commands share the existing command dispatcher. The desktop startup screen explains the separate API/database requirement and offers retry.
 
 Navigation exposes the current page, the sidebar trigger exposes its expanded state, and the skip destination accepts focus. Mobile sidebar navigation and its visible close button have 44-pixel targets. Investigation controls use labeled fields, visible keyboard focus, live status announcements, and 44-pixel targets. The isolated compatibility suite checks both themes at 320 pixels, dialog focus restoration, drawer dismissal, and JavaScript errors. Windows CI runs it in Microsoft Edge; those results must be recorded separately from local Chromium checks.
