@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { CalendarDays, Workflow, Bell, BookOpen, Menu, MessagesSquare, Rocket, ChevronsUpDown, Command, Gauge, HelpCircle, Inbox, Moon, PanelLeft, Search, Settings, SlidersHorizontal, Sun } from "lucide-react";
+import { Activity, CalendarDays, Workflow, Bell, BookOpen, Menu, MessagesSquare, Rocket, ChevronsUpDown, Command, Gauge, HelpCircle, Inbox, Moon, PanelLeft, Search, Settings, SlidersHorizontal, Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/theme/ThemeProvider";
 import { Avatar, Badge, Kbd } from "@/components/ui";
 import { useWorkspace } from "@/lib/live";
 
-export type Route = "work" | "team" | "knowledge" | "usage" | "settings" | "setup" | "architecture" | "calendar";
+export type Route = "work" | "team" | "knowledge" | "usage" | "settings" | "setup" | "architecture" | "calendar" | "monitoring";
 
 const NAV: { id: Route; label: string; icon: typeof Inbox; hint: string }[] = [
   { id: "work", label: "Work", icon: Inbox, hint: "Decisions, active and blocked work, history" },
@@ -13,6 +13,7 @@ const NAV: { id: Route; label: string; icon: typeof Inbox; hint: string }[] = [
   { id: "calendar", label: "Calendar", icon: CalendarDays, hint: "Planned reviews and recorded agent activity" },
   { id: "team", label: "Team", icon: MessagesSquare, hint: "Talk with your team around a work record" },
   { id: "knowledge", label: "Knowledge", icon: BookOpen, hint: "Reviewed observations and private notes" },
+  { id: "monitoring", label: "Monitoring", icon: Activity, hint: "API requests, database health and investigation evidence" },
   { id: "usage", label: "Usage", icon: Gauge, hint: "Tokens, time and cost with coverage" },
   { id: "settings", label: "Settings", icon: Settings, hint: "Connections, repository, permissions, team" },
 ];

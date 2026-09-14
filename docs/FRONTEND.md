@@ -1,5 +1,9 @@
 # Frontend design
 
+## Operational monitoring
+
+Monitoring adapts the supplied PaceUI log-block references to the existing frontend. Real Relay request summaries populate the live console, recent-request table and traffic heatmap. PostgreSQL supplies database size and probe latency; service limits show actual pool and buffer capacities. Pause and clear affect the console view only. Request detail dialogs, search, status filtering and investigation links work across desktop and narrow layouts. See [capture scope and retention](MONITORING.md).
+
 ## Repository architecture and calendar, September 14
 
 Architecture opens the connected repository's observed manifest map on a dot or square grid. Components show their source path, file hash and declared local dependencies. Stale and missing inventories remain visible. Research improvements creates a real Hermes assessment, whose saved findings are accessible from Suggested improvements and Work. Team workflow offers three validated investigation briefs with draggable, keyboard-movable stages, editable guidance and versioned Apply to team. Team displays the applied brief. Applying does not change an active run or refactor the repository.

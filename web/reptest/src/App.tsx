@@ -4,6 +4,7 @@ import { ThemeProvider } from "@/theme/ThemeProvider";
 import { Customizer } from "@/theme/Customizer";
 import { Shell, type Route } from "@/components/shell/Shell";
 import { ArchitecturePage } from "@/pages/Architecture";
+import { MonitoringPage } from "@/pages/Monitoring";
 import { CalendarPage } from "@/pages/Calendar";
 import { WorkPage } from "@/pages/Work";
 import { KnowledgePage } from "@/pages/Knowledge";
@@ -27,6 +28,7 @@ function Root() {
             "setup",
             "architecture",
             "calendar",
+            "monitoring",
           ].includes(view || "")
         ? (view as Route)
         : "work";
@@ -79,6 +81,7 @@ function Root() {
         onOpenAccount={() => setAccountOpen(true)}
       >
         {route === "work" && <WorkPage />}
+        {route === "monitoring" && <MonitoringPage onWork={openWork} />}
         {route === "architecture" && (
           <ArchitecturePage
             onWork={openWork}

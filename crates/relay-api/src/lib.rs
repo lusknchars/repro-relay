@@ -9,6 +9,7 @@ pub mod domain;
 pub mod evidence;
 pub mod hosting;
 pub mod intake;
+pub mod monitoring;
 pub mod repairs;
 pub mod runs;
 pub mod sessions;
@@ -215,10 +216,12 @@ pub fn app_with_hosting(pool: PgPool, hosting: Hosting) -> Router {
     app_with_runner(pool, hosting, runs::Runner::default())
 }
 pub fn app_with_runner(pool: PgPool, hosting: Hosting, runner: runs::Runner) -> Router {
+    let monitor = monitoring::Monitor::default();
     let routes = Router::new()
         .merge(accounts::routes())
         .merge(architectures::routes())
         .merge(calendar::routes())
+        .merge(monitoring::routes())
         .merge(automation::routes())
         .merge(channels::routes())
         .merge(evidence::routes())
@@ -275,6 +278,11 @@ pub fn app_with_runner(pool: PgPool, hosting: Hosting, runner: runs::Runner) -> 
                     axum::http::HeaderName::from_static("idempotency-key"),
                 ]),
         )
+        .layer(middleware::from_fn_with_state(
+            monitor.clone(),
+            monitoring::capture,
+        ))
+        .layer(Extension(monitor))
         .layer(middleware::from_fn_with_state(pool.clone(), hosting::guard))
         .layer(Extension(hosting))
         .layer(Extension(runner))
