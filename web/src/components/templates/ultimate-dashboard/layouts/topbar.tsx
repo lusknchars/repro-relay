@@ -1,3 +1,4 @@
+import { AccountControl } from '@/components/AccountControl';
 // Adapted from PaceUI Ultimate Dashboard topbar.
 import { Command, Search, Bot } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -13,6 +14,6 @@ export function Topbar({view,search,guest}:{view:View;search:()=>void;guest:bool
    </Button>
    <Button variant="ghost" size="icon-sm" className="md:hidden" aria-label="Find a case" onClick={search}><Search className="size-4"/></Button>
   </div>
-  <div className="flex items-center gap-2 px-4"><span className="text-muted-foreground hidden items-center gap-1.5 text-xs sm:flex"><Bot className="size-4"/>{guest?'Guest workspace':view==='agents'?'Investigator workspace':'Local workspace'}</span><ThemeToggle/></div>
+  <div className="flex items-center gap-2 px-4"><span className="text-muted-foreground hidden items-center gap-1.5 text-xs sm:flex"><Bot className="size-4"/>{guest?'Guest workspace':view==='agents'?'Investigator workspace':'Local workspace'}</span>{!guest && <AccountControl returnTo={(() => {const p=new URLSearchParams();p.set('view',view);const c=new URLSearchParams(window.location.search).get('case');if(c && ['agents','inbox'].includes(view))p.set('case',c);const a=new URLSearchParams(window.location.search).get('audit');if(a && view==='sessions')p.set('audit',a);return '/?'+p.toString()})()}/>}<ThemeToggle/></div>
  </header>
 }

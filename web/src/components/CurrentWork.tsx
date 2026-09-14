@@ -24,7 +24,7 @@ export function CurrentWork({ loaded, error, runner, active, selected, guest, pe
     : pendingStart ? 'Relay has not confirmed whether work started. Keep this request and use its retry action to check the saved outcome.'
     : !loaded ? 'Reading the saved run state before showing what is happening.'
     : active ? active.detail
-    : guest ? 'This guest workspace cannot start an investigation.'
+    : guest ? 'This view cannot start an investigation.'
     : runner?.available ? 'No investigation or repair is running for this case. Starting work uses the report and evidence already saved.'
     : 'No active work is recorded for this case. Saved results below do not mean Hermes is investigating your code now.'
   return <section aria-label="Current Hermes activity">

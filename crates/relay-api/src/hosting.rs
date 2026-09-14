@@ -15,6 +15,7 @@ use sqlx::PgPool;
 pub struct Hosting {
     pub origin: Option<String>,
     pub max_guests: i64,
+    pub team: bool,
 }
 #[derive(Clone)]
 pub struct Workspace {
@@ -34,6 +35,7 @@ impl Hosting {
         Self {
             origin: None,
             max_guests: 200,
+            team: false,
         }
     }
     pub fn guest(origin: &str) -> Result<Self, String> {
@@ -53,11 +55,17 @@ impl Hosting {
         Ok(Self {
             origin: Some(parsed.origin().ascii_serialization()),
             max_guests: 200,
+            team: false,
         })
     }
     pub fn from_env() -> Result<Self, String> {
         match std::env::var("REPRO_MODE").as_deref().unwrap_or("local") {
             "local" => Ok(Self::local()),
+            "team" => {
+                let origin = std::env::var("PUBLIC_ORIGIN")
+                    .map_err(|_| "Set PUBLIC_ORIGIN to the shared HTTPS URL for team mode.")?;
+                Self::team(&origin)
+            }
             "guest" => {
                 let origin = std::env::var("PUBLIC_ORIGIN")
                     .or_else(|_| {
@@ -76,8 +84,13 @@ impl Hosting {
                 }
                 Ok(config)
             }
-            _ => Err("REPRO_MODE must be local or guest.".into()),
+            _ => Err("REPRO_MODE must be local, guest, or team.".into()),
         }
+    }
+    pub fn team(origin: &str) -> Result<Self, String> {
+        let mut c = Self::guest(origin)?;
+        c.team = true;
+        Ok(c)
     }
     fn secure(&self) -> bool {
         self.origin
@@ -100,7 +113,9 @@ impl Hosting {
         )
     }
     pub fn mode(&self) -> &str {
-        if self.origin.is_some() {
+        if self.team {
+            "team"
+        } else if self.origin.is_some() {
             "guest"
         } else {
             "local"
@@ -148,8 +163,21 @@ pub async fn guard(
     mut request: Request,
     next: Next,
 ) -> Response {
-    let path = request.uri().path();
+    let path = request.uri().path().to_owned();
     if config.origin.is_none() {
+        if (path.starts_with("/api/v1/account") || path.starts_with("/api/v1/team"))
+            && request.method() != axum::http::Method::GET
+            && !request
+                .headers()
+                .get(header::ORIGIN)
+                .is_some_and(|o| o.to_str().is_ok_and(|o| crate::ORIGINS.contains(&o)))
+        {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(json!({"detail":"Use account controls from the Relay application."})),
+            )
+                .into_response();
+        }
         request.extensions_mut().insert(Workspace::local());
         return crate::local_only(request, next).await;
     }
@@ -182,7 +210,31 @@ pub async fn guard(
         )
             .into_response();
     }
-    if path.starts_with("/api/v1/") && path != "/api/v1/session" {
+    if config.team && path.starts_with("/api/v1/") && path != "/api/v1/session" {
+        let account_route = path.starts_with("/api/v1/account") || path.starts_with("/api/v1/team");
+        if !account_route {
+            let identity = match crate::accounts::identity(&pool, request.headers(), &config).await
+            {
+                Ok(Some(i)) if i.role.is_some() => i,
+                Ok(_) => return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(
+                        json!({"detail":"Sign in and accept a workspace invitation to continue."}),
+                    ),
+                )
+                    .into_response(),
+                Err(e) => return e.into_response(),
+            };
+            if mutation && identity.role.as_deref() != Some("owner") {
+                return (StatusCode::FORBIDDEN,Json(json!({"detail":"Viewer access can follow saved work. The owner controls changes and agent execution."}))).into_response();
+            }
+            if let Err(e) = rate_limit(&pool, &format!("account:{}", identity.id), 240).await {
+                return e.into_response();
+            }
+            request.extensions_mut().insert(Workspace::local());
+        }
+    }
+    if !config.team && path.starts_with("/api/v1/") && path != "/api/v1/session" {
         let workspace =
             match session(&pool, request.headers(), &config).await {
                 Ok(Some(id)) => Workspace { id, guest: true },
@@ -218,6 +270,12 @@ pub async fn get_session(
     Extension(config): Extension<Hosting>,
     headers: axum::http::HeaderMap,
 ) -> ApiResult<Json<Value>> {
+    if config.team {
+        let i = crate::accounts::identity(&pool, &headers, &config).await?;
+        return Ok(Json(
+            json!({"mode":"team","authenticated":i.as_ref().is_some_and(|i|i.role.is_some()),"role":i.and_then(|i|i.role)}),
+        ));
+    }
     let authenticated =
         config.origin.is_none() || session(&pool, &headers, &config).await?.is_some();
     Ok(Json(
@@ -229,6 +287,12 @@ pub async fn start_session(
     Extension(config): Extension<Hosting>,
     headers: axum::http::HeaderMap,
 ) -> ApiResult<Response> {
+    if config.team {
+        return Err(ApiError {
+            status: StatusCode::FORBIDDEN,
+            message: "Sign in through the account form.".into(),
+        });
+    }
     if config.origin.is_none() {
         return Ok(Json(json!({"mode":"local","authenticated":true})).into_response());
     }

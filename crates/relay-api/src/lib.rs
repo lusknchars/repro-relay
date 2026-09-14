@@ -1,3 +1,4 @@
+pub mod accounts;
 pub mod automation;
 pub mod autonomy;
 pub mod channels;
@@ -210,6 +211,7 @@ pub fn app_with_hosting(pool: PgPool, hosting: Hosting) -> Router {
 }
 pub fn app_with_runner(pool: PgPool, hosting: Hosting, runner: runs::Runner) -> Router {
     let routes = Router::new()
+        .merge(accounts::routes())
         .merge(automation::routes())
         .merge(channels::routes())
         .merge(evidence::routes())
@@ -250,6 +252,7 @@ pub fn app_with_runner(pool: PgPool, hosting: Hosting, runner: runs::Runner) -> 
         .layer(DefaultBodyLimit::max(128 * 1024))
         .layer(
             CorsLayer::new()
+                .allow_credentials(true)
                 .allow_origin(
                     ORIGINS
                         .iter()

@@ -20,12 +20,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .connect(&database)
         .await?;
     relay_api::initialize(&pool).await?;
+    if hosting.team {
+        let ready: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM team_members WHERE role='owner')")
+                .fetch_one(&pool)
+                .await?;
+        if !ready {
+            return Err(
+                "Create the owner account on the trusted local server before enabling team mode."
+                    .into(),
+            );
+        }
+    }
     let runner = relay_api::runs::Runner::from_env()?;
-    if hosted && runner.0.is_some() {
+    if hosted && !hosting.team && runner.0.is_some() {
         return Err("The guest beta cannot use a maintainer's Hermes runtime. Configure it on a local Relay server.".into());
     }
     let worker = tokio::spawn(relay_api::runs::worker(pool.clone(), runner.clone()));
-    let automation_worker = if !hosted {
+    let automation_worker = if !hosted || hosting.team {
         Some(tokio::spawn(relay_api::automation::worker(
             pool.clone(),
             runner.clone(),

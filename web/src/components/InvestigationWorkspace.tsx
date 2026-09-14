@@ -49,7 +49,7 @@ export function InvestigationWorkspace({ cases, selectedId, onSelect, guest, onO
   const matches = cases.filter(item => `${item.title} ${item.project} ${item.description}`.toLowerCase().includes(search.toLowerCase().trim()))
   return <section className="investigation-workspace" aria-label="Investigation workspace">
     <aside className="iw-inbox" aria-label="Investigation cases">
-      <div className="iw-inbox-heading"><div><span className="iw-eyebrow">CASE WORKSPACE</span><h2>Investigations <span>{cases.length}</span></h2></div><Button variant="outline" size="icon" aria-label="New investigation report" onClick={onNewReport}><Plus /></Button></div>
+      <div className="iw-inbox-heading"><div><span className="iw-eyebrow">CASE WORKSPACE</span><h2>Investigations <span>{cases.length}</span></h2></div><Button variant="outline" size="icon" aria-label="New investigation report" disabled={guest} onClick={onNewReport}><Plus /></Button></div>
       <label className="iw-search"><Search aria-hidden="true" /><input aria-label="Search investigation cases" placeholder="Find a reported problem…" value={search} onChange={event => setSearch(event.target.value)} /></label>
       <div className="iw-case-list">{matches.map(item => <button key={item.id} className={`iw-case ${selected?.id === item.id ? 'iw-selected' : ''}`} aria-current={selected?.id === item.id ? 'true' : undefined} onClick={() => onSelect(item.id)}>
         <span className="iw-case-project">{item.project || 'Workspace'}</span><strong>{item.title}</strong><span className="iw-case-meta"><span>{humanStatus[item.status] || item.status}</span><ChevronRight aria-hidden="true" /></span>
@@ -57,7 +57,7 @@ export function InvestigationWorkspace({ cases, selectedId, onSelect, guest, onO
       {!matches.length && <p className="iw-empty">{cases.length ? 'No reports match your search.' : 'Create a report to give Hermes a problem to investigate.'}</p>}
       <div className="iw-inbox-foot"><ShieldCheck aria-hidden="true" /><span>Case history stays attached to every investigation.</span></div>
     </aside>
-    {selected ? <CaseInvestigation key={selected.id} item={selected} guest={guest} onOpenCase={onOpenCase} session={session.current} onRefresh={onRefresh} /> : <div className="iw-welcome"><ClipboardList aria-hidden="true" /><h2>Start with a reported problem</h2><p>Describe what happened and what you expected. Review the investigation, its source context, and your next action together here.</p><Button onClick={onNewReport}><Plus />New report</Button></div>}
+    {selected ? <CaseInvestigation key={selected.id} item={selected} guest={guest} onOpenCase={onOpenCase} session={session.current} onRefresh={onRefresh} /> : <div className="iw-welcome"><ClipboardList aria-hidden="true" /><h2>Start with a reported problem</h2><p>Describe what happened and what you expected. Review the investigation, its source context, and your next action together here.</p><Button disabled={guest} onClick={onNewReport}><Plus />New report</Button></div>}
   </section>
 }
 
@@ -106,7 +106,7 @@ function CaseInvestigation({ item, guest, onOpenCase, session, onRefresh }: { it
     : latestReview?.decision === 'accepted' ? 'Your review is saved. Accepting the result does not approve a code repair.'
     : latestReview?.decision === 'dismissed' ? 'This proposal was dismissed. Its original evidence remains available.'
     : current?.output?.trim() ? 'Read the findings and their evidence, then record your review.'
-    : guest ? 'Inspect saved evidence here. Running Hermes requires your local workspace.'
+    : guest ? 'Inspect saved evidence here. Starting Hermes requires execution access.'
     : !item.build.trim() ? 'Open the case and name the build that should be investigated.'
     : !runner ? 'Checking whether the investigator is available…'
     : !runner.available ? 'Connect Hermes before starting. Open Run controls to check its connection.'

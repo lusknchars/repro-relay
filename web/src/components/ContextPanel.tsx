@@ -12,7 +12,7 @@ const roles: {id: Role; title: string; description: string}[] = [
   {id: 'update', title: 'Team update', description: 'Current outcome and its source'},
 ]
 
-export function ContextPanel({item, refresh}: {item: Case; refresh: () => Promise<void>}) {
+export function ContextPanel({item, refresh, readOnly = false}: {item: Case; refresh: () => Promise<void>; readOnly?: boolean}) {
   const [role, setRole] = useState<Role>('investigator')
   const [context, setContext] = useState<ContextView | null>(null)
   const [build, setBuild] = useState(item.build)
@@ -33,6 +33,7 @@ export function ContextPanel({item, refresh}: {item: Case; refresh: () => Promis
     return () => {current = false}
   }, [item.id, item.revision, item.updated_at, role])
   async function mutate(path: string, payload: unknown, success: string) {
+    if (readOnly) return
     setBusy(true); setError(''); setNotice('')
     try {
       await request(`/cases/${item.id}/${path}`, {method: 'POST', body: JSON.stringify(payload)})
@@ -67,17 +68,17 @@ export function ContextPanel({item, refresh}: {item: Case; refresh: () => Promis
       </section>
       <aside className="context-inspector" aria-label="Handoff controls">
         <h3>Execution context</h3>
-        <form onSubmit={updateBuild}><label htmlFor="current-build">Current build</label><input id="current-build" value={build} onChange={e=>setBuild(e.target.value)} required maxLength={160} placeholder="Commit or build identifier"/><Button type="submit" variant="outline" size="sm" disabled={busy||!build.trim()||build===item.build}>Update build</Button></form>
+        <form onSubmit={updateBuild}><label htmlFor="current-build">Current build</label><input id="current-build" disabled={readOnly} value={build} onChange={e=>setBuild(e.target.value)} required maxLength={160} placeholder="Commit or build identifier"/><Button type="submit" variant="outline" size="sm" disabled={readOnly||busy||!build.trim()||build===item.build}>Update build</Button></form>
         <div className="inspector-property"><span>Case revision</span><strong>{item.revision}</strong></div>
         <div className="inspector-property"><span>Worker assignment</span><strong>{item.owner_version}</strong></div>
-        <Button variant="ghost" size="sm" disabled={busy} onClick={()=>void mutate('lease',{revision:item.revision,owner_version:item.owner_version},'Worker assignment advanced. Earlier handoffs must be prepared again.')}><RefreshCw size={14}/>Reassign worker</Button>
+        <Button variant="ghost" size="sm" disabled={readOnly||busy} onClick={()=>void mutate('lease',{revision:item.revision,owner_version:item.owner_version},'Worker assignment advanced. Earlier handoffs must be prepared again.')}><RefreshCw size={14}/>Reassign worker</Button>
         <p className="inspector-hint">Changing the assignment invalidates work prepared for the previous worker.</p>
-        <div className="handoff-controls"><Button disabled={busy||loading||!context} onClick={()=>void mutate('handoffs',{revision:item.revision,role},'Handoff saved. Check its freshness before using it.')}><FileCheck2/>Prepare handoff</Button><small>Saves a snapshot. Does not start an agent.</small></div>
+        <div className="handoff-controls"><Button disabled={readOnly||busy||loading||!context} onClick={()=>void mutate('handoffs',{revision:item.revision,role},'Handoff saved. Check its freshness before using it.')}><FileCheck2/>Prepare handoff</Button><small>Saves a snapshot. Does not start an agent.</small></div>
       </aside>
     </div>
     {error && <div className="notice error" role="alert"><ShieldAlert size={18}/>{error}</div>}
     {notice && <div className="notice" role="status"><Check size={16}/>{notice}</div>}
-    {latest && <section className={`handoff-snapshot ${locallyStale || latest.status==='stale' ? 'is-stale' : ''}`} aria-label="Prepared handoff"><div className="snapshot-heading"><div><h3>Saved handoff</h3><p>{roles.find(r=>r.id===latest.role)?.title} / Revision {latest.case_revision} / Assignment {latest.owner_version}</p></div><Badge variant={locallyStale||latest.status==='stale' ? 'outline' : 'secondary'}>{locallyStale ? 'Outdated' : latest.status==='checked' ? 'Freshness checked' : latest.status}</Badge></div><p>{latest.reason || (locallyStale ? 'The case or worker assignment changed after this snapshot was saved.' : 'The server rechecks the source evidence and referenced memories when you validate.')}</p><Button variant="outline" disabled={busy} onClick={()=>void mutate('handoffs/check',{handoff_id:latest.id},'Freshness check passed. This handoff is current; no repair was executed.')}>Check handoff freshness</Button><details className="context-raw"><summary>View saved snapshot</summary><pre>{JSON.stringify(latest.context,null,2)}</pre></details></section>}
+    {latest && <section className={`handoff-snapshot ${locallyStale || latest.status==='stale' ? 'is-stale' : ''}`} aria-label="Prepared handoff"><div className="snapshot-heading"><div><h3>Saved handoff</h3><p>{roles.find(r=>r.id===latest.role)?.title} / Revision {latest.case_revision} / Assignment {latest.owner_version}</p></div><Badge variant={locallyStale||latest.status==='stale' ? 'outline' : 'secondary'}>{locallyStale ? 'Outdated' : latest.status==='checked' ? 'Freshness checked' : latest.status}</Badge></div><p>{latest.reason || (locallyStale ? 'The case or worker assignment changed after this snapshot was saved.' : 'The server rechecks the source evidence and referenced memories when you validate.')}</p><Button variant="outline" disabled={readOnly||busy} onClick={()=>void mutate('handoffs/check',{handoff_id:latest.id},'Freshness check passed. This handoff is current; no repair was executed.')}>Check handoff freshness</Button><details className="context-raw"><summary>View saved snapshot</summary><pre>{JSON.stringify(latest.context,null,2)}</pre></details></section>}
     {item.handoffs.length>1 && <p className="context-source-count">{item.handoffs.length-1} earlier snapshots are preserved in the case record.</p>}
   </div>
 }

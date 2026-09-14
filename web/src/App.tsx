@@ -1,3 +1,4 @@
+import { AccountGate } from './components/AccountControl'
 import { useRelayWebMCP } from './lib/webmcp'
 import { ApprovalButton, type ApprovalState } from './components/ui/approval-button'
 import { workspaceGuidance } from './lib/workspace-guidance'
@@ -67,7 +68,8 @@ function Field({ label, children, hint }: {label: string; children: ReactNode; h
 }
 
 export default function App() {
-  const [session, setSession] = useState<{mode: 'local' | 'guest'; authenticated: boolean} | null>(null)
+  const [session, setSession] = useState<{mode: 'local' | 'guest' | 'team'; authenticated: boolean; role?: 'owner' | 'viewer'} | null>(null)
+  const viewer = session?.mode === 'team' && session.role === 'viewer'
   const [cases, setCases] = useState<Case[]>([])
   const [memories, setMemories] = useState<Memory[]>([])
   const [health, setHealth] = useState<Health | null>(null)
@@ -98,11 +100,12 @@ export default function App() {
   useWorkspaceCommands(useCallback((command: WorkspaceCommand) => {
     if (modal || busy || !health) return
     if (command === 'new-report') {
+      if (viewer) return
       setError('');setNotice('');requestKey.current=crypto.randomUUID();setModal('report')
     } else if (command === 'find-case') {
       setView('inbox');setShowCase(false);setFocusSearch(value=>value+1)
     } else if (command === 'connections') setView('connections')
-  }, [modal, busy, health]))
+  }, [modal, busy, health, viewer]))
   useEffect(()=>{
     const url = new URL(window.location.href)
     if(selectedId&&((view==='inbox'&&showCase)||view==='agents'))url.searchParams.set('case',selectedId)
@@ -120,7 +123,7 @@ export default function App() {
     setSelectedId(id => items.some(item => item.id === id) ? id : items[0]?.id || '')
   }
   async function openWorkspace() {
-    const current = await request<{mode: 'local' | 'guest'; authenticated: boolean}>('/session')
+    const current = await request<{mode: 'local' | 'guest' | 'team'; authenticated: boolean; role?: 'owner' | 'viewer'}>('/session')
     setSession(current)
     if (current.authenticated) await refresh()
     setLoading(false)
@@ -145,6 +148,7 @@ export default function App() {
   }, [selectedId, selected?.revision, memories, view, showCase])
 
   function openModal(next: typeof modal) {
+    if (viewer) return
     setMemoryApproval('neutral')
     setError(''); setNotice(''); requestKey.current = crypto.randomUUID(); setModal(next)
   }
@@ -213,11 +217,13 @@ export default function App() {
   function focusCaseSearch(){setView('inbox');setShowCase(false);setFocusSearch(value=>value+1)}
   const selectedMemory = memories.find(item => item.case_id === selectedId)
 
+  if (session?.mode === 'team' && !session.authenticated) return <AccountGate/>
   if (session?.mode === 'guest' && !session.authenticated) return <GuestGate ready={openWorkspace}/>
   const isGuest = session?.mode === 'guest'
   const titles:Record<View,string>={sessions:'Autonomous work',overview:'Investigation overview',inbox:'Case inbox',agents:'Agent controls',memory:'Project memory',handoffs:'Handoffs',connections:'Connections'}
   return <AdminLayout view={view} navigate={navigate} search={focusCaseSearch} guest={isGuest} connected={!!health}>
-    <PageTitle title={titles[view]} description={workspaceGuidance[view].purpose} endContent={view!=='sessions' && <ShortcutHint label="Create a report" keys="Shift N"><Button onClick={()=>openModal('report')} disabled={!health}><Plus/>New report</Button></ShortcutHint>}/>
+    <PageTitle title={titles[view]} description={workspaceGuidance[view].purpose} endContent={view!=='sessions' && <ShortcutHint label="Create a report" keys="Shift N"><Button onClick={()=>openModal('report')} disabled={!health || viewer}><Plus/>New report</Button></ShortcutHint>}/>
+    {viewer && <p role="status" className="notice">Viewer access · Follow the shared history and live run status. The workspace owner controls changes and agent execution.</p>}
     {isGuest && <div className="mt-5"><BetaFeedback/></div>}
     {error && <div className="notice error" role="alert">{error}<Button variant="ghost" size="sm" onClick={()=>void action(openWorkspace)}>Retry connection</Button></div>}
     {notice && <div ref={noticeRef} className="notice" role="status"><Check size={16}/>{notice}</div>}
@@ -237,21 +243,21 @@ export default function App() {
             {tab === 'evidence' && <>
               <div className="description-grid"><div><h3>Reported behavior</h3><p>{selected.description}</p></div><div><h3>Expected behavior</h3><p>{selected.expected}</p></div></div>
               <a className="target-link" href={selected.url} target="_blank" rel="noreferrer"><Link2 size={15}/><span>{selected.url}</span><ArrowRight size={15}/></a>
-              <div className="section-label"><h3>Investigation record</h3><Button variant="outline" size="sm" onClick={() => openModal('observation')}><Plus/>Record observation</Button></div>
+              <div className="section-label"><h3>Investigation record</h3><Button variant="outline" size="sm" disabled={viewer} onClick={() => openModal('observation')}><Plus/>Record observation</Button></div>
               {!selected.observations.length && <div className="evidence-empty"><div className="evidence-symbol"><Search size={24}/></div><div><h4>The report is ready to investigate.</h4><p>Record what you observed in the application. Include the build and an evidence link when you reproduce the problem.</p><small>Open Agent context to check the connected investigator.</small></div></div>}
               {[...selected.observations].reverse().map(observation => <article className="observation" key={observation.id}><div className="observation-top"><Status value={observation.result}/><small>{time(observation.at)}</small></div>{observation.build && observation.build !== selected.build && <p className="build-warning">Earlier build. Recheck this evidence against {selected.build}.</p>}<p>{observation.observed}</p>{observation.steps && <details><summary>Reproduction steps</summary><p className="preserve">{observation.steps}</p></details>}<dl><div><dt>Recorded by</dt><dd>{observation.author}</dd></div><div><dt>Build</dt><dd>{observation.build || 'Not supplied'}</dd></div></dl>{observation.evidence_url && <a className="evidence-link" href={observation.evidence_url} target="_blank" rel="noreferrer"><Link2 size={14}/>Open evidence</a>}<small className="attribution">Human-recorded observation. Repro Relay has not independently verified it.</small></article>)}
               <div className="section-label"><h3>Related project memory</h3><span className="subtle">Exact term lookup</span></div>
               {related.length ? related.map(memory => <button className="related-row" key={memory.id} onClick={() => setSelectedId(memory.case_id)}><BookOpen size={16}/><div><strong>{memory.title}</strong><small>{memory.case_id} · Reviewed by {memory.reviewer}</small></div><ChevronRight size={15}/></button>) : <p className="muted-paragraph">No matching reviewed observations yet. Memory grows as your team reviews evidence.</p>}
-              {selected.status === 'reproduced' && <div className="memory-prompt"><ShieldCheck size={22}/><div><strong>{selectedMemory ? 'This observation is in project memory.' : 'Useful for the next investigation?'}</strong><p>{selectedMemory ? `Reviewed by ${selectedMemory.reviewer}. New observations invalidate this memory.` : 'Review the evidence before making this observation available to future cases.'}</p></div>{!selectedMemory && <Button variant="outline" size="sm" onClick={() => openModal('review')}>Review for memory</Button>}</div>}
+              {selected.status === 'reproduced' && <div className="memory-prompt"><ShieldCheck size={22}/><div><strong>{selectedMemory ? 'This observation is in project memory.' : 'Useful for the next investigation?'}</strong><p>{selectedMemory ? `Reviewed by ${selectedMemory.reviewer}. New observations invalidate this memory.` : 'Review the evidence before making this observation available to future cases.'}</p></div>{!selectedMemory && <Button variant="outline" size="sm" disabled={viewer} onClick={() => openModal('review')}>Review for memory</Button>}</div>}
             </>}
-            {tab === 'context' && <>{'__TAURI_INTERNALS__' in window&&<a className="target-link" href={`http://127.0.0.1:8178/?case=${encodeURIComponent(selected.id)}`}><Link2 size={15}/>Open this case in your browser</a>}<RunPanel key={`run-${selected.id}`} item={selected} guest={isGuest}/><ContextPanel key={selected.id} item={selected} refresh={refresh}/></>}
+            {tab === 'context' && <>{'__TAURI_INTERNALS__' in window&&<a className="target-link" href={`http://127.0.0.1:8178/?case=${encodeURIComponent(selected.id)}`}><Link2 size={15}/>Open this case in your browser</a>}<RunPanel key={`run-${selected.id}`} item={selected} guest={isGuest || viewer}/><ContextPanel key={selected.id} item={selected} refresh={refresh} readOnly={viewer}/></>}
             {tab === 'handoff' && <><div className="packet-intro"><FileText size={22}/><div><h3>A precise starting point for engineering.</h3><p>This export includes the report, recorded evidence, and related reviewed cases. Unknown repository and commit details stay explicit.</p></div></div><Button onClick={exportPacket} disabled={!packet}><ArrowDownToLine/>Export Markdown</Button><pre className="packet-preview">{packet || 'Loading repair packet…'}</pre></>}
             {tab === 'activity' && <CaseActivity events={selected.events}/>}
             </TabsContent>
             </Tabs>
           </section> : <Table7 cases={cases} open={openCase} investigate={openInvestigation} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} searchRef={searchRef}/>}</div>}
-     {view==='sessions' && <Suspense fallback={<p role="status">Loading automatic work…</p>}><SessionWorkspace guest={isGuest} /></Suspense>}
-     {view==='agents' && <Suspense fallback={<Card className="mt-5"><CardContent role="status">Loading the investigation workspace…</CardContent></Card>}><InvestigationWorkspace cases={cases} selectedId={selectedId} onSelect={setSelectedId} guest={isGuest} onOpenCase={openCase} onNewReport={()=>openModal('report')} onRefresh={refresh}/></Suspense>}
+     {view==='sessions' && <Suspense fallback={<p role="status">Loading automatic work…</p>}><SessionWorkspace guest={isGuest} readOnly={viewer} /></Suspense>}
+     {view==='agents' && <Suspense fallback={<Card className="mt-5"><CardContent role="status">Loading the investigation workspace…</CardContent></Card>}><InvestigationWorkspace cases={cases} selectedId={selectedId} onSelect={setSelectedId} guest={isGuest || viewer} onOpenCase={openCase} onNewReport={()=>openModal('report')} onRefresh={refresh}/></Suspense>}
 {view === 'memory' && <section className="memory-view"><div className="memory-heading"><div><h2>Reviewed observations</h2><p>References for investigation. These entries do not establish a root cause or a verified fix.</p></div><label className="search"><Search size={16}/><input aria-label="Search memory" placeholder="Search observations…" value={query} onChange={e => setQuery(e.target.value)}/></label></div>
         {memories.filter(memory => `${memory.title} ${memory.observation.observed}`.toLowerCase().includes(query.toLowerCase())).map(memory => <article className="memory-card" key={memory.id}><div className="memory-card-icon"><Database size={21}/></div><div className="memory-copy"><span className="subtle">{memory.project} · {memory.case_id} · Revision {memory.revision}</span><h3>{memory.title}</h3><p>{memory.observation.observed}</p><small>Reviewed by {memory.reviewer} · {time(memory.created_at)}</small></div><div className="memory-actions"><Button variant="outline" size="sm" onClick={() => {setSelectedId(memory.case_id); setView('inbox'); setShowCase(true); setTab('evidence')}}>Open case</Button><Button variant="ghost" size="sm" disabled={busy} onClick={() => void action(async () => {await request(`/memories/${memory.id}`, {method: 'DELETE'}); await refresh(); setNotice('Memory removed from retrieval. The original case is preserved.')})}>Remove from memory</Button></div></article>)}
         {!memories.length && <div className="large-empty"><Database size={34}/><h3>Start with a reviewed reproduction.</h3><p>Record evidence on a case, then choose “Review for memory.” Its source and revision will stay attached.</p><Button variant="outline" onClick={() => navigate('inbox')}>Go to case inbox</Button></div>}

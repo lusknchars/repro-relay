@@ -13,11 +13,11 @@ type Archive = { id: string; title: string; first_prompt: string; latest_turn: s
 const labels: Record<string, string> = { pending: 'Ready for review', queued: 'Evaluation queued', evaluating: 'Evaluating context pack', accepted: 'Candidate approved', declined: 'Declined', stale: 'Snapshot changed', failed: 'Evaluation interrupted' }
 const date = (value: string) => new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 const size = (n: number) => `${n.toLocaleString()} bytes`
-export function SessionWorkspace({ guest }: { guest: boolean | undefined }) {
+export function SessionWorkspace({ guest, readOnly = false }: { guest: boolean | undefined; readOnly?: boolean }) {
   if (guest) return <section className="sw-guest"><h2>Autonomous work runs in your local workspace</h2><p>The guest workspace cannot connect a repository harness.</p></section>
-  return <AutonomousWork />
+  return <AutonomousWork readOnly={readOnly} />
 }
-function AutonomousWork() {
+function AutonomousWork({readOnly}: {readOnly:boolean}) {
   const [feed, setFeed] = useState<Feed | null>(null)
   const [selected, setSelected] = useState(() => new URLSearchParams(location.search).get('audit') || '')
   const [query, setQuery] = useState(''); const [error, setError] = useState(''); const [notice, setNotice] = useState('')
@@ -43,7 +43,7 @@ function AutonomousWork() {
     history.replaceState(null, '', url)
   }, [current?.id])
   async function change(path: string, body: object, success: string) {
-    if (inFlight.current) return false
+    if (readOnly || inFlight.current) return false
     inFlight.current = true; setBusy(true); setError(''); setNotice('')
     try { await request(path, { method: 'POST', body: JSON.stringify(body) }); setNotice(success); return true }
     catch (e) { setError(`${message(e)} The current state is being refreshed.`); return false }
@@ -56,7 +56,7 @@ function AutonomousWork() {
   const status = readError ? 'Connection unavailable' : feed?.control.paused ? 'Monitoring paused' : feed?.control.connected ? 'Watching agent instructions' : 'Harness disconnected'
   const items = feed?.items.filter(i => `${i.repository} ${i.revision} ${i.proposal ? labels[i.proposal.state] : 'audit complete'}`.toLowerCase().includes(query.toLowerCase())) || []
   const pending = feed?.items.filter(i => i.proposal?.state === 'pending').length || 0
-  const canDecide = !busy && !readError && !!feed?.control.connected && !feed.control.paused && current?.id === feed.control.latest_scan
+  const canDecide = !readOnly && !busy && !readError && !!feed?.control.connected && !feed.control.paused && current?.id === feed.control.latest_scan
   return <section className="session-workspace" data-pane={pane} aria-label="Autonomous work">
     <nav className="sw-mobile-nav" aria-label="Work panels">{(['history', 'review', 'monitor'] as const).map(p => <Button key={p} variant={pane === p ? 'secondary' : 'ghost'} aria-pressed={pane === p} onClick={() => setPane(p)}>{p === 'history' ? 'Activity' : p === 'review' ? 'Review' : 'Monitor'}</Button>)}</nav>
     <aside className="sw-history" aria-label="Automatic work history">
@@ -78,7 +78,7 @@ function AutonomousWork() {
         {current.proposal && ['queued','evaluating','declined','stale','failed'].includes(current.proposal.state) && <div className="relay-card sw-callout"><strong>{labels[current.proposal.state]}</strong><p>{({ queued: 'The harness will evaluate this candidate automatically on its next cycle.', accepted: 'The evaluated candidate is available for context retrieval while its snapshot remains current. No agent adapter consumes it yet.', evaluating: 'A worker holds a bounded evaluation lease. Its result will appear here automatically.', declined: 'This candidate will not be offered to a context adapter. Your decision and its evaluation are retained.', stale: 'The repository snapshot changed. Review the newest audit before approving work.', failed: 'The worker exhausted its recovery attempts. Inspect the harness connection before continuing.' })[current.proposal.state]}</p></div>}
       </>}
     </section>
-    <aside className="sw-monitor" aria-label="Repository monitor"><header><Activity /><h2>Repository monitor</h2><span className="sw-status">{feed ? status : 'Checking connection…'}</span></header><section><h3>Context quality and cost</h3><p>Inspect tracked instructions when their content or Git revision changes. Keep the evidence and decisions across restarts.</p><dl><div><dt>Discovery</dt><dd>Automatic</dd></div><div><dt>Evaluation</dt><dd>Automatic, read-only</dd></div><div><dt>Source changes</dt><dd>Disabled</dd></div><div><dt>Paid model calls</dt><dd>Disabled</dd></div></dl></section>{feed && <Button variant="outline" disabled={busy} onClick={() => void change('/autonomy/control', { version: feed.control.version, paused: !feed.control.paused }, feed.control.paused ? 'Monitoring resumed.' : 'Monitoring paused. In-flight evaluations can no longer publish.')}>
+    <aside className="sw-monitor" aria-label="Repository monitor"><header><Activity /><h2>Repository monitor</h2><span className="sw-status">{feed ? status : 'Checking connection…'}</span></header><section><h3>Context quality and cost</h3><p>Inspect tracked instructions when their content or Git revision changes. Keep the evidence and decisions across restarts.</p><dl><div><dt>Discovery</dt><dd>Automatic</dd></div><div><dt>Evaluation</dt><dd>Automatic, read-only</dd></div><div><dt>Source changes</dt><dd>Disabled</dd></div><div><dt>Paid model calls</dt><dd>Disabled</dd></div></dl></section>{feed && <Button variant="outline" disabled={busy || readOnly} onClick={() => void change('/autonomy/control', { version: feed.control.version, paused: !feed.control.paused }, feed.control.paused ? 'Monitoring resumed.' : 'Monitoring paused. In-flight evaluations can no longer publish.')}>
       {feed.control.paused ? <Play /> : <Pause />}{feed.control.paused ? 'Resume monitoring' : 'Pause monitoring'}</Button>}{feed?.control.last_seen && <p className="sw-muted">Last harness check {date(feed.control.last_seen)}</p>}<section><h3>Connected harness</h3><p>Local context harness · v1</p><p className="sw-muted">Tracked AGENTS.md, CLAUDE.md and SKILL.md files. Audits and evaluations run every 15 seconds while the harness is connected.</p></section><section><h3>Execution boundary</h3><p className="sw-muted">This harness performs read-only context checks. Hermes code changes, task-specific context selection, and model quality comparisons need a separate execution adapter.</p></section><p className="sw-footnote"><ArrowRight />Leave this view open or come back later. Monitoring runs outside the browser.</p></aside>
   </section>
 }
