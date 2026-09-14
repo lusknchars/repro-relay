@@ -15,17 +15,24 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - uses: dtolnay/rust-toolchain@stable
       - run: npm ci --prefix web
+      - run: npm ci --prefix web/reptest
       - run: npm run build --prefix web
       - name: Install Microsoft Edge for the isolated runner
         working-directory: web
         run: npx playwright install msedge
       - name: Exercise the investigation UI in Edge on Windows
         run: npm run test:edge --prefix web
+      - name: Exercise the supplied default frontend in Edge on Windows
+        run: npm run test:reptest --prefix web
+        env:
+          REPRO_BROWSER_CHANNEL: msedge
       - name: Check native Windows desktop compilation
         run: cargo check -p relay-desktop
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: windows-edge-compatibility-results
-          path: web/test-results/compatibility-artifacts
+          path: |
+            web/test-results/compatibility-artifacts
+            web/test-results/exact-reptest
           if-no-files-found: ignore

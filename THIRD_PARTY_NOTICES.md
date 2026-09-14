@@ -113,3 +113,7 @@ This component retains its React Bits Pro product license. As with ASCII Waves, 
 ## User-supplied reptest prototype
 
 The user provided `reptest.zip` as a frontend adaptation reference on September 14, 2026. Its shell, appearance settings and semantic colors informed the implementation in `web/src/components/reptest`, `web/src/reptest.css` and the existing PaceUI layouts. The archive describes itself as a PaceUI/shadcn recomposition. Existing PaceUI licensing and notices remain applicable. Sample business records and the archive's dependency tree were not imported. See `docs/REPTEST-ADAPTATION.md` for provenance and the implementation map.
+
+## User-supplied Reptest frontend
+
+`web/reptest` contains the actual user-supplied archive, replacing the earlier visual adaptation as the default frontend. Original source and package lockfile are retained. The archive README describes its PaceUI/shadcn reconstruction. Import for this requested local application does not establish a broader redistribution license. See `docs/REPTEST-ADAPTATION.md` for source hash and integration boundaries.

@@ -25,5 +25,6 @@ jobs:
         with:
           components: rustfmt, clippy
       - run: npm ci --prefix web
+      - run: npm ci --prefix web/reptest
       - run: npm exec --prefix web -- playwright install --with-deps chromium
       - run: make check

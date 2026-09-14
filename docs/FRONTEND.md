@@ -1,5 +1,13 @@
 # Frontend design
 
+## Current default: supplied Reptest files
+
+The default web and Tauri clients now render the actual user-supplied ZIP from `web/reptest`, without the prior adaptation. See [source fidelity, commands and integration boundaries](REPTEST-ADAPTATION.md). The supplied screens and sample data are unchanged. Their backend connections are still pending. The previous working client is retained under `web/src` and `dev:legacy` for integration and regression testing.
+
+## Previous client, retained for backend integration
+
+The following describes the retained client, not the new default prototype.
+
 Repro Relay uses the authenticated `@paceui/ultimate-dashboard-template` source as its only dashboard template. The user's selection replaces the former custom blue rail and landing preview. See [the migration record](PACEUI-MIGRATION.md) for provenance and installation.
 
 ## Shared application

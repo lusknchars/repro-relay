@@ -4,16 +4,20 @@
   "version": "0.2.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1 --port 5178 --strictPort",
-    "typecheck": "tsc --noEmit",
-    "build": "tsc --noEmit && vite build",
-    "preview": "vite preview --host 127.0.0.1 --port 5178 --strictPort",
+    "dev": "npm --prefix reptest run dev -- --config vite.relay.config.ts --host 127.0.0.1 --port 5178 --strictPort",
+    "typecheck": "node reptest/node_modules/typescript/bin/tsc --noEmit -p reptest/tsconfig.json",
+    "build": "npm --prefix reptest run build -- --config vite.relay.config.ts",
+    "preview": "npm --prefix reptest run preview -- --config vite.relay.config.ts --host 127.0.0.1 --port 5178 --strictPort",
     "tauri": "tauri",
     "test:e2e": "playwright test",
     "test:guest": "playwright test --config playwright.guest.config.ts",
     "test:runner": "playwright test --config playwright.runner.config.ts",
     "test:compatibility": "playwright test --config playwright.compatibility.config.ts --project=chromium",
-    "test:edge": "playwright test --config playwright.compatibility.config.ts --project=edge"
+    "test:edge": "playwright test --config playwright.compatibility.config.ts --project=edge",
+    "dev:legacy": "vite --host 127.0.0.1 --port 5178 --strictPort",
+    "build:legacy": "tsc --noEmit && vite build --outDir legacy-dist",
+    "typecheck:legacy": "tsc --noEmit",
+    "test:reptest": "playwright test --config playwright.exact-reptest.config.ts"
   },
   "dependencies": {
     "@gsap/react": "2.1.2",

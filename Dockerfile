@@ -3,6 +3,7 @@ WORKDIR /build/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/ ./
+RUN npm ci --prefix reptest
 RUN npm run build
 
 FROM rust:1.98-bookworm AS backend

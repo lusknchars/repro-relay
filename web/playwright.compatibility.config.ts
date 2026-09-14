@@ -12,5 +12,5 @@ export default defineConfig({
     { name: 'chromium', use: { browserName: 'chromium' } },
     { name: 'edge', use: { browserName: 'chromium', channel: 'msedge' } },
   ],
-  webServer: { command: 'npm run dev -- --port 5186', url: 'http://127.0.0.1:5186', timeout: 30_000 },
+  webServer: { command: 'npm run dev:legacy -- --port 5186', url: 'http://127.0.0.1:5186', timeout: 30_000 },
 })

@@ -1,25 +1,29 @@
-# Reptest frontend adaptation
+# Supplied Reptest frontend and desktop
 
-The user supplied `reptest.zip` on September 14, 2026 as the new frontend reference. The archive identifies itself as a PaceUI/shadcn recomposition of Relay's designer brief. Its SHA-256 is `e82b16132b20d333228267a2b97e0faa272612780ca40b94da73494a7df5452d`.
+The initial adaptation at `f4e4656` was rejected because it changed the supplied composition. The default web and macOS desktop frontend now uses the actual `reptest.zip` files in `web/reptest`, including its six screens, components, styles, theme provider and sample data. No Relay layout or CSS wraps these screens.
 
-The adaptation keeps the installed PaceUI/Radix components, React version, service APIs and desktop bridge. It does not install the archive's package tree or import its fictional `lib/data.ts` records. The supplied design informs the shell, color tokens, typography, compact work navigation, quiet borders, settings controls and appearance panel.
+Source archive SHA-256: `e82b16132b20d333228267a2b97e0faa272612780ca40b94da73494a7df5452d`. The original source, HTML, package files, TypeScript configuration and Vite configuration are retained byte for byte. Generated TypeScript cache is excluded. Its own lockfile preserves the supplied React, icon and chart versions.
 
-## Screen mapping
+`vite.relay.config.ts` is the only added integration configuration. It emits separate JS/CSS assets into `web/dist` so Tauri can retain its existing content security policy. It proxies the local API for later integration but the imported screens do not call it. The original single-file Vite configuration remains available in the supplied directory.
 
-| Prototype | Working Relay adaptation |
-| --- | --- |
-| Work | Work navigation groups Overview, Autonomous work, Case inbox, Agent controls and Handoffs. Reports appear before aggregate activity. Existing investigation findings, reviews, evidence and context retain their APIs. |
-| Team | Existing account creation, sign-in, profile, invitations, member access and security. Team chat and DMs remain unavailable and are identified as such. |
-| Knowledge | Reviewed project observations and their source history. Private Mem0 notes remain in the agent tools; no fictional memory list is imported. |
-| Usage | A dedicated case and attempt selector, existing Hermes token/cost charts, coverage, reporting history and audit export. Local validation is excluded from Hermes spending. Errors retain the last values with a stale-data message. |
-| Settings | The new Tools library and existing Pi/Codex/WebMCP/Plow setup. Credentials remain outside browser configuration. |
-| Setup | Existing guided tour with real page navigation. Returning users get a compact replay bar. No simulated completion of authentication or provider credit checks. |
-| Appearance | Device/browser preferences for accent, radius, sidebar variant/collapse, width, density, text size, ambient effects and reduced motion. Existing light/dark account and topbar controls stay synchronized. |
+## Run
 
-Mobile adds five bottom destinations. The sidebar drawer retains detailed work navigation and keyboard controls. Tauri renders the same interface and retains native repository tools and account management in the browser.
+- `make setup` installs both dependency trees.
+- `npm run dev --prefix web` opens the supplied frontend at localhost:5178.
+- `make desktop` starts the same frontend in a native Tauri development window.
+- `make desktop-build` creates `target/debug/bundle/macos/Repro Relay.app`.
+- `open 'target/debug/bundle/macos/Repro Relay.app'` opens the bundled app. The bundled prototype works without Vite, the API, or a model running.
 
-## Deliberate implementation boundaries
+The desktop uses the existing Tauri/Rust application, not a new SwiftUI Mac rewrite. The iPhone source remains separate in `apple/`.
 
-Prototype balances, active agents, cloud endpoints, run budgets, context packets, test results and chat messages are examples, not backend facts. They are not shipped as live records. Relay does not yet offer the prototype's unified team messaging, arbitrary tool marketplace, per-phase spending attribution, provider OAuth, or enforced runtime dollar budgets.
+## Prototype boundary
 
-The account invitation allowlist now accepts the actual Team and Usage routes. Existing case identifiers and workspace checks still apply. The appearance store contains display preferences only and validates stored values before applying them.
+The visible `reptest · prototype` label and original capability tags are retained. Acme records, provider balances, investigating status, messages and test results are sample data. Appearance choices and local UI interactions work as supplied; account, authentication, messaging, approval, memory and connection examples are not live integrations. Some supplied controls are placeholders. No sample approval changes source code or starts Hermes.
+
+The native repository and export commands remain implemented, but the supplied renderer does not invoke them. The old Workspace menu was removed because this renderer has no listeners for its commands. Native repository tools and backend actions need to be wired into the supplied design before claiming a functional production replacement.
+
+## Existing backend interface
+
+The previous interface is retained in `web/src` and can be opened explicitly with `npm run dev:legacy --prefix web -- --port 5179` while the API runs. Its source and working connection controls remain available for the next integration step. It is not the default client.
+
+`npm run build:legacy --prefix web` emits `web/legacy-dist`. Existing workflow, guest, runner and compatibility tests explicitly target that interface. The guest test launcher uses an isolated working directory with that bundle, leaving the default `web/dist` untouched. `npm run test:reptest --prefix web` separately checks the supplied screens, appearance persistence, phone navigation, browser errors and absence of API writes. `make check` runs both sets; legacy tests do not prove backend integration in Reptest.

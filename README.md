@@ -2,7 +2,7 @@
 
 Repro Relay connects support and operations reports to agent investigation and developer review. Its web and desktop clients share cases, recorded evidence, project memory, and engineering handoffs.
 
-Both clients use the selected PaceUI Ultimate Dashboard template, adapted to investigation activity, case search, and Hermes controls. See [the migration record](docs/PACEUI-MIGRATION.md).
+The default web and desktop clients now use the actual user-supplied Reptest frontend. Its screens, styles and sample data are copied unchanged. It is a design prototype; its displayed agent activity, costs and connections are not live. The existing backend and its working client are retained separately. See [the frontend and desktop integration record](docs/REPTEST-ADAPTATION.md).
 
 For the next implementation work, use the [delivery protocol](docs/DELIVERY-PROTOCOL.md), [product depth review](docs/PRODUCT-DEPTH-REVIEW.md), [Orca/Warp interaction benchmark](docs/research/orca-warp-dashboard-benchmark.md), and the user-selected [Vercel configuration benchmark](docs/research/vercel-configuration-benchmark.md). The protocol defines resources, dependencies and acceptance evidence; it does not describe all of those capabilities as shipped.
 
@@ -27,7 +27,9 @@ Open http://127.0.0.1:5178. The API binds to localhost:8178 and PostgreSQL to lo
 
 For an existing PostgreSQL server, export `DATABASE_URL` before running `make api`. Environment variables are read from the process; `.env.example` is documentation, not an automatically loaded config file.
 
-## Try the workflow
+## Try the retained backend workflow
+
+Run `npm run dev:legacy --prefix web -- --port 5179` with the API running, then open localhost:5179. The workflow and investigator instructions below apply to that retained client. The default Reptest screens are not wired to these APIs yet.
 
 1. Create a bug report and name its current build.
 2. Record what you observed. A reproduced result requires steps, a build, an evidence URL, and a named author.
@@ -48,18 +50,14 @@ See [runner setup and recovery](docs/HERMES-RUNNER.md) for the required capabili
 
 ## Desktop
 
-With `make dev` running, open the built desktop application. To build it:
+Build and open the actual macOS desktop application:
 
 ```sh
 make desktop-build
 open 'target/debug/bundle/macos/Repro Relay.app'
 ```
 
-For desktop development, run `make api` and then `make desktop` in a second terminal. Tauri starts Vite itself. The webview uses the same local Rust API. Packet export opens a native save dialog. The current desktop is a client for a separately running API; it does not yet bundle Hermes, Plow, Latch, or a local runner. It is not signed, notarized, self-contained, or ready for an app store.
-
-The desktop checks its local service at startup. If unavailable, it shows setup commands and a connection retry. It remembers window size and position and includes a native **Workspace** menu. Keyboard commands are `Cmd/Ctrl+Shift+N` for a report, `Cmd/Ctrl+K` to find a case, and `Cmd/Ctrl+,` for connections. The same shortcuts work in the web workspace. They leave an open report dialog in control of focus.
-
-Shared shadcn controls include shortcut tooltips, button press feedback, and explicit pending labels for investigation actions. GSAP introduces changed panels, results, and confirmations with short transitions. Reduced motion disables those transitions, including when the setting changes while the app is open.
+The bundled app loads the supplied frontend directly and works offline as a prototype. `make desktop` starts desktop development with Vite. Web and desktop share the same supplied source; there is no separate approximation of its layout. The existing Tauri native commands remain in Rust but need integration with the new screens. The app is a local debug build, not a signed or notarized distribution.
 
 ## Check
 

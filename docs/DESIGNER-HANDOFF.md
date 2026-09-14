@@ -315,4 +315,4 @@ A general tool marketplace, arbitrary package installation, provider OAuth insid
 
 ## Supplied reptest implementation
 
-The September 14 `reptest.zip` adaptation is now recorded in [REPTEST-ADAPTATION.md](REPTEST-ADAPTATION.md). Its compact shell, primary navigation, appearance controls, dedicated Usage screen and Team entry are implemented against existing Relay features. The fictional work records, conversations and cost metrics in the archive are not application data. Use the adaptation map when designing the remaining work/conversation and team messaging interactions.
+The user rejected the initial adaptation and requested the actual ZIP. The default web and native desktop clients now render its unchanged source in `web/reptest`. See [the integration record](REPTEST-ADAPTATION.md). Preserve this composition when wiring the existing backend to its screens. Its work records, conversations, costs and connection states are fictional prototype data; no live integration is implied. The retained `web/src` client contains working backend controls to connect in the next increment.

@@ -4,6 +4,7 @@ export DATABASE_URL ?= postgres://relay:relay_local_only@127.0.0.1:55478/relay
 .PHONY: setup dev api check db desktop desktop-build plow-check context-check tools-check terminal-check pi-check
 setup:
 	npm ci --prefix web
+	npm ci --prefix web/reptest
 	npm exec --prefix web -- playwright install chromium
 	$(MAKE) db
 	node scripts/prepare-e2e-db.mjs
@@ -30,6 +31,8 @@ check:
 	$(CARGO) test -p relay-api
 	$(CARGO) build -p relay-api
 	npm run build --prefix web
+	npm run build:legacy --prefix web
+	npm run test:reptest --prefix web
 	node scripts/prepare-e2e-db.mjs
 	npm run test:e2e --prefix web
 	npm run test:guest --prefix web

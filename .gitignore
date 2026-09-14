@@ -17,3 +17,8 @@ web/src-tauri/gen/
 
 # Host-specific terminal tool connection
 .codex/config.toml
+
+# Supplied frontend build artifacts
+web/reptest/dist/
+web/reptest/*.tsbuildinfo
+web/legacy-dist/
