@@ -1,0 +1,47 @@
+[data-slot=button].approval-button { min-height: 40px; overflow: hidden; }
+.approval-label { display: inline-block; }
+.approval-overlay { position: absolute; inset: 0; display: grid; place-content: center; pointer-events: none; }
+[data-slot=button].approval-button .approval-overlay svg { width: 20px; height: 20px; }
+[data-slot=button].approval-button[data-approval-state=loading] { background: #355cce; color: #fff; opacity: .8; }
+[data-slot=button].approval-button[data-approval-state=success] { background: #047857; color: #fff; opacity: 1; }
+[data-slot=button].approval-button[data-approval-state=error] { background: #b91c1c; color: #fff; opacity: 1; }
+[data-slot=button].approval-button:not([data-approval-state=neutral])::before { display: none; }
+.approval-spinner { animation: approval-spin 900ms linear infinite; }
+@keyframes approval-spin { to { transform: rotate(360deg); } }
+
+[data-slot=button].dot-expand-button {
+  min-height: 44px;
+  border-radius: 999px;
+  padding: 8px 16px 8px 10px;
+  gap: 8px;
+  background: var(--tint);
+  color: var(--ink);
+  box-shadow: inset 0 1px 0 var(--card-sheen);
+}
+[data-slot=button].dot-expand-button::before { display: none; }
+.dot-expand-indicator { position: relative; display: grid; place-items: center; flex: 0 0 24px; width: 24px; height: 24px; }
+.dot-expand-indicator::before { content: ''; position: absolute; inset: 0; border-radius: 50%; background: var(--ink); transform: scale(.3); transition: transform 240ms ease-out, background-color 160ms; }
+[data-slot=button].dot-expand-button .dot-expand-indicator svg { position: relative; width: 16px; height: 16px; color: var(--ink); opacity: 0; transform: translateX(-6px) scale(.6); transition: transform 240ms ease-out, opacity 160ms; }
+[data-slot=button].dot-expand-button:focus-visible { background: var(--ink); color: var(--surface); }
+.dot-expand-button:focus-visible .dot-expand-indicator::before { background: var(--surface); transform: scale(1); }
+[data-slot=button].dot-expand-button:focus-visible .dot-expand-indicator svg { opacity: 1; transform: none; }
+@media (hover: hover) and (pointer: fine) {
+  [data-slot=button].dot-expand-button:not(:disabled):hover { background: var(--ink); color: var(--surface); }
+  .dot-expand-button:not(:disabled):hover .dot-expand-indicator::before { background: var(--surface); transform: scale(1); }
+  [data-slot=button].dot-expand-button:not(:disabled):hover .dot-expand-indicator svg { opacity: 1; transform: none; }
+  [data-slot=button].dot-expand-button:not(:disabled):active .dot-expand-indicator svg { transform: rotate(-45deg); }
+}
+@media (hover: none), (pointer: coarse) {
+  .dot-expand-indicator::before { background: var(--surface); transform: scale(1); }
+  [data-slot=button].dot-expand-button .dot-expand-indicator svg { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .approval-spinner { animation: none; }
+  .approval-label, .approval-overlay { transform: none !important; }
+  .dot-expand-indicator::before, [data-slot=button].dot-expand-button .dot-expand-indicator svg { transition: none; }
+}
+@media (forced-colors: active) {
+  [data-slot=button]:is(.approval-button, .dot-expand-button) { border: 1px solid ButtonText; }
+  .dot-expand-indicator::before { display: none; }
+  [data-slot=button].dot-expand-button .dot-expand-indicator svg { color: ButtonText; opacity: 1; transform: none; }
+}

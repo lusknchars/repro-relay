@@ -49,7 +49,11 @@ Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/
 Licensed under the SIL Open Font License 1.1. The complete license is distributed alongside the fonts in `web/public/fonts/OFL.txt`.
 Source revision: `19371302b95d218af43299bce79ddbddd0bc364d`.
 
-## GSAP
+## Motion and user-supplied button examples
+
+`motion` 13.2.0 is used for the approval button's presence transitions under the MIT license. Copyright (c) 2024 Motion B.V. The complete dependency license remains in the installed package. `web/src/components/ui/approval-button.tsx` and `dot-expand-button.tsx` adapt the examples supplied by the user, replacing simulated request outcomes with application state and using the existing Lucide icons.
+
+## GSAP interface transitions
 
 `gsap` 3.15.0 and `@gsap/react` 2.1.2 are package dependencies under the [GSAP Standard No Charge License](https://gsap.com/community/standard-license/). Their upstream license and copyright notices remain applicable; they are not relicensed under this project's MIT license. The app uses GSAP for interface transitions. It does not expose a visual animation editor.
 

@@ -1,10 +1,10 @@
 // PaceUI Ultimate Dashboard AI layout, adapted to Repro Relay's persisted workspace data.
-import { BookOpen, Inbox, ShieldCheck, FileCheck2, ArrowUpRight } from 'lucide-react';
+import { BookOpen, Inbox, ShieldCheck, FileCheck2 } from 'lucide-react';
 import { lazy, Suspense } from 'react';
 import { Chart19 } from '@/components/blocks/dashboard/chart/chart-19';
 import { Stat13 } from '@/components/blocks/dashboard/stat/stat-13';
 import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { DotExpandButton } from '@/components/ui/dot-expand-button';
 import type { Case, Memory } from '@/types';
 import type { View } from '../layouts';
 const Chart18=lazy(()=>import('@/components/blocks/dashboard/chart/chart-18').then(module=>({default:module.Chart18})));
@@ -22,6 +22,6 @@ export function AIDashboard({cases,memories,guest,navigate}:{cases:Case[];memori
    {view:'inbox' as const,title:'Pick up an investigation',detail:cases.filter(c=>['new','needs_context','blocked'].includes(c.status)).length+' cases awaiting more evidence.',icon:Inbox},
    {view:'memory' as const,title:'Use reviewed context',detail:'Inspect evidence before carrying it into another case.',icon:BookOpen},
    {view:'handoffs' as const,title:'Prepare the next step',detail:'Check build and assignment freshness before a handoff.',icon:FileCheck2},
-  ].map(item=><Card key={item.view} className="relay-card-action py-5"><CardContent className="px-5"><item.icon className="mb-3 size-5 text-muted-foreground"/><h2 className="text-sm font-medium">{item.title}</h2><p className="text-muted-foreground mt-2 text-xs">{item.detail}</p><Button variant="link" className="mt-3 h-auto px-0" onClick={()=>navigate(item.view)}>Open workspace<ArrowUpRight/></Button></CardContent></Card>)}</div>
+  ].map(item=><Card key={item.view} className="relay-card-action py-5"><CardContent className="px-5"><item.icon className="mb-3 size-5 text-muted-foreground"/><h2 className="text-sm font-medium">{item.title}</h2><p className="text-muted-foreground mt-2 text-xs">{item.detail}</p><DotExpandButton className="mt-3" onClick={()=>navigate(item.view)}>Open workspace</DotExpandButton></CardContent></Card>)}</div>
  </div>
 }

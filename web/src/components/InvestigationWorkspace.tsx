@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowRight, Check, ChevronRight, ClipboardList, FileText, History, Play, Plus, RefreshCw, Search, ShieldCheck, Square } from 'lucide-react'
+import { ArrowRight, ChevronRight, ClipboardList, FileText, History, Play, Plus, RefreshCw, Search, ShieldCheck, Square } from 'lucide-react'
 import hermesLogo from '../assets/hermes-logo.webp'
 import type { Case, InvestigationRun } from '../types'
 import { message, request } from '../lib/api'
 import { InvestigationRequestError, isRunActive, reviewLabels, runLabels, submitInvestigationRequest } from '../lib/investigation'
 import type { InvestigationPreview, PendingInvestigationRequest, ReviewDraft, RunReview } from '../lib/investigation'
 import { Button } from './ui/button'
+import { ApprovalButton, type ApprovalState } from './ui/approval-button'
 import { InvestigationEvidence } from './InvestigationEvidence'
 import './investigation-workspace.css'
 
@@ -75,6 +76,7 @@ function CaseInvestigation({ item, guest, onOpenCase, session, onRefresh }: { it
   const [previewGeneration, setPreviewGeneration] = useState(0)
   const [excludedReviewId, setExcludedReviewId] = useState<string | null>(null)
   const [, setDraftVersion] = useState(0)
+  const [reviewState, setReviewState] = useState<{ id: string; state: ApprovalState } | null>(null)
   const alive = useRef(true)
   const mutating = useRef(false)
   const generation = useRef(0)
@@ -96,7 +98,7 @@ function CaseInvestigation({ item, guest, onOpenCase, session, onRefresh }: { it
     setRunId(id); session.selectedRuns.set(item.id, id); setAnnouncement(''); setError('')
     try { window.localStorage.setItem(`relay-investigation-selection:${item.id}`, id) } catch { /* Selection still persists for this mounted workspace. */ }
   }
-  function editDraft(patch: Partial<ReviewDraft>) { session.drafts.set(draftKey, { ...draft, ...patch }); setDraftVersion(version => version + 1) }
+  function editDraft(patch: Partial<ReviewDraft>) { setReviewState(null); session.drafts.set(draftKey, { ...draft, ...patch }); setDraftVersion(version => version + 1) }
 
   async function refreshContext() {
     setPreview(null); setPreviewError('')
@@ -151,11 +153,14 @@ function CaseInvestigation({ item, guest, onOpenCase, session, onRefresh }: { it
     if (mutating.current) return
     mutating.current = true; generation.current++; setBusy(action.kind); setError(''); setAnnouncement('')
     session.pending.set(item.id, action); setPending(action)
+    const reviewedRunId = action.kind === 'review' ? action.path.split('/')[2] : ''
+    if (reviewedRunId) setReviewState({ id: reviewedRunId, state: 'loading' })
     try {
       const result = await submitInvestigationRequest<InvestigationRun | RunReview>(action)
       session.pending.delete(item.id)
       if (!alive.current) return
       setPending(undefined)
+      if (reviewedRunId) setReviewState({ id: reviewedRunId, state: 'success' })
       if (action.kind === 'start') selectRun(result.id)
       setAnnouncement(action.kind === 'start' ? 'Investigation submitted to Hermes.' : 'Review saved. Case evidence and reviewed memory have not changed.')
       setPreviewGeneration(value => value + 1)
@@ -164,6 +169,7 @@ function CaseInvestigation({ item, guest, onOpenCase, session, onRefresh }: { it
       const certain = reason instanceof InvestigationRequestError && reason.status >= 400 && reason.status < 500
       if (certain) session.pending.delete(item.id)
       if (!alive.current) return
+      if (reviewedRunId) setReviewState({ id: reviewedRunId, state: 'error' })
       if (certain) {
         setPending(undefined)
         if (reason.status === 409) await refreshContext()
@@ -180,7 +186,7 @@ function CaseInvestigation({ item, guest, onOpenCase, session, onRefresh }: { it
 
   function saveReview(event: React.FormEvent) {
     event.preventDefault()
-    if (!current || !reviewable || pending || busy) return
+    if (!current || !reviewable || pending || busy || (reviewState?.id === current.id && reviewState.state === 'success')) return
     void submit({ key: crypto.randomUUID(), path: `/runs/${current.id}/reviews`, kind: 'review', label: 'proposal review', body: JSON.stringify({ case_revision: item.revision, run_version: current.version, reviewer: draft.reviewer.trim(), decision: draft.decision, feedback: draft.feedback.trim() }) })
   }
 
@@ -217,7 +223,7 @@ function CaseInvestigation({ item, guest, onOpenCase, session, onRefresh }: { it
         {!guest && isRunActive(current.status) && <div className="iw-actions"><Button variant="outline" disabled={!!busy || !!pending || current.status === 'stopping'} pending={busy === 'stop'} onClick={() => void runAction('stop')}><Square />Request stop</Button>{current.status === 'attention' && <Button variant="outline" disabled={!!busy || !!pending} pending={busy === 'reconcile'} onClick={() => void runAction('reconcile')}><RefreshCw />Reconcile run</Button>}</div>}
         <details className="iw-details" open><summary>Saved run progress <span>{current.events.length}</span></summary><p className="iw-caption">{localValidation ? 'Recorded local validation milestones. Inspect the attached logs for the commands and their actual outcomes.' : 'Coordinator state changes are separate from the evidence journal below. They do not independently prove browser actions or repair verification.'}</p><ol className="iw-timeline">{current.events.map(event => <li key={event.sequence}><span className="iw-timeline-mark" aria-hidden="true" /><div><p>{event.detail}</p><time dateTime={event.at}>{date(event.at)}</time></div></li>)}</ol></details>
         <InvestigationEvidence key={current.id} runId={current.id} runVersion={current.version} localValidation={localValidation} />
-        {reviewable && <form className="relay-card iw-review" onSubmit={saveReview}><div className="iw-section-heading"><h3>{localValidation ? 'Review this result' : 'Review this proposal'}</h3><ShieldCheck aria-hidden="true" /></div><p className="iw-subtle">Tell Hermes what is useful and what it should check next. Your feedback stays attached to this run.</p><div className="iw-form-row"><label className="iw-field">Review decision<select value={draft.decision} disabled={!!busy || !!pending} onChange={event => editDraft({ decision: event.target.value as ReviewDraft['decision'] })}><option value="needs_changes">Needs another check</option><option value="accepted">Review accepted</option><option value="dismissed">Dismiss proposal</option></select></label><label className="iw-field">Reviewer name<input autoComplete="name" required maxLength={120} value={draft.reviewer} disabled={!!busy || !!pending} onChange={event => editDraft({ reviewer: event.target.value })} placeholder="Your name" /></label></div><label className="iw-field">Review feedback<textarea required maxLength={8000} rows={4} value={draft.feedback} disabled={!!busy || !!pending} onChange={event => editDraft({ feedback: event.target.value })} placeholder="Which claim needs evidence? What should Hermes check or correct?" /></label><div className="iw-actions"><Button type="submit" pending={busy === 'review'} disabled={!!busy || !!pending || !draft.reviewer.trim() || !draft.feedback.trim() || !!readError}><Check />Save review</Button><span className="iw-caption">Reviewer name is supplied locally.</span></div></form>}
+        {reviewable && <form className="relay-card iw-review" onSubmit={saveReview}><div className="iw-section-heading"><h3>{localValidation ? 'Review this result' : 'Review this proposal'}</h3><ShieldCheck aria-hidden="true" /></div><p className="iw-subtle">Tell Hermes what is useful and what it should check next. Your feedback stays attached to this run.</p><div className="iw-form-row"><label className="iw-field">Review decision<select value={draft.decision} disabled={!!busy || !!pending} onChange={event => editDraft({ decision: event.target.value as ReviewDraft['decision'] })}><option value="needs_changes">Needs another check</option><option value="accepted">Review accepted</option><option value="dismissed">Dismiss proposal</option></select></label><label className="iw-field">Reviewer name<input autoComplete="name" required maxLength={120} value={draft.reviewer} disabled={!!busy || !!pending} onChange={event => editDraft({ reviewer: event.target.value })} placeholder="Your name" /></label></div><label className="iw-field">Review feedback<textarea required maxLength={8000} rows={4} value={draft.feedback} disabled={!!busy || !!pending} onChange={event => editDraft({ feedback: event.target.value })} placeholder="Which claim needs evidence? What should Hermes check or correct?" /></label><div className="iw-actions"><ApprovalButton type="submit" label="Save review" successLabel="Review saved" state={reviewState?.id === current.id ? reviewState.state : 'neutral'} disabled={!!busy || !!pending || !draft.reviewer.trim() || !draft.feedback.trim() || !!readError} /><span className="iw-caption">Reviewer name is supplied locally.</span></div></form>}
         {!!currentReviews.length && <details className="iw-details" open><summary>Review history <span>{currentReviews.length}</span></summary>{currentReviews.map(review => <article className="iw-review-record" key={review.id}><div><strong>{reviewLabels[review.decision]}</strong><time dateTime={review.created_at}>{date(review.created_at)}</time></div><p>{review.feedback}</p><small>{review.reviewer} · Local reviewer · Source build {review.build}</small></article>)}</details>}
       </> : loaded && <div className="iw-empty-panel"><ClipboardList aria-hidden="true" /><h3>No investigation yet</h3><p>Check the context packet, choose a time limit, and start Hermes. Results will remain linked to this case.</p></div>}
       <details className="iw-details"><summary>Human-recorded evidence <span>{item.observations.length}</span></summary>{item.observations.length ? item.observations.map(observation => {

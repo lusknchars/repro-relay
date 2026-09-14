@@ -1,4 +1,5 @@
 import { useRelayWebMCP } from './lib/webmcp'
+import { ApprovalButton, type ApprovalState } from './components/ui/approval-button'
 import { WorkspaceGuide } from './components/WorkspaceGuide'
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import {
@@ -83,6 +84,8 @@ export default function App() {
   const [notice, setNotice] = useState('')
   const [packet, setPacket] = useState('')
   const requestKey = useRef('')
+  const memorySubmit = useRef(false)
+  const [memoryApproval, setMemoryApproval] = useState<ApprovalState>('neutral')
   const selected = cases.find(item => item.id === selectedId)
   const detailRef = useTransition<HTMLDivElement>([tab, selectedId, view, loading])
   const noticeRef = useTransition<HTMLDivElement>([notice])
@@ -139,6 +142,7 @@ export default function App() {
   }, [selectedId, selected?.revision, memories, view, showCase])
 
   function openModal(next: typeof modal) {
+    setMemoryApproval('neutral')
     setError(''); setNotice(''); requestKey.current = crypto.randomUUID(); setModal(next)
   }
   async function action(work: () => Promise<void>) {
@@ -168,16 +172,20 @@ export default function App() {
       await refresh(); setModal(null); setNotice('Observation saved. Earlier memory for this case is now inactive.')
     })
   }
-  function publishMemory(event: FormEvent<HTMLFormElement>) {
+  async function publishMemory(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!selected) return
+    if (!selected || memorySubmit.current) return
     const reviewer = new FormData(event.currentTarget).get('reviewer')
-    void action(async () => {
+    memorySubmit.current = true; setBusy(true); setError(''); setMemoryApproval('loading')
+    try {
       await request(`/cases/${selected.id}/memory`, {
         method: 'POST', body: JSON.stringify({reviewer, revision: selected.revision}),
       })
-      await refresh(); setModal(null); setNotice('Reviewed observation added to project memory.')
-    })
+      setMemoryApproval('success')
+      await refresh().catch(e => setError(message(e)))
+      setModal(null); setNotice('Reviewed observation added to project memory.')
+    } catch (e) { setMemoryApproval('error'); setError(message(e)); await openWorkspace().catch(() => {}) }
+    finally { memorySubmit.current = false; setBusy(false) }
   }
   async function exportPacket() {
     if (!packet || !selected) return
@@ -255,7 +263,7 @@ export default function App() {
     </>}
     {modal === 'report' && <Modal title="New bug report" close={() => !busy && setModal(null)}><form onSubmit={createReport}><p className="form-intro">Describe a real problem and what should happen instead.</p><Field label="Report title"><input name="title" required minLength={3} maxLength={160} placeholder="CSV export stops after changing the date range" autoFocus/></Field><div className="form-grid"><Field label="Project"><input name="project" required maxLength={80} placeholder="Your application"/></Field><Field label="Application URL"><input name="url" type="url" required placeholder="https://staging.example.com"/></Field></div><Field label="Current build" hint="Optional now. Required when you record a reproduction."><input name="build" maxLength={160} placeholder="Commit or build identifier"/></Field><Field label="Reported behavior"><textarea name="description" required maxLength={8000} rows={3} placeholder="What happened, and when?"/></Field><Field label="Expected behavior"><textarea name="expected" required maxLength={8000} rows={2} placeholder="What should the application do?"/></Field>{error && <p className="form-error" role="alert">{error}</p>}<div className="dialog-footer"><Button type="button" variant="ghost" onClick={() => setModal(null)} disabled={busy}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save report'}</Button></div></form></Modal>}
     {modal === 'observation' && selected && <Modal title="Record an observation" close={() => !busy && setModal(null)}><form onSubmit={recordObservation}><p className="form-intro">Record what you actually observed. A reproduction needs evidence, steps, and a build.</p><div className="form-grid"><Field label="Result"><select name="result" value={result} onChange={e => setResult(e.target.value as Result)}>{Object.entries(labels).filter(([value]) => value !== 'new').map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></Field><Field label="Recorded by"><input name="author" required minLength={2} maxLength={80} placeholder="Your name"/></Field></div><Field label="What you observed"><textarea name="observed" required maxLength={8000} rows={3}/></Field><Field label="Steps taken"><textarea name="steps" required={result === 'reproduced'} maxLength={8000} rows={3} placeholder="1. Open the report…"/></Field><div className="form-grid"><Field label="Build or revision"><input name="build" defaultValue={selected.build} required={result === 'reproduced'} maxLength={160} placeholder="Commit or build identifier"/></Field><Field label="Evidence URL"><input name="evidence_url" type="url" required={result === 'reproduced'} placeholder="Link to screenshot, trace, or recording"/></Field></div>{error && <p className="form-error" role="alert">{error}</p>}<div className="dialog-footer"><Button type="button" variant="ghost" disabled={busy} onClick={() => setModal(null)}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save observation'}</Button></div></form></Modal>}
-    {modal === 'review' && selected && <Modal title="Review for project memory" close={() => !busy && setModal(null)}><form onSubmit={publishMemory}><p className="form-intro">Other investigations can retrieve this observation, its evidence, and this case revision. It will be labeled as human-reviewed.</p><div className="review-excerpt"><strong>{selected.title}</strong><p>{selected.observations.at(-1)?.observed}</p></div><Field label="Reviewed by"><input name="reviewer" required minLength={2} maxLength={80} placeholder="Your name" autoFocus/></Field><label className="check-field"><input type="checkbox" required/>I reviewed the linked evidence and its applicability to this build.</label>{error && <p className="form-error" role="alert">{error}</p>}<div className="dialog-footer"><Button type="button" variant="ghost" disabled={busy} onClick={() => setModal(null)}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? 'Publishing…' : 'Publish reviewed memory'}</Button></div></form></Modal>}
+    {modal === 'review' && selected && <Modal title="Review for project memory" close={() => !busy && setModal(null)}><form onSubmit={publishMemory}><p className="form-intro">Other investigations can retrieve this observation, its evidence, and this case revision. It will be labeled as human-reviewed.</p><div className="review-excerpt"><strong>{selected.title}</strong><p>{selected.observations.at(-1)?.observed}</p></div><Field label="Reviewed by"><input name="reviewer" required minLength={2} maxLength={80} placeholder="Your name" autoFocus/></Field><label className="check-field"><input type="checkbox" required/>I reviewed the linked evidence and its applicability to this build.</label>{error && <p className="form-error" role="alert">{error}</p>}<div className="dialog-footer"><Button type="button" variant="ghost" disabled={busy} onClick={() => setModal(null)}>Cancel</Button><ApprovalButton type="submit" label="Publish reviewed memory" successLabel="Memory published" state={memoryApproval} disabled={busy} /></div></form></Modal>}
 
   </AdminLayout>
 }

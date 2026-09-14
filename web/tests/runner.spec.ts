@@ -53,6 +53,7 @@ test('reviewed corrections reach one follow-up without replacing source evidence
   await page.route(reviewUrl, route => route.fulfill({status: 503, contentType: 'application/json', body: JSON.stringify({detail: 'Fixture save unavailable. Retry this review.'})}), {times: 1})
   await workspace.getByRole('button', {name: 'Save review', exact: true}).click()
   await expect(workspace.getByRole('alert').filter({hasText: 'Fixture save unavailable'})).toBeVisible()
+  await expect(workspace.getByRole('button', {name: 'Save review', exact: true})).toHaveAttribute('data-approval-state', 'error')
   await expect(workspace.getByRole('textbox', {name: 'Reviewer name', exact: true})).toHaveValue(reviewer)
   await expect(workspace.getByRole('textbox', {name: 'Review feedback', exact: true})).toHaveValue(feedback)
   const savedReview = page.waitForResponse(response => response.url().endsWith(`/runs/${original.id}/reviews`) && response.request().method() === 'POST')
@@ -61,6 +62,8 @@ test('reviewed corrections reach one follow-up without replacing source evidence
   expect(reviewResponse.ok()).toBe(true)
   const review = await reviewResponse.json()
   expect(review).toMatchObject({reviewer, feedback, decision: 'needs_changes', run_id: original.id})
+  await expect(workspace.getByRole('button', {name: 'Save review', exact: true})).toHaveAttribute('data-approval-state', 'success')
+  await expect(workspace.getByRole('button', {name: 'Save review', exact: true})).toBeDisabled()
 
   await expect(workspace.getByRole('button', {name: 'Start follow-up investigation', exact: true})).toBeEnabled()
   const previewResponse = await page.request.get(`/api/v1/cases/${item.id}/investigation-preview?review_id=${review.id}`)
