@@ -1,0 +1,45 @@
+name: ReproRelay
+options:
+  bundleIdPrefix: dev.reprorelay
+  deploymentTarget:
+    iOS: "17.0"
+packages:
+  RelayCore:
+    path: Packages/RelayCore
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: 1
+targets:
+  ReproRelay:
+    type: application
+    platform: iOS
+    sources: [ReproRelay]
+    dependencies:
+      - package: RelayCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.reprorelay.iphone
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Repro Relay
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+        TARGETED_DEVICE_FAMILY: "1,2"
+  ReproRelayUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [ReproRelayUITests]
+    dependencies:
+      - target: ReproRelay
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  ReproRelay:
+    build:
+      targets:
+        ReproRelay: all
+    test:
+      targets: [ReproRelayUITests]

@@ -10,7 +10,7 @@ The local API can submit, monitor, stop, and reconcile investigations on a confi
 
 The [backend workflow](docs/BACKEND-WORKFLOW.md) now includes durable evidence and findings, reviewed finding memory, opt-in automatic investigation, local channel intake and delivery contracts, decisions, approved repair stages, and protected verification reports. Provider transports and live runtime enforcement remain separate integration requirements. Agent controls can display the actual stored logs and distinguish local validation from Hermes execution.
 
-The proposed [SwiftUI client and investigator call](docs/SWIFTUI-CLIENT-PLAN.md) adds an iPhone-first AI conversation, shared native Mac architecture, tool approvals, and evidence review. It starts with an isolated simulation; authenticated phone access and real voice execution have separate delivery gates.
+The [SwiftUI iPhone app](apple/README.md) now implements the first isolated, text-driven investigator-call simulation with report review, repair decisions, and inspectable evidence. Open `apple/ReproRelay.xcodeproj` to run it. Its [implementation plan](docs/SWIFTUI-CLIENT-PLAN.md) separates authenticated phone access, real voice execution, and native Mac adaptation into later gates.
 
 ## Run locally
 

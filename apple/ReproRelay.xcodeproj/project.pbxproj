@@ -1,0 +1,461 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		59E86D25F4C6A83C804BA51D /* ConnectionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99EDE837418096B9E16DD96F /* ConnectionsView.swift */; };
+		9421B15586B72F2B122B3F1C /* ReproRelayUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF6547D21EE9EA77E80E780A /* ReproRelayUITests.swift */; };
+		99809CCD287E7D58A7B72FA5 /* RelayCore in Frameworks */ = {isa = PBXBuildFile; productRef = 4D4D4771C1EAA87DBED7AA6B /* RelayCore */; };
+		9B09850DB1D0E18753943314 /* RelayStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49B1919DD35E0A27076A5577 /* RelayStyle.swift */; };
+		9F9C5E90DD2A27FF354D99F9 /* SimulationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29504E9BACDDAD85C40079DA /* SimulationStore.swift */; };
+		AA264D5271A8839F1DD92CAC /* CallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2E9AA558D94CA408E826001 /* CallView.swift */; };
+		B84D63F3C22BD2302B63D0AB /* ReproRelayApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 963E96BB4F11272B02586600 /* ReproRelayApp.swift */; };
+		F1E6202042B36F6155E05545 /* RelayRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDB847E603526AC60802E3CD /* RelayRootView.swift */; };
+		FBC8113DB35D8C2E66AA4DCD /* CaseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE7B4EA4D34F2F81466C10A4 /* CaseView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		D5ABA8091861890E3EABC880 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 5DCB8E6AC8B339858ED91C12 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 871C29C77733255E787E338A;
+			remoteInfo = ReproRelay;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		29504E9BACDDAD85C40079DA /* SimulationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulationStore.swift; sourceTree = "<group>"; };
+		49B1919DD35E0A27076A5577 /* RelayStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayStyle.swift; sourceTree = "<group>"; };
+		4A7A28A7FDFFDACFA6A91D6B /* ReproRelay.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ReproRelay.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8028C176661721CF0762C718 /* ReproRelayUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ReproRelayUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		963E96BB4F11272B02586600 /* ReproRelayApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReproRelayApp.swift; sourceTree = "<group>"; };
+		99EDE837418096B9E16DD96F /* ConnectionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionsView.swift; sourceTree = "<group>"; };
+		BDB847E603526AC60802E3CD /* RelayRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRootView.swift; sourceTree = "<group>"; };
+		C2E9AA558D94CA408E826001 /* CallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallView.swift; sourceTree = "<group>"; };
+		CE7B4EA4D34F2F81466C10A4 /* CaseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaseView.swift; sourceTree = "<group>"; };
+		DF6547D21EE9EA77E80E780A /* ReproRelayUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReproRelayUITests.swift; sourceTree = "<group>"; };
+		E789CA6661137C0F050BA241 /* RelayCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = RelayCore; path = Packages/RelayCore; sourceTree = SOURCE_ROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		FE73AB8EE5731DFE2634681C /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				99809CCD287E7D58A7B72FA5 /* RelayCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		0D5C7D9BE8F5632FDDADC055 /* ReproRelayUITests */ = {
+			isa = PBXGroup;
+			children = (
+				DF6547D21EE9EA77E80E780A /* ReproRelayUITests.swift */,
+			);
+			path = ReproRelayUITests;
+			sourceTree = "<group>";
+		};
+		2C549907E2F0225FEE91AD11 /* ReproRelay */ = {
+			isa = PBXGroup;
+			children = (
+				C2E9AA558D94CA408E826001 /* CallView.swift */,
+				CE7B4EA4D34F2F81466C10A4 /* CaseView.swift */,
+				99EDE837418096B9E16DD96F /* ConnectionsView.swift */,
+				BDB847E603526AC60802E3CD /* RelayRootView.swift */,
+				49B1919DD35E0A27076A5577 /* RelayStyle.swift */,
+				963E96BB4F11272B02586600 /* ReproRelayApp.swift */,
+				29504E9BACDDAD85C40079DA /* SimulationStore.swift */,
+			);
+			path = ReproRelay;
+			sourceTree = "<group>";
+		};
+		2FE057B43076916F97DC8EC2 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				4A7A28A7FDFFDACFA6A91D6B /* ReproRelay.app */,
+				8028C176661721CF0762C718 /* ReproRelayUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		4BABA6788A98B6C1F11AEDF1 = {
+			isa = PBXGroup;
+			children = (
+				5DA524F3C3B02B49D0BDCA22 /* Packages */,
+				2C549907E2F0225FEE91AD11 /* ReproRelay */,
+				0D5C7D9BE8F5632FDDADC055 /* ReproRelayUITests */,
+				2FE057B43076916F97DC8EC2 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		5DA524F3C3B02B49D0BDCA22 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				E789CA6661137C0F050BA241 /* RelayCore */,
+			);
+			path = Packages;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		871C29C77733255E787E338A /* ReproRelay */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FFA7B027155F6937EA9A4A80 /* Build configuration list for PBXNativeTarget "ReproRelay" */;
+			buildPhases = (
+				27BB61D8FCD1FB24A2026507 /* Sources */,
+				FE73AB8EE5731DFE2634681C /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ReproRelay;
+			packageProductDependencies = (
+				4D4D4771C1EAA87DBED7AA6B /* RelayCore */,
+			);
+			productName = ReproRelay;
+			productReference = 4A7A28A7FDFFDACFA6A91D6B /* ReproRelay.app */;
+			productType = "com.apple.product-type.application";
+		};
+		C47DF147511D10E1349DBBDE /* ReproRelayUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0D9C44B90EACCFF5CB83EBFA /* Build configuration list for PBXNativeTarget "ReproRelayUITests" */;
+			buildPhases = (
+				B23CFC5D2AF1F93E183373B5 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B340FCB2AC126EFD7ABF596A /* PBXTargetDependency */,
+			);
+			name = ReproRelayUITests;
+			packageProductDependencies = (
+			);
+			productName = ReproRelayUITests;
+			productReference = 8028C176661721CF0762C718 /* ReproRelayUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		5DCB8E6AC8B339858ED91C12 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					C47DF147511D10E1349DBBDE = {
+						TestTargetID = 871C29C77733255E787E338A;
+					};
+				};
+			};
+			buildConfigurationList = 9786317C862E487548733DCE /* Build configuration list for PBXProject "ReproRelay" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 4BABA6788A98B6C1F11AEDF1;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				1B87E4E91368BE8E037C914F /* XCLocalSwiftPackageReference "Packages/RelayCore" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 2FE057B43076916F97DC8EC2 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				871C29C77733255E787E338A /* ReproRelay */,
+				C47DF147511D10E1349DBBDE /* ReproRelayUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		27BB61D8FCD1FB24A2026507 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA264D5271A8839F1DD92CAC /* CallView.swift in Sources */,
+				FBC8113DB35D8C2E66AA4DCD /* CaseView.swift in Sources */,
+				59E86D25F4C6A83C804BA51D /* ConnectionsView.swift in Sources */,
+				F1E6202042B36F6155E05545 /* RelayRootView.swift in Sources */,
+				9B09850DB1D0E18753943314 /* RelayStyle.swift in Sources */,
+				B84D63F3C22BD2302B63D0AB /* ReproRelayApp.swift in Sources */,
+				9F9C5E90DD2A27FF354D99F9 /* SimulationStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B23CFC5D2AF1F93E183373B5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9421B15586B72F2B122B3F1C /* ReproRelayUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		B340FCB2AC126EFD7ABF596A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 871C29C77733255E787E338A /* ReproRelay */;
+			targetProxy = D5ABA8091861890E3EABC880 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		502930692D36F9151AF5A8AA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 0.1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		67FEAF394D8D503C23A9DABB /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 0.1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		93BF8455773179645B17F921 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Repro Relay";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.reprorelay.iphone;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		A297A1C4D9F30B0B30E0169D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Repro Relay";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.reprorelay.iphone;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		E41648FB5B474672077730FD /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.reprorelay.ReproRelayUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = ReproRelay;
+			};
+			name = Release;
+		};
+		FE873746D1BC5CFB7274CFB7 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.reprorelay.ReproRelayUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = ReproRelay;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		0D9C44B90EACCFF5CB83EBFA /* Build configuration list for PBXNativeTarget "ReproRelayUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FE873746D1BC5CFB7274CFB7 /* Debug */,
+				E41648FB5B474672077730FD /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		9786317C862E487548733DCE /* Build configuration list for PBXProject "ReproRelay" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				67FEAF394D8D503C23A9DABB /* Debug */,
+				502930692D36F9151AF5A8AA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		FFA7B027155F6937EA9A4A80 /* Build configuration list for PBXNativeTarget "ReproRelay" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A297A1C4D9F30B0B30E0169D /* Debug */,
+				93BF8455773179645B17F921 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		1B87E4E91368BE8E037C914F /* XCLocalSwiftPackageReference "Packages/RelayCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/RelayCore;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		4D4D4771C1EAA87DBED7AA6B /* RelayCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RelayCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 5DCB8E6AC8B339858ED91C12 /* Project object */;
+}

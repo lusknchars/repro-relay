@@ -1,0 +1,41 @@
+name: iPhone
+on:
+  push:
+    paths: ['apple/**', '.github/workflows/apple.yml']
+  pull_request:
+    paths: ['apple/**', '.github/workflows/apple.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select installed iPhone simulator
+        run: |
+          xcodebuild -version
+          xcrun simctl list devices available -j > /tmp/relay-simulators.json
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import json
+          with open('/tmp/relay-simulators.json') as source:
+              devices = json.load(source)['devices']
+          phones = [d for group in devices.values() for d in group if d['name'].startswith('iPhone')]
+          if not phones:
+              raise SystemExit('No iPhone simulator is installed')
+          print('RELAY_SIMULATOR_ID=' + phones[0]['udid'])
+          PY
+      - name: Core state tests
+        run: make -C apple core-test
+      - name: Native UI tests
+        run: |
+          xcodebuild -project apple/ReproRelay.xcodeproj -scheme ReproRelay \
+            -destination "platform=iOS Simulator,id=$RELAY_SIMULATOR_ID" \
+            -derivedDataPath apple/DerivedData -resultBundlePath "$RUNNER_TEMP/Relay.xcresult" \
+            -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: iphone-test-results
+          path: ${{ runner.temp }}/Relay.xcresult

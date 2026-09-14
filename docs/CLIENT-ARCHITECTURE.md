@@ -43,7 +43,7 @@ The hosted web app uses the same case and event interfaces as the desktop. Works
 
 The planned Plow phone line through `hermes-plugin-plow` receives reports and sends concise state updates, clarification requests, approval requests, and completion messages. It projects the canonical case. The backend now has local intake and approved delivery contracts; provider authentication and transport still need implementation and live validation.
 
-The native SwiftUI client can begin with an isolated simulated investigator call before that transport is connected. It uses the same case and command model. Authenticated pairing and a conversation adapter gate real phone execution. Push notifications follow later. See [the native client plan and delivery gates](SWIFTUI-CLIENT-PLAN.md).
+The [native SwiftUI client](../apple/README.md) now implements an isolated, text-driven simulated investigator call, with a device-local example case and evidence. It follows Relay's case concepts but does not read or mutate backend cases yet. Authenticated pairing and a conversation adapter gate real phone execution. Push notifications follow later. See [the native client plan and delivery gates](SWIFTUI-CLIENT-PLAN.md).
 
 ## Shared run interface
 

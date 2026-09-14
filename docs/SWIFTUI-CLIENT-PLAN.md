@@ -1,6 +1,6 @@
 # SwiftUI client and investigator call
 
-Status: proposed implementation plan. September 12, 2026. No SwiftUI client, voice session, pairing service, or real call is implemented by this document.
+Status: N-01 implementation started September 13, 2026. The [SwiftUI iPhone app](../apple/README.md) implements the isolated text simulation, device-local case, decision and evidence views, with shared Swift state in `apple/Packages/RelayCore`. The sections below retain the broader design. Live voice, pairing, conversation adapter, native Mac target, and real calls remain proposed.
 
 ## Product decision
 
@@ -66,7 +66,7 @@ The existing backend is documented in [backend workflow](BACKEND-WORKFLOW.md) an
 
 ### Proposed native code structure
 
-Create these paths during implementation, not as empty scaffolding in this documentation change:
+Target structure for the full client is below. N-01 keeps feature views in `apple/ReproRelay`, bundles the fixture with the shared core, and omits audio and network packages until they have implementations:
 
 ```text
 apple/

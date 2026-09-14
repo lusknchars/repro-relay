@@ -12,7 +12,7 @@ Repro Relay's next release is one agent that investigates a reported problem whi
 
 ## Product decision
 
-The [SwiftUI plan](SWIFTUI-CLIENT-PLAN.md) adds a native iPhone conversation and later macOS adaptation. Begin with N-01, an isolated simulated call tied to inspectable fixture evidence. Real phone execution requires authenticated device access and a conversation adapter. These gates extend the release plan without claiming that native voice, repair, or messaging is already available.
+The [SwiftUI plan](SWIFTUI-CLIENT-PLAN.md) adds a native iPhone conversation and later macOS adaptation. The initial N-01 slice is implemented in [the iPhone app](../apple/README.md), with an isolated text-driven simulated call and inspectable fixture evidence. Real phone execution requires authenticated device access and a conversation adapter. These gates extend the release plan without claiming that native voice, repair, or messaging is already available.
 
 The two-day target is the hackathon build and deployment window. It is not a customer onboarding promise. The release must work after a maintainer connects the required accounts and approves access.
 
