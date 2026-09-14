@@ -6,6 +6,25 @@ use tauri::{
 };
 
 #[tauri::command]
+async fn open_plow_latch() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        // Fixed application identity only. The webview cannot supply a command or URL.
+        let status = std::process::Command::new("/usr/bin/open")
+            .args(["-b", "co.plow.domo-desktop"])
+            .status()
+            .map_err(|_| "Could not launch Plow Latch.".to_owned())?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err("Install Plow Latch on this Mac before opening it.".into())
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    Err("Plow Latch requires a Mac.".into())
+}
+
+#[tauri::command]
 async fn save_packet(content: String, name: String) -> Result<bool, String> {
     if content.len() > 2_000_000
         || name.len() > 120
@@ -17,7 +36,9 @@ async fn save_packet(content: String, name: String) -> Result<bool, String> {
     }
     let is_cost_report = name.ends_with(".json");
     let file = rfd::AsyncFileDialog::new()
-        .set_title(if is_cost_report {
+        .set_title(if name == "repro-relay-plow-setup.md" {
+            "Save Plow setup guide"
+        } else if is_cost_report {
             "Export cost report"
         } else {
             "Export repair packet"
@@ -76,7 +97,7 @@ fn main() {
                 let _ = app.emit_to("main", "workspace-command", command);
             }
         })
-        .invoke_handler(tauri::generate_handler![save_packet])
+        .invoke_handler(tauri::generate_handler![save_packet, open_plow_latch])
         .run(tauri::generate_context!())
         .expect("Repro Relay could not start its desktop window");
 }

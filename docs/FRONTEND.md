@@ -22,6 +22,8 @@ The selected investigation's side panel begins with [Cost and token inspection](
 
 ## Components and appearance
 
+The Plow Chat + Latch card includes a Connect Plow Latch button. It opens the shared accessible setup dialog. On macOS desktop, Open Plow Latch invokes a fixed native application launch; the web version offers a copyable Mac launch command because the installed app has no registered browser URL scheme. Both provide the bridge setup guide and official Plow instructions. Guests are directed to local setup. Opening the app does not change the connection badge or launch an investigator.
+
 The Plow Chat + Latch connection card uses the user-supplied `web/src/assets/plow-logo.png` in both web and desktop. Its original lime mark and dark background are preserved. The adjacent card title labels the image, so it has an empty alt attribute to avoid duplicate screen-reader announcements.
 
 The Hermes investigator connection card and the overview's Investigator control card use the user-supplied `web/src/assets/hermes-logo.webp`, also unchanged and labeled by its adjacent title. A white image surface keeps the black artwork visible in both themes.
