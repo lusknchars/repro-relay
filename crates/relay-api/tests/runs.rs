@@ -24,6 +24,7 @@ struct Runtime {
     polls: usize,
     stops: usize,
     status: String,
+    usage: Option<Value>,
     lose_receipt: bool,
     incompatible: bool,
     entered: Arc<tokio::sync::Notify>,
@@ -62,7 +63,7 @@ impl Fixture {
             }))
             .route("/v1/runs/run_fixture",get(|State(s):State<Shared>|async move{
                 let mut s=s.lock().unwrap();s.polls+=1;
-                Json(json!({"run_id":"run_fixture","status":if s.status.is_empty(){"running"}else{&s.status},"output":"Fixture answer: possible export failure. fixture-secret-key","usage":{"total_tokens":42}}))
+                Json(json!({"run_id":"run_fixture","status":if s.status.is_empty(){"running"}else{&s.status},"output":"Fixture answer: possible export failure. fixture-secret-key","usage":s.usage.clone().unwrap_or(json!({"total_tokens":42})),"model":"fixture-model"}))
             }))
             .route("/v1/runs/run_fixture/stop",post(|State(s):State<Shared>|async move{
                 s.lock().unwrap().stops+=1;Json(json!({"status":"stopping"}))
@@ -564,4 +565,41 @@ async fn revoked_memory_prevents_queued_execution(pool: PgPool) {
     runs::tick(&pool, &f.runner).await.unwrap();
     assert_eq!(latest(&app, &target).await["status"], "cancelled");
     assert_eq!(f.state.lock().unwrap().posts, 0);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn usage_receipts_survive_partial_updates_and_restart(pool: PgPool) {
+    let f = Fixture::new().await;
+    let app = relay_api::app_with_runner(pool.clone(), Hosting::local(), f.runner.clone());
+    let case = report(&app).await;
+    start(&app, &case, "usage").await;
+    runs::tick(&pool, &f.runner).await.unwrap();
+    f.state.lock().unwrap().usage = Some(
+        json!({"input_tokens":25,"output_tokens":17,"total_tokens":42,"cost_usd":0.002,"cached_input_tokens":10,"api_key":"discard"}),
+    );
+    runs::tick(&pool, &f.runner).await.unwrap();
+    runs::tick(&pool, &f.runner).await.unwrap();
+    let first = latest(&app, &case).await;
+    assert_eq!(
+        first["usage_audit"]["receipts"].as_array().unwrap().len(),
+        1
+    );
+    assert!(first["usage"].get("api_key").is_none());
+    f.state.lock().unwrap().usage =
+        Some(json!({"total_tokens":60,"input_tokens":false,"cost_usd":-10}));
+    runs::tick(&pool, &f.runner).await.unwrap();
+    let restarted = relay_api::app_with_runner(pool.clone(), Hosting::local(), f.runner.clone());
+    let result = latest(&restarted, &case).await;
+    assert_eq!(result["usage"]["cost_usd"], 0.002);
+    assert_eq!(result["usage"]["input_tokens"], 25);
+    assert_eq!(result["usage"]["total_tokens"], 60);
+    assert_eq!(result["usage"]["model"], "fixture-model");
+    assert_eq!(
+        result["usage_audit"]["receipts"].as_array().unwrap().len(),
+        2
+    );
+    assert_eq!(
+        result["usage_audit"]["fields_observed_at"]["cost_usd"],
+        first["usage_audit"]["fields_observed_at"]["cost_usd"]
+    );
 }

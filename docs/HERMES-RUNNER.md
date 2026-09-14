@@ -62,7 +62,7 @@ A `needs_changes` review can seed a bounded follow-up investigation. The preview
 
 After an uncertain browser response, **Retry pending request** uses the original body and key. Pending requests and review drafts stay in memory while this workspace is mounted; navigating away or reloading clears them. Saved reviews and runs remain in PostgreSQL. Refreshing context preserves a draft while loading current case data.
 
-Limits currently include one active run, 30–600 seconds until a cooperative stop request, bounded context, a 256 KiB response limit, and an answer limit of 64,000 characters. Usage records preserve reported numeric token and cost fields; absent usage displays **Not reported**. These controls do not enforce a hard token or dollar budget. There is no model-cost estimate or automatic owner delivery.
+Limits currently include one active run, 30–600 seconds until a cooperative stop request, bounded context, a 256 KiB response limit, and an answer limit of 64,000 characters. The [cost inspector](HERMES-COST-INSPECTION.md) preserves per-field usage timestamps, a bounded history of changed reports, and partial-report recovery. It shows token breakdowns, optional reported dollar cost, and case coverage, with a JSON export bound to the selected run and context. Absent usage displays **Not reported**. These controls do not enforce a hard token or dollar budget. There is no model-cost estimate or automatic owner delivery.
 
 ## Validation
 

@@ -8,6 +8,7 @@ pub mod intake;
 pub mod repairs;
 pub mod runs;
 pub mod sessions;
+pub mod usage;
 use axum::{
     Extension, Json, Router,
     extract::{DefaultBodyLimit, Path, Query, State},

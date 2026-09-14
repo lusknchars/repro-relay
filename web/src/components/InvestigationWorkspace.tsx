@@ -8,6 +8,7 @@ import type { InvestigationPreview, PendingInvestigationRequest, ReviewDraft, Ru
 import { Button } from './ui/button'
 import { ApprovalButton, type ApprovalState } from './ui/approval-button'
 import { InvestigationEvidence } from './InvestigationEvidence'
+import { InvestigationCost } from './InvestigationCost'
 import './investigation-workspace.css'
 
 type Props = {
@@ -232,6 +233,7 @@ function CaseInvestigation({ item, guest, onOpenCase, session, onRefresh }: { it
       }) : <p className="iw-caption">No human observations have been recorded for this case.</p>}<Button variant="outline" onClick={() => onOpenCase(item)}>Record an observation<ArrowRight /></Button></details>
     </section>
     <aside className="iw-context" aria-label="Investigator context and controls">
+      {current && <InvestigationCost key={current.id} run={current} runs={runs} />}
       <div className="iw-context-heading"><span className="iw-eyebrow">NEXT INVESTIGATION</span><h2>What Hermes will receive</h2><p>Inspect the exact source context before starting.</p></div>
       <Button variant="outline" disabled={!!busy || !!pending} onClick={() => void refreshContext()}><RefreshCw />Refresh context</Button>
       {followUpReviewId && <Button variant="ghost" disabled={!!busy || !!pending} onClick={() => setExcludedReviewId(followUpReviewId)}>Use current case only</Button>}
@@ -251,7 +253,7 @@ function CaseInvestigation({ item, guest, onOpenCase, session, onRefresh }: { it
         {activeRun && <p className="iw-caption">An investigation is already active. Wait for completion or request a stop.</p>}
         <p className="iw-caption">Time limits request a cooperative stop. Tool permissions and spending limits are controlled by your Hermes runtime.</p>
       </>}</div>
-      {current && <><div className="iw-section-heading"><h3>Reported usage</h3></div><dl className="iw-context-facts"><div><dt>Total tokens</dt><dd>{current.usage?.total_tokens?.toLocaleString() ?? 'Not reported'}</dd></div><div><dt>Cost</dt><dd>{current.usage?.cost_usd == null ? 'Not reported' : `$${current.usage.cost_usd.toLocaleString(undefined, { maximumFractionDigits: 6 })}`}</dd></div><div><dt>Time limit</dt><dd>{localValidation ? 'Not applicable to imported validation' : `${current.max_seconds} seconds`}</dd></div></dl><details className="iw-details iw-packet"><summary>Context used by selected run</summary><p className="iw-caption">Build {current.build} · Revision {current.case_revision}</p><pre>{JSON.stringify(current.context, null, 2)}</pre></details></>}
+      {current && <><details className="iw-details iw-packet"><summary>Context used by selected run</summary><p className="iw-caption">Build {current.build} · Revision {current.case_revision}</p><pre>{JSON.stringify(current.context, null, 2)}</pre></details></>}
     </aside>
   </>
 }

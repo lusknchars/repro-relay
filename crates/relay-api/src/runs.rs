@@ -173,6 +173,8 @@ pub struct Run {
     pub remote_id: Option<String>,
     pub output: Option<String>,
     pub usage: Option<Value>,
+    #[serde(default)]
+    pub usage_audit: crate::usage::UsageAudit,
     pub events: Vec<Value>,
     pub stop_requested: bool,
     pub context_stale: bool,
@@ -652,6 +654,7 @@ pub async fn start(
         remote_id: None,
         output: None,
         usage: None,
+        usage_audit: Default::default(),
         events: vec![],
         stop_requested: false,
         context_stale: false,
@@ -904,20 +907,12 @@ pub async fn tick(pool: &PgPool, runner: &Runner) -> ApiResult<()> {
                     "Hermes returned a different run identifier. No result was accepted.",
                 );
             } else {
-                if let Some(usage) = value.get("usage").filter(|v| v.is_object()) {
-                    let mut safe = serde_json::Map::new();
-                    for key in ["input_tokens", "output_tokens", "total_tokens", "cost_usd"] {
-                        if let Some(number) = usage
-                            .get(key)
-                            .filter(|n| n.as_f64().is_some_and(|v| v >= 0.0))
-                        {
-                            safe.insert(key.into(), number.clone());
-                        }
-                    }
-                    if !safe.is_empty() {
-                        run.usage = Some(Value::Object(safe));
-                    }
-                }
+                crate::usage::record(
+                    &mut run.usage,
+                    &mut run.usage_audit,
+                    &value,
+                    &run.checked_at,
+                );
                 if matches!(
                     value["status"].as_str(),
                     Some("completed" | "failed" | "cancelled")
@@ -1034,6 +1029,7 @@ pub async fn record_inspection(
         remote_id: None,
         output: Some(input.summary.clone()),
         usage: None,
+        usage_audit: Default::default(),
         events: vec![],
         stop_requested: false,
         context_stale: false,

@@ -18,6 +18,8 @@ Agent controls now opens a three-column investigation workspace inspired by the 
 
 The evidence section reads paginated typed findings, journal events and artifacts from the backend. Opening a stored log shows its exact text, SHA-256, byte length and environment. Revoked content is unavailable. Local validation records display the supplied inspector's name and command context, separately from Hermes execution. Configuration, intake, delivery, and repair APIs are currently backend contracts; their full management views remain to be built inside the selected template.
 
+The selected investigation's side panel begins with [Cost and token inspection](HERMES-COST-INSPECTION.md). It shows runtime-reported cost and token categories, per-field observation times, changed-report history, case spending coverage, and run/source identity. Expandable details keep the report available beside the findings. Missing cost is distinct from a reported zero; imported local validation is excluded from Hermes spending. Web and desktop export the same JSON accounting report, with a native JSON save filter on desktop. This is reported telemetry, not provider billing reconciliation or a hard spending cap.
+
 ## Components and appearance
 
 The Plow Chat + Latch connection card uses the user-supplied `web/src/assets/plow-logo.png` in both web and desktop. Its original lime mark and dark background are preserved. The adjacent card title labels the image, so it has an empty alt attribute to avoid duplicate screen-reader announcements.

@@ -1,0 +1,16 @@
+.investigation-cost { display: grid; gap: 16px; padding: 18px; margin-top: 22px; border: 1px solid var(--card-edge); border-radius: 10px; min-width: 0; }
+.investigation-cost h3 { display: flex; align-items: center; gap: 8px; }
+.cost-total { display: grid; gap: 6px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-soft); }
+.cost-total span, .cost-total small { font-size: 11px; color: var(--muted); }
+.cost-total strong { font-size: 26px; font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.cost-breakdown { display: grid; gap: 10px; margin: 0; }
+.cost-breakdown > div { display: flex; justify-content: space-between; align-items: start; gap: 12px; font-size: 12px; }
+.cost-breakdown dt { color: var(--muted); flex: 1; }
+.cost-breakdown dd { margin: 0; max-width: 60%; text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.investigation-cost .iw-details { padding: 12px; }
+.investigation-cost .iw-details > summary { padding: 0; }
+.investigation-cost .iw-details[open] > summary { margin-bottom: 12px; }
+.cost-receipts { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; max-height: 320px; overflow: auto; }
+.cost-receipts time { font-size: 11px; color: var(--muted); }
+.cost-receipts pre { margin-top: 6px; font-size: 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cost-subtotal { font-size: 20px; font-variant-numeric: tabular-nums; }

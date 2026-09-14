@@ -31,5 +31,5 @@ createServer(async (req,res)=>{
   const proposal=correction
     ? `Controlled fixture follow-up proposal: received reviewer feedback: ${correction}. No real browser actions were executed.`
     : 'Controlled fixture proposal: export requires investigation. No real browser actions were executed.'
-  return send(200,{run_id:run.id,status,output:status==='completed'?proposal:null,usage:status==='completed'?{input_tokens:25,output_tokens:17,total_tokens:42}:null})
+  return send(200,{run_id:run.id,status,output:status==='completed'?proposal:null,model:'fixture-model',provider:'fixture-provider',usage:status==='completed'?{input_tokens:25,output_tokens:17,total_tokens:42,cost_usd:0.002,cached_input_tokens:10,model_calls:2,tool_calls:0}:null})
 }).listen(8654,'127.0.0.1')

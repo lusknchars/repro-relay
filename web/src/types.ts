@@ -4,7 +4,9 @@ export type InvestigationRun = {
   id:string; case_id:string; case_revision:number; owner_version:number; build:string; version:number;
   status:string; detail:string; created_at:string; checked_at:string; deadline:string; max_seconds:number;
   remote_id:string|null; output:string|null; stop_requested:boolean; context_stale:boolean; context:unknown;
-  usage:{input_tokens?:number;output_tokens?:number;total_tokens?:number;cost_usd?:number}|null;
+  usage:{input_tokens?:number;output_tokens?:number;total_tokens?:number;cost_usd?:number;cached_input_tokens?:number;cache_write_input_tokens?:number;reasoning_output_tokens?:number;model_calls?:number;tool_calls?:number;model?:string;provider?:string}|null;
+  context_hash?:string;
+  usage_audit?:{observed_at:string|null;fields_observed_at:Record<string,string>;receipts:{observed_at:string;reported:Record<string,number|string>;revised_downward:string[]}[];omitted_receipts:number};
   events:{sequence:number;kind:string;at:string;detail:string}[];
 }
 export type CaseStatus = Result | 'new'

@@ -15,10 +15,18 @@ async fn save_packet(content: String, name: String) -> Result<bool, String> {
     {
         return Err("Invalid export name or packet size.".into());
     }
+    let is_cost_report = name.ends_with(".json");
     let file = rfd::AsyncFileDialog::new()
-        .set_title("Export repair packet")
+        .set_title(if is_cost_report {
+            "Export cost report"
+        } else {
+            "Export repair packet"
+        })
         .set_file_name(name)
-        .add_filter("Markdown", &["md"])
+        .add_filter(
+            if is_cost_report { "JSON" } else { "Markdown" },
+            if is_cost_report { &["json"] } else { &["md"] },
+        )
         .save_file()
         .await;
     let Some(file) = file else {
