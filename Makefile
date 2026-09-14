@@ -23,6 +23,7 @@ check:
 	$(MAKE) tools-check
 	$(MAKE) terminal-check
 	$(MAKE) pi-check
+	python3 -m unittest discover -s integrations/mem0-memory -p 'test_*.py' -v
 	python3 -m unittest discover -s integrations/hermes-assessment -p 'test_*.py' -v
 	$(CARGO) fmt --all --check
 	$(CARGO) clippy -p relay-api --all-targets -- -D warnings

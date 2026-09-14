@@ -234,6 +234,7 @@ def main(argv=None):
         pi_command.add_argument('--provider', help='Optional Pi provider name; doctor checks local credential readiness without refreshing')
     pi_start.add_argument('--model', help='Optional Pi model name; use /model inside Pi')
     pi_start.add_argument('--resume', action='store_true', help='Continue the latest Relay Pi session')
+    pi_start.add_argument('--memory', choices=('off', 'mem0'), default='off', help='Enable private Mem0 notes and current reviewed project recall')
     sub.add_parser('doctor', help='Check the API and investigator connection without starting work')
     sub.add_parser('cases', help='List saved cases')
     case = sub.add_parser('case', help='Inspect case, runs, evidence and repair plans'); case.add_argument('case', type=identifier)

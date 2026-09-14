@@ -61,10 +61,10 @@ def check(api, executable=None, profile=PROFILE, provider=None):
     return result
 
 
-def launch_command(executable, provider=None, model=None, resume=False, profile=PROFILE):
+def launch_command(executable, provider=None, model=None, resume=False, profile=PROFILE, memory=False):
     command = [executable, '--no-extensions', '--no-skills', '--no-prompt-templates',
                '--no-themes', '--no-context-files', '--no-approve', '--no-builtin-tools',
-               '--tools', ','.join(TOOLS), '-e', str(INTEGRATION / 'relay.ts'),
+               '--tools', ','.join(TOOLS + (('relay_memory_recall', 'relay_memory_remember') if memory else ())), '-e', str(INTEGRATION / 'relay.ts'),
                '--session-dir', str(profile / 'sessions'), '--append-system-prompt', str(INTEGRATION / 'instructions.md')]
     if provider:
         command += ['--provider', provider]
@@ -99,8 +99,12 @@ def run(args):
           'Use /login for provider access. Pi usage stays in its session; Hermes is unchanged.', flush=True)
     print('Pi authentication profile: ' + args.profile + '. Relay session history stays separate.', flush=True)
     env = {**environment(profile), 'RELAY_PI_API': args.api}
+    memory = getattr(args, 'memory', 'off') == 'mem0'
+    if memory and not (ROOT / '.data/mem0/config.json').is_file():
+        raise ValueError('Run python3 integrations/mem0-memory/memory.py setup after Mem0 signup.')
+    env['RELAY_MEMORY_ENABLED'] = 'mem0' if memory else 'off'
     try:
-        return subprocess.call(launch_command(shutil.which('pi'), args.provider, args.model, args.resume), cwd=ROOT, env=env)
+        return subprocess.call(launch_command(shutil.which('pi'), args.provider, args.model, args.resume, memory=memory), cwd=ROOT, env=env)
     except KeyboardInterrupt:
         print('\nPi session interrupted. Use ./relay pi start --resume to return to saved history.')
         return 130

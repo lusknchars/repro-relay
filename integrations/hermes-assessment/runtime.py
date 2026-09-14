@@ -48,6 +48,27 @@ def environment():
     return env
 
 
+def enable_memory():
+    """Add the scoped memory MCP tools without replacing existing runtime settings."""
+    path = STATE / 'config.yaml'
+    config = json.loads(path.read_text())
+    expected = {'command': sys.executable,
+                'args': [str(ROOT / 'integrations/mem0-memory/memory.py'), 'serve', '--agent', 'hermes'],
+                'sampling': {'enabled': False}}
+    servers = config.setdefault('mcp_servers', {})
+    if 'relay_memory' in servers and servers['relay_memory'] != expected:
+        raise ValueError('A different relay_memory server already exists; it was preserved.')
+    servers['relay_memory'] = expected
+    for platform in ('api_server', 'cli'):
+        tools = config.setdefault('platform_toolsets', {}).setdefault(platform, [])
+        if 'relay_memory' not in tools:
+            tools.append('relay_memory')
+    temporary = path.with_suffix('.memory.tmp')
+    private_write(temporary, json.dumps(config, indent=2) + '\n')
+    temporary.replace(path)
+    print('Hermes memory tools configured. Restart the gateway to load them. Provider sign-in remains separate.')
+
+
 def has_auth():
     # This check establishes presence only. The provider still validates the login.
     path = STATE / "auth.json"
@@ -60,10 +81,13 @@ def has_auth():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["setup", "login", "gateway", "dev"])
+    parser.add_argument("action", choices=["setup", "login", "gateway", "dev", "enable-memory"])
     args = parser.parse_args()
     if args.action == "setup":
         setup()
+        return
+    if args.action == 'enable-memory':
+        enable_memory()
         return
     executable = INSTALL / ".venv/bin/hermes"
     if not executable.is_file() or not (STATE / "config.yaml").is_file():

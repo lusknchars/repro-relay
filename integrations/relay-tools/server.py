@@ -85,8 +85,9 @@ def execute(api, name, args):
 
 
 class Server:
-    def __init__(self, api):
+    def __init__(self, api, manifest=MANIFEST, executor=execute, name='repro-relay'):
         self.api, self.initialized, self.ready = api, False, False
+        self.manifest, self.executor, self.name = manifest, executor, name
 
     def handle(self, request):
         request_id = request.get("id") if isinstance(request, dict) else None
@@ -111,19 +112,19 @@ class Server:
                 return error(-32602, "A protocol version is required")
             self.initialized = True
             result = {"protocolVersion": version if version in PROTOCOLS else "2025-11-25",
-                      "serverInfo": {"name": "repro-relay", "version": "0.1.0"}, "capabilities": {"tools": {"listChanged": False}}}
+                      "serverInfo": {"name": self.name, "version": "0.1.0"}, "capabilities": {"tools": {"listChanged": False}}}
         elif method == "ping":
             result = {}
         elif not self.ready:
             return error(-32000, "Initialize the MCP connection first")
         elif method == "tools/list":
-            result = {"tools": [{**t, "annotations": {k: v for k, v in t["annotations"].items() if k != "untrustedContentHint"}} for t in MANIFEST]}
+            result = {"tools": [{**t, "annotations": {k: v for k, v in t["annotations"].items() if k != "untrustedContentHint"}} for t in self.manifest]}
         elif method == "tools/call":
             name = params.get("name")
-            if name not in [t["name"] for t in MANIFEST]:
+            if name not in [t["name"] for t in self.manifest]:
                 return error(-32602, "Unknown tool")
             try:
-                data = execute(self.api, name, params.get("arguments", {}))
+                data = self.executor(self.api, name, params.get("arguments", {}))
                 result = {"content": [{"type": "text", "text": json.dumps(data, ensure_ascii=False, separators=(",", ":"))}], "structuredContent": data, "isError": False}
             except (OSError, ValueError, KeyError, TypeError):
                 result = {"content": [{"type": "text", "text": "Could not read Relay evidence. Check arguments and the local workspace connection."}], "isError": True}

@@ -12,17 +12,21 @@ const manifest = JSON.parse(readFileSync(resolve(directory, '../../web/src/lib/r
   name: string; title: string; description: string; inputSchema: TSchema
 }[]
 const api = process.env.RELAY_PI_API || 'http://127.0.0.1:8178/api/v1'
+const memoryEnabled = process.env.RELAY_MEMORY_ENABLED === 'mem0'
+const memoryTools = memoryEnabled ? JSON.parse(readFileSync(resolve(directory, '../mem0-memory/tools.json'), 'utf8')) as typeof manifest : []
 
 async function call(name: string, args: unknown, signal?: AbortSignal) {
   if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Tool arguments must be an object.')
+  const memoryTool = memoryTools.some(tool => tool.name === name)
   const { stdout } = await executeFile(process.env.RELAY_PI_PYTHON || 'python3',
-    [resolve(directory, 'bridge.py'), api, name, JSON.stringify(args)],
-    { signal, timeout: 15_000, maxBuffer: 256 * 1024, encoding: 'utf8' })
+    memoryTool ? [resolve(directory, '../mem0-memory/memory.py'), 'call', '--agent', 'pi', '--api', api, '--tool', name, '--arguments', JSON.stringify(args)]
+      : [resolve(directory, 'bridge.py'), api, name, JSON.stringify(args)],
+    { signal, timeout: memoryTool ? 90_000 : 15_000, maxBuffer: 256 * 1024, encoding: 'utf8' })
   return JSON.parse(stdout)
 }
 
 export default function relay(pi: ExtensionAPI) {
-  for (const tool of manifest) {
+  for (const tool of [...manifest, ...memoryTools]) {
     pi.registerTool({
       name: tool.name, label: tool.title, description: tool.description,
       parameters: tool.inputSchema,
@@ -31,7 +35,7 @@ export default function relay(pi: ExtensionAPI) {
           const data = await call(tool.name, params, signal)
           return { content: [{ type: 'text', text: JSON.stringify(data) }], details: data }
         } catch {
-          throw new Error('Relay evidence is unavailable. Run /relay to check the local connection.')
+          throw new Error('Relay tool failed. For a memory write, the outcome may be uncertain; do not automatically repeat it. Check the local connection.')
         }
       },
     })
@@ -50,6 +54,7 @@ export default function relay(pi: ExtensionAPI) {
   pi.on('session_start', async (_event, ctx) => {
     try { await setConnection(ctx) } catch { /* Offline is shown in the status line. */ }
     ctx.ui.setWidget('relay', ['Repro Relay · Pi evidence review', '/relay  Inspect latest audit · /relay-review  Ask your model to review', 'Approvals stay in Relay. Token usage and cost appear in the Pi footer.'])
+    if (memoryEnabled) ctx.ui.setStatus('relay-memory', 'Mem0 notes enabled · private to Pi · unverified')
   })
 
   // Slash commands work without constructing a prompt or calling a model for navigation.

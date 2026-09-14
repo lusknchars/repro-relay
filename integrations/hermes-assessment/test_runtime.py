@@ -36,6 +36,19 @@ class RuntimeSetupTests(unittest.TestCase):
             self.assertTrue(runtime.has_auth())
             self.assertEqual(runtime.environment()["HERMES_HOME"], directory)
 
+    def test_optional_memory_preserves_provider_and_is_bound_to_hermes(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(runtime, 'STATE', Path(directory)), contextlib.redirect_stdout(io.StringIO()):
+            runtime.setup()
+            path = Path(directory) / 'config.yaml'
+            before = json.loads(path.read_text())
+            runtime.enable_memory()
+            runtime.enable_memory()
+            after = json.loads(path.read_text())
+            self.assertEqual(after['model'], before['model'])
+            self.assertEqual(after['platform_toolsets']['api_server'], ['relay_assessment', 'relay_memory'])
+            self.assertEqual(after['mcp_servers']['relay_memory']['args'][-1], 'hermes')
+            self.assertFalse(after['mcp_servers']['relay_memory']['sampling']['enabled'])
+
 
 if __name__ == "__main__":
     unittest.main()

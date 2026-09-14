@@ -57,7 +57,11 @@ The launcher disables builtin model tools, discovered extensions, skills, prompt
 
 This configuration limits model tools. It is not an OS sandbox. A person running Pi still controls their terminal and can change their local configuration. Pi itself may retain builtin commands such as provider setup.
 
-Approvals, source modifications, tests, memory publication, worktree execution and external messages are not exposed by this integration. Pi review text remains in its local session; it is not an independently verified finding or a Hermes run. The API connection currently supports trusted local mode only. Team-cookie authentication and hosted guest workspaces are not connected to these terminal tools.
+Approvals, source modifications, tests, reviewed memory publication, worktree execution and external messages are not exposed by this integration. Pi review text remains in its local session; it is not an independently verified finding or a Hermes run. The API connection currently supports trusted local mode only. Team-cookie authentication and hosted guest workspaces are not connected to these terminal tools.
+
+## Optional private memory
+
+Add `--memory mem0` to enable private Pi notes and current reviewed project lookup. See [Mem0 setup and boundaries](../mem0-memory/README.md). This adds two tools to the default three-tool allowlist. The default evidence configuration stays read-only.
 
 ## Validation
 

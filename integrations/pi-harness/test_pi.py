@@ -135,15 +135,22 @@ class PiTests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which('pi'), 'Install Pi to run the real extension smoke test.')
     def test_real_pi_loads_tools_and_reads_evidence_without_model_usage(self):
+        self.check_real_pi(False)
+
+    @unittest.skipUnless(shutil.which('pi'), 'Install Pi to run the real extension smoke test.')
+    def test_real_pi_loads_optional_memory_without_model_usage(self):
+        self.check_real_pi(True)
+
+    def check_real_pi(self, memory):
         with tempfile.TemporaryDirectory(prefix='relay pi ') as directory:
             profile = pathlib.Path(directory)
             probe = profile / 'probe.ts'
             probe.write_text('export default function(pi) { pi.registerCommand("relay-test-tools", '
                              '{ handler: async () => pi.sendMessage({ customType: "relay-test", '
                              'content: JSON.stringify(pi.getActiveTools()), display: true }, { triggerTurn: false }) }); }')
-            command = harness.launch_command(shutil.which('pi'), profile=profile)
+            command = harness.launch_command(shutil.which('pi'), profile=profile, memory=memory)
             process = subprocess.Popen(command + ['--mode', 'rpc', '--no-session', '-e', str(probe)],
-                                       cwd=ROOT, env={**harness.environment(profile), 'RELAY_PI_API': self.api},
+                                       cwd=ROOT, env={**harness.environment(profile), 'RELAY_PI_API': self.api, 'RELAY_MEMORY_ENABLED': 'mem0' if memory else 'off'},
                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             events = queue.Queue()
             def read():
@@ -172,7 +179,8 @@ class PiTests(unittest.TestCase):
                 self.assertTrue({'relay', 'relay-review'} <= {item['name'] for item in result['data']['commands']})
                 send({'type': 'prompt', 'message': '/relay-test-tools', 'id': 'tools'})
                 result = until(lambda item: item.get('type') == 'message_end' and item.get('message', {}).get('customType') == 'relay-test')
-                self.assertEqual(set(json.loads(result['message']['content'])), set(harness.TOOLS))
+                expected_tools = set(harness.TOOLS) | ({'relay_memory_recall', 'relay_memory_remember'} if memory else set())
+                self.assertEqual(set(json.loads(result['message']['content'])), expected_tools)
                 send({'type': 'prompt', 'message': '/relay', 'id': 'evidence'})
                 result = until(lambda item: item.get('type') == 'message_end' and item.get('message', {}).get('customType') == 'relay-evidence')
                 self.assertIn('SCAN-pi', result['message']['content'])

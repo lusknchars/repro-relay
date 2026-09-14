@@ -69,3 +69,7 @@ Statuses are `passed`, `failed`, `blocked`, `not_run`, and `running`. Highest pr
 Validation: `python3 -m unittest discover -s integrations/hermes-assessment -p 'test_*.py' -v`, plus `make check` for the API/interface contracts.
 
 References: [official API documentation](https://hermes-agent.nousresearch.com/docs/user-guide/features/api-server), [pinned run handlers](https://github.com/NousResearch/hermes-agent/blob/v2026.9.11/gateway/platforms/api_server_runs.py), [official OAuth implementation](https://github.com/NousResearch/hermes-agent/blob/v2026.9.11/hermes_cli/auth_codex.py).
+
+## Optional memory
+
+`python3 integrations/hermes-assessment/runtime.py enable-memory` adds scoped Mem0 tools to this profile while preserving provider settings. See [setup, ownership and memory boundaries](../mem0-memory/README.md). Restart the gateway to load them. Memory setup does not complete provider authentication.
