@@ -64,6 +64,7 @@ test('reviewed corrections reach one follow-up without replacing source evidence
   const [completedOriginal] = await originalRunsResponse.json()
 
   // A rejected save must leave the review draft intact and allow an explicit retry.
+  await workspace.getByText('Add specific feedback or change your name', {exact: true}).click()
   const reviewer = 'Runner fixture reviewer'
   const feedback = 'Check the date filter before blaming the export route'
   await workspace.getByRole('combobox', {name: 'Review decision', exact: true}).selectOption('needs_changes')
@@ -135,6 +136,18 @@ test('reviewed corrections reach one follow-up without replacing source evidence
   const retained = await caseResponse.json()
   expect(retained.revision).toBe(item.revision)
   expect(retained.observations).toEqual(item.observations)
+
+  // A decision can reuse the saved proposal without another diagnosis form.
+  const directReview = workspace.getByRole('region', {name: 'Review saved result', exact: true})
+  await directReview.getByRole('button', {name: 'Accept proposal', exact: true}).click()
+  await expect(directReview).toContainText('Saved decision: Review accepted')
+  const acceptedReviews = await (await page.request.get(`/api/v1/cases/${item.id}/run-reviews`)).json()
+  expect(acceptedReviews).toHaveLength(2)
+  expect(acceptedReviews[0]).toMatchObject({run_id: original.id, reviewer, decision: 'accepted'})
+  const afterDecision = await (await page.request.get(`/api/v1/cases/${item.id}`)).json()
+  expect(afterDecision.revision).toBe(item.revision)
+  expect(afterDecision.observations).toEqual(item.observations)
+  expect(await (await page.request.get(`/api/v1/cases/${item.id}/runs`)).json()).toHaveLength(2)
 
   await page.setViewportSize({width: 1440, height: 960})
   await page.screenshot({path: 'test-results/runner-artifacts/result-desktop.png', fullPage: true, animations: 'disabled'})

@@ -50,7 +50,7 @@ export function InvestigationCost({ run, runs }: { run: InvestigationRun; runs: 
   return <section className="relay-card investigation-cost" aria-label="Investigation cost inspector">
     <div className="iw-section-heading"><h3><ReceiptText aria-hidden="true" />Hermes usage and cost</h3></div>
     <p className="iw-caption">{local ? 'Imported local validation. Hermes usage does not apply to this record.' : terminal(run) ? 'Run ended. These are the last values Hermes reported, not a reconciled provider bill.' : 'Investigation in progress. Reported usage can change before the run ends.'}</p>
-    <Suspense fallback={<p role="status">Loading usage charts…</p>}><UsageCharts run={run} runs={runs}/></Suspense>
+    {!local && <Suspense fallback={<p role="status">Loading usage charts…</p>}><UsageCharts run={run} runs={runs}/></Suspense>}
     {!local && <>
       <div className="cost-total"><span>Reported cost · USD</span><strong>{money(usage?.cost_usd)}</strong><small>Cost last observed: {date(audit?.fields_observed_at.cost_usd)}</small></div>
       {usage?.cost_usd == null && <p className="iw-caption">Hermes has not supplied a dollar cost. Token counts alone cannot establish the charge.</p>}

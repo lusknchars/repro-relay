@@ -30,6 +30,7 @@ test('cost coverage distinguishes reported zero, missing cost, and imported vali
   await page.getByLabel('Investigation history', { exact: true }).selectOption('RUN-cost-local')
   await expect(inspector).toContainText('Hermes usage does not apply')
   await expect(inspector.locator('.cost-total')).toHaveCount(0)
+  await expect(inspector.getByRole('region', { name: 'Hermes usage charts' })).toHaveCount(0)
 })
 
 test('usage charts show reported history, gaps, corrections, and polled updates without export', async ({ page }) => {

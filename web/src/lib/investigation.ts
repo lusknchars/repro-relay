@@ -1,6 +1,11 @@
 import { apiBase } from './api'
 
 export type ReviewDecision = 'accepted' | 'needs_changes' | 'dismissed'
+export const quickReviews: Record<ReviewDecision, { label: string; feedback: string }> = {
+  accepted: { label: 'Accept proposal', feedback: 'Accepted this saved proposal for the case. This review does not verify a fix or publish memory.' },
+  needs_changes: { label: 'Needs another check', feedback: 'Another investigation is requested using the saved report, proposal, and attached evidence. Recheck unresolved claims; do not treat this review as new evidence or permission to edit code.' },
+  dismissed: { label: 'Dismiss proposal', feedback: 'Dismissed this saved proposal. Preserve the original report and evidence.' },
+}
 export type RunReview = {
   id: string; case_id: string; run_id: string; case_revision: number; owner_version: number;
   build: string; run_version: number; reviewer: string; reviewer_identity: 'locally_supplied';
