@@ -61,6 +61,50 @@ fn incoming(message: &str) -> Value {
 fn path(source: &Value) -> String {
     format!("/intake/{}/reports", source["id"].as_str().unwrap())
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn intake_policy_precondition_is_atomic_and_does_not_change_replay_identity(pool: PgPool) {
+    let app = relay_api::app(pool.clone());
+    let source = enable(&app, &register(&app).await).await;
+    let mut report = incoming("plow-policy-race");
+    report["expected_config_version"] = json!(0);
+    let settings = json!({"approved_target_origin":"https://example.com","browser_profile":"desktop_chromium","automatic":true,"max_seconds":60,"max_attempts":2});
+    let (status, _) = call(
+        &app,
+        "PUT",
+        "/projects/Trusted%20project/config",
+        json!({"version":0,"actor":"Fixture maintainer","settings":settings}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    let (status, error) = call(&app, "POST", &path(&source), report.clone()).await;
+    assert_eq!(status, 409, "{error}");
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM intake_receipts")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+    report["expected_config_version"] = json!(1);
+    let (status, created) = call(&app, "POST", &path(&source), report.clone()).await;
+    assert_eq!(status, 201, "{created}");
+    let (status, _) = call(
+        &app,
+        "PUT",
+        "/projects/Trusted%20project/config",
+        json!({"version":1,"actor":"Fixture maintainer","settings":settings}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    report["expected_config_version"] = json!(2);
+    let (status, replayed) = call(&app, "POST", &path(&source), report).await;
+    assert_eq!(status, 200, "{replayed}");
+    assert_eq!(created["case"]["id"], replayed["case"]["id"]);
+    // Legacy bridges omit the precondition. Their message hash is unchanged.
+    let (status, legacy) = call(&app, "POST", &path(&source), incoming("plow-policy-race")).await;
+    assert_eq!(status, 200, "{legacy}");
+    assert_eq!(created["receipt"], legacy["receipt"]);
+}
+
 #[sqlx::test(migrations = "./migrations")]
 async fn one_intake_message_creates_one_case_and_automation_job(pool: PgPool) {
     let app = relay_api::app(pool.clone());

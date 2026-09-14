@@ -12,6 +12,8 @@ The [backend workflow](docs/BACKEND-WORKFLOW.md) now includes durable evidence a
 
 The [SwiftUI iPhone app](apple/README.md) now implements the first isolated, text-driven investigator-call simulation with report review, repair decisions, and inspectable evidence. Open `apple/ReproRelay.xcodeproj` to run it. Its [implementation plan](docs/SWIFTUI-CLIENT-PLAN.md) separates authenticated phone access, real voice execution, and native Mac adaptation into later gates.
 
+The [local Plow bridge](integrations/plow/README.md) checks an authorized phone line, imports a selected owner report into Relay, and dispatches an exact approved update with durable receipt recovery. Setup requires Plow phone activation and a line-scoped credential. This adapter does not yet connect the SwiftUI simulation or implement live Hermes/Latch execution.
+
 ## Run locally
 
 Requires Node 24, Rust stable, Docker Compose, and PostgreSQL client tools (`psql` and `createdb`). macOS desktop builds also require Xcode command-line tools.

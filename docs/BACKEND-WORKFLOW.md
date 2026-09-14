@@ -2,6 +2,8 @@
 
 Repro Relay's Rust API and PostgreSQL database serve the same case to web and desktop. Channel connectors use a local bridge contract. The bridge does not itself authenticate a Plow or Slack webhook. Provider authentication and transport must be implemented by a trusted adapter before enabling an external channel.
 
+The [Plow adapter](../integrations/plow/README.md) now implements provider grant checks, selected owner-message import, and approved outbound REST delivery from a trusted local process. It has fixture coverage; live line activation and provider action receipts remain separate validation requirements. The API still does not authenticate an incoming provider webhook or manage a persistent channel connection.
+
 ```mermaid
 flowchart LR
   Report[Web report or authorized local intake bridge] --> Case[Case and original expectations]
@@ -95,6 +97,8 @@ Provider connection flags stay false. No messages have been sent by this impleme
 `GET/POST /intake/sources` configures immutable provider, line and project identity. Sources are created disabled. `/intake/sources/{id}/configuration` explicitly enables the expected version, and `/revoke` permanently disables it. Source history is retained.
 
 `POST /intake/{sourceid}/reports` accepts an external message ID, `direction:"inbound"`, and report fields. The source supplies the project; a forged report project is rejected. Case creation, the intake receipt and any configured automation job commit together. Identical delivery replay returns the original case; conflicting content under the same external ID conflicts. Known outbound message IDs on the same provider/line are rejected as echoes. Unrecorded provider echoes and webhook authentication remain the bridge's responsibility.
+
+The optional `expected_config_version` precondition rejects new intake if project execution policy changed after review. It is checked under the workspace transaction and excluded from message identity, preserving existing receipt hashes and replay after later policy changes. The Plow adapter supplies this precondition and requires an explicit CLI flag when its reviewed policy enables automatic investigation.
 
 ## Operations and local validation
 

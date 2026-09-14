@@ -1,0 +1,8 @@
+{
+  "relay_url": "http://127.0.0.1:8178",
+  "credentials_file": "../../.data/plow-credentials",
+  "state_dir": "../../.data/plow-receipts",
+  "line_id": "ln_REPLACE",
+  "chat_id": "cht_REPLACE",
+  "actor": "Local maintainer"
+}

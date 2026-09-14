@@ -307,7 +307,7 @@ async fn create_binding(
         return Ok((StatusCode::OK, Json(v)));
     }
     fresh(&c, &input.scope)?;
-    let v = json!({"id":domain::id("CHN"),"case_id":id,"version":1,"scope":input.scope,"provider":input.provider,"line":input.line,"thread":input.thread,"authorized_by":input.actor,"actor_identity":"locally_supplied","status":"active","connected":false,"connection_detail":"No provider transport is implemented. Binding records a local maintainer's intended destination only.","created_at":domain::now()});
+    let v = json!({"id":domain::id("CHN"),"case_id":id,"version":1,"scope":input.scope,"provider":input.provider,"line":input.line,"thread":input.thread,"authorized_by":input.actor,"actor_identity":"locally_supplied","status":"active","connected":false,"connection_detail":"No managed provider transport is connected. An external adapter must check the current provider grant before using this approved destination.","created_at":domain::now()});
     insert(&mut tx, "binding", &v).await?;
     remember(&mut tx, &command, k, &request, &v).await?;
     tx.commit().await?;

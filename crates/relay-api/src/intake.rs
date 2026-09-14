@@ -82,6 +82,10 @@ struct Incoming {
     external_message_id: String,
     direction: Direction,
     report: BridgeReport,
+    // An admission precondition, excluded from the stable message hash so
+    // successful replays still return the original case after policy changes.
+    #[serde(default, skip_serializing)]
+    expected_config_version: Option<u64>,
 }
 fn identifier(value: &str, field: &str, max: usize) -> ApiResult<()> {
     domain::text(value, field, 1, max)?;
@@ -276,6 +280,13 @@ async fn receive(
         return Ok((
             StatusCode::OK,
             Json(json!({"case":case,"receipt":receipt.0})),
+        ));
+    }
+    if let Some(expected) = i.expected_config_version
+        && automation::config(&mut tx, &s.project).await?.version != expected
+    {
+        return Err(ApiError::conflict(
+            "Project policy changed before intake. Review the current automatic investigation setting.",
         ));
     }
     // Ignore reflected messages from our outbox. This checks locally recorded

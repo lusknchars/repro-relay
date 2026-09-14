@@ -108,7 +108,7 @@ fn origin(value: &str) -> ApiResult<String> {
     }
     Ok(parsed.origin().ascii_serialization())
 }
-async fn config(tx: &mut Tx<'_>, project: &str) -> ApiResult<Config> {
+pub(crate) async fn config(tx: &mut Tx<'_>, project: &str) -> ApiResult<Config> {
     let saved:Option<sqlx::types::Json<Config>>=sqlx::query_scalar("SELECT payload FROM project_configs WHERE workspace_id=current_setting('relay.workspace') AND project=$1").bind(project).fetch_optional(&mut **tx).await?;
     Ok(saved.map(|c| c.0).unwrap_or_else(|| Config {
         project: project.into(),
