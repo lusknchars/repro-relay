@@ -1,3 +1,4 @@
+import { IntegrationLogo } from "@/components/integration-logo";
 import { useState } from "react";
 import { Copy, ExternalLink, Eye, EyeOff, Terminal } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -15,6 +16,7 @@ function ConnectionRow({ c, selected, onSelect }: { c: Connection; selected: boo
     <button onClick={onSelect} aria-current={selected ? "true" : undefined} className={cn("row-pad t-control grid w-full grid-cols-[1fr_auto] items-center gap-2 border-l-2 px-3 text-left hover:bg-surface-2", selected ? "border-l-accent bg-accent-soft/60" : "border-l-transparent")}>
       <div className="min-w-0">
         <div className="flex items-center gap-2 text-sm font-medium">
+          {(c.id === "hermes" || c.id === "plow") && <IntegrationLogo provider={c.id} size={22} />}
           {c.name}
           <span className="text-xs font-normal text-muted">{c.role}</span>
         </div>
@@ -36,7 +38,7 @@ function ConnectionDetail({ c }: { c: Connection }) {
     <div className="grid gap-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h2 className="text-base font-semibold">{c.name}</h2>
+          <h2 className="flex items-center gap-2 text-base font-semibold">{(c.id === "hermes" || c.id === "plow") && <IntegrationLogo provider={c.id} size={28} />}{c.name}</h2>
           <p className="text-sm text-muted">{c.role}</p>
         </div>
         <Badge tone={statusTone[c.status]} dot>{statusLabel[c.status]}</Badge>
@@ -215,7 +217,7 @@ export function SettingsPage() {
 
         {tab === "channels" && (
           <div className="grid gap-3">
-            <div className="flex items-center gap-2 text-sm font-semibold">Plow follow-ups <CapTag tag={capabilityTag.plow} /></div>
+            <div className="flex items-center gap-2 text-sm font-semibold"><IntegrationLogo provider="plow" size={24} />Plow follow-ups <CapTag tag={capabilityTag.plow} /></div>
             <ul className="divide-y divide-border rounded-lg border border-border bg-surface">
               {[
                 ["Line activation", "Activated", "ok"],

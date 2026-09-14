@@ -1,3 +1,4 @@
+import { IntegrationLogo } from "@/components/integration-logo";
 import { useMemo, useState } from "react";
 import { AlertTriangle, ArrowUpRight, ChevronRight, ExternalLink, FileText, GitBranch, History, Paperclip, RefreshCw, Send, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -35,7 +36,7 @@ function WorkRow({ item, selected, onSelect }: { item: WorkItem; selected: boole
       <div className="col-span-2 flex items-center gap-1.5 text-xs text-muted">
         <span className="truncate">{item.lastChange}</span>
         <span className="text-faint">·</span>
-        <span className="flex-none">{item.actor}</span>
+        <span className="inline-flex flex-none items-center gap-1">{item.actor === "Hermes" && <IntegrationLogo provider="hermes" size={16} />}{item.actor}</span>
         <span className="ml-auto flex-none text-foreground">{item.nextAction}</span>
         <ChevronRight className="h-3 w-3 flex-none text-faint" />
       </div>
@@ -203,7 +204,7 @@ function ActivityPane() {
           </span>
           <div className="pb-4 pt-1">
             <div>{a.text}</div>
-            <div className="text-xs text-muted">{a.actor} · {a.kind}</div>
+            <div className="flex items-center gap-1.5 text-xs text-muted">{a.actor === "Hermes" && <IntegrationLogo provider="hermes" size={16} />}{a.actor} · {a.kind}</div>
           </div>
         </li>
       ))}
@@ -399,7 +400,7 @@ export function WorkPage() {
                 <span>Owner: {selected.owner}</span>
                 <span className="mono">{selected.build}</span>
                 <span>{selected.env}</span>
-                <span>{selected.runtime} · {selected.model}</span>
+                <span className="inline-flex items-center gap-1.5">{selected.runtime === "Hermes" && <IntegrationLogo provider="hermes" size={18} />}{selected.runtime} · {selected.model}</span>
               </div>
               <div className="mt-1.5 flex flex-wrap items-center gap-2">
                 <StateBadge state={selected.state} live={selected.live} />
@@ -444,6 +445,7 @@ export function WorkPage() {
                 {conversation.map((t) => (
                   <li key={t.id} className={cn("grid gap-1", t.who === "system" && "text-xs text-muted")}>
                     <div className="flex items-center gap-2 text-xs">
+                      {t.who === "agent" && t.name === "Hermes" && <IntegrationLogo provider="hermes" size={20} />}
                       <span className={cn("font-medium", t.who === "agent" ? "text-accent-text" : t.who === "system" ? "text-muted" : "text-foreground")}>{t.name}</span>
                       <span className="tnum text-faint">{t.at}</span>
                       {t.decision ? <Badge tone="accent">{t.decision}</Badge> : null}

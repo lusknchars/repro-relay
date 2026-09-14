@@ -1,3 +1,4 @@
+import { IntegrationLogo } from "@/components/integration-logo";
 import { useMemo, useState } from "react";
 import { AtSign, Check, CornerUpLeft, FileText, Hash, Link2, Lock, Paperclip, Pin, Plus, Search, Send, Smile, Sparkles, Star, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -113,7 +114,7 @@ function EvidenceCard({ ids }: { ids: string[] }) {
 function SummaryCard({ text, sources }: { text: string; sources: string[] }) {
   return (
     <div className="grid grid-cols-[auto_1fr] gap-3 rounded-md border border-border bg-surface p-3">
-      <div className="grid h-8 w-8 place-items-center rounded-md bg-accent-soft text-accent-text"><Sparkles className="h-4 w-4" /></div>
+      <IntegrationLogo provider="hermes" size={32} />
       <div className="grid gap-1.5">
         <div className="flex items-center gap-2 text-xs"><span className="font-medium">Relay summary</span><SourceBadge source="Agent proposal" /></div>
         <p className="max-w-prose text-sm leading-6">{text}</p>
@@ -246,7 +247,7 @@ export function TeamPage() {
           <ol className="grid gap-4">
             {thread.map((m) => (
               <li key={m.id} className={cn("grid grid-cols-[auto_1fr] gap-3", m.kind === "system" && "opacity-90")}>
-                {m.kind === "agent" ? <span className="grid h-7 w-7 place-items-center rounded-full bg-accent-soft text-accent-text"><Sparkles className="h-3.5 w-3.5" /></span> : m.kind === "system" ? <span className="grid h-7 w-7 place-items-center rounded-full bg-surface-2 text-[10px] font-bold text-muted">RR</span> : <Avatar name={m.who} size={28} />}
+                {m.kind === "agent" && m.who === "Hermes" ? <IntegrationLogo provider="hermes" size={28} /> : m.kind === "agent" ? <span className="grid h-7 w-7 place-items-center rounded-full bg-accent-soft text-accent-text"><Sparkles className="h-3.5 w-3.5" /></span> : m.kind === "system" ? <span className="grid h-7 w-7 place-items-center rounded-full bg-surface-2 text-[10px] font-bold text-muted">RR</span> : <Avatar name={m.who} size={28} />}
                 <div className="grid min-w-0 gap-1.5">
                   <div className="flex flex-wrap items-center gap-2 text-xs">
                     <span className={cn("font-medium", m.kind === "agent" ? "text-accent-text" : m.kind === "system" ? "text-muted" : "text-foreground")}>{m.who}</span>
@@ -328,7 +329,7 @@ export function TeamPage() {
             <div className="text-[11px] font-medium text-faint">Members</div>
             {members.map((m) => (
               <div key={m.name} className="flex items-center gap-2 text-sm">
-                <span className="relative">{m.name === "Hermes" ? <span className="grid h-6 w-6 place-items-center rounded-full bg-accent-soft text-accent-text"><Sparkles className="h-3 w-3" /></span> : <Avatar name={m.name} size={24} />}<span className={cn("absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-surface", m.online ? "bg-ok" : "bg-faint")} /></span>
+                <span className="relative">{m.name === "Hermes" ? <IntegrationLogo provider="hermes" size={24} /> : <Avatar name={m.name} size={24} />}<span className={cn("absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-surface", m.online ? "bg-ok" : "bg-faint")} /></span>
                 <span className="min-w-0"><span className="block truncate">{m.name}</span><span className="block text-[11px] text-muted">{m.role}</span></span>
               </div>
             ))}

@@ -1,3 +1,4 @@
+import { IntegrationLogo } from "@/components/integration-logo";
 import { useState } from "react";
 import { Check, Copy, Terminal } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -56,7 +57,7 @@ export function SetupPage({ onFinish }: { onFinish: () => void }) {
                   ["pi", "Pi", "Terminal client for reviewing evidence with Kimi as the model provider — not a second investigator."],
                 ] as const).map(([v, n, d]) => (
                   <button key={v} role="radio" aria-checked={runtime === v} onClick={() => setRuntime(v)} className={cn("t-control grid gap-1 rounded-md border p-3 text-left", runtime === v ? "border-accent bg-accent-soft/50" : "border-border hover:border-border-strong")}>
-                    <div className="text-sm font-medium">{n}</div>
+                    <div className="flex items-center gap-2 text-sm font-medium">{v === "hermes" && <IntegrationLogo provider="hermes" size={24} />}{n}</div>
                     <div className="text-xs text-muted">{d}</div>
                   </button>
                 ))}

@@ -1,3 +1,4 @@
+import { IntegrationLogo } from "@/components/integration-logo";
 import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Bot, ChevronDown, Copy, Download, Gauge, Layers, Sparkles, Target, Terminal, Wallet } from "lucide-react";
@@ -119,7 +120,7 @@ export function UsagePage() {
           return (
             <div key={c.name} className="rounded-lg border border-border bg-surface p-4">
               <div className="flex items-center gap-2.5">
-                <span className="grid h-8 w-8 place-items-center rounded-md border border-border"><Icon className="h-4 w-4" /></span>
+                {c.name === "Hermes / Moonshot" ? <IntegrationLogo provider="hermes" size={32} /> : <span className="grid h-8 w-8 place-items-center rounded-md border border-border"><Icon className="h-4 w-4" /></span>}
                 <div className="min-w-0"><div className="truncate text-sm font-medium">{c.name}</div><div className="truncate text-xs text-muted">{c.sub}</div></div>
               </div>
               <div className="mt-3 flex items-baseline gap-1.5">
@@ -242,7 +243,7 @@ export function UsagePage() {
               ] as const).map((a) => (
                 <div key={a.name} className={cn("grid gap-4 rounded-lg border p-4", a.dark ? "border-transparent bg-foreground text-background" : "border-border bg-surface")}>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="flex items-center gap-2 text-sm font-semibold"><Sparkles className="h-4 w-4" /> {a.name}</span>
+                    <span className="flex items-center gap-2 text-sm font-semibold">{a.name === "Hermes" ? <IntegrationLogo provider="hermes" size={24} /> : <Sparkles className="h-4 w-4" />} {a.name}</span>
                     <Badge tone={a.tone} dot>{a.status}</Badge>
                   </div>
                   <div className="grid grid-cols-3 gap-2 text-xs">
