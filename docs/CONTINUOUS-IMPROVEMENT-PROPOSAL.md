@@ -1,10 +1,10 @@
 # Continuous repository improvement
 
-Proposed September 14, 2026. This records the user's expanded direction for discussion. It does not enable a background worker, change execution permissions, or replace the current implemented contracts.
+Updated September 14, 2026. The user rejected task-by-task direction entry. This document describes the broader product; the implemented read-only discovery loop is defined by the [context harness contract](../integrations/context-harness/README.md).
 
 ## Product promise
 
-Connect a repository, choose an outcome, and let Relay find, test, and retain useful improvements while you work. Speak to the same agent to change priorities, inspect its reasoning, or stop work. The mission continues without a new prompt for every task.
+Connect a repository once and let Relay discover work, collect evidence, and prepare proposals while you work. Use the established project goals as defaults. The user approves or declines proposals without writing task descriptions, keys, or requested alterations. Speak to the same agent to change priorities, inspect its reasoning, or stop work. The mission continues without a new prompt for every task.
 
 Bug investigation becomes one source of work and a way to validate changes. Other sources include relevant technical references, upstream releases, measured slow paths, accessibility problems, stale context, and LLM evaluation failures. Success means a measured improvement or a useful rejected experiment, not the number of generated patches or collected links.
 
@@ -27,7 +27,7 @@ For LLM experiments, [DSPy's GEPA guide](https://dspy.ai/getting-started/gepa-op
 
 ## Persistent missions
 
-A mission names the repository, intended outcome, scope, baseline revision, evaluation contract, reference sources, work allowance, and permitted actions. The first setup checks repository access, runtime health, a runnable test command, and an isolated checkout before enabling work. Missing credentials produce a specific setup task.
+A mission names the repository, intended outcome, scope, baseline revision, evaluation contract, reference sources, work allowance, and permitted actions. Discover repository settings and available harness capabilities during connection. Ask only for connection or permission information that cannot be inferred. Do not require a written mission or per-change prompt. Source-writing execution additionally requires runtime health, a runnable protected evaluation, and an isolated checkout.
 
 Use one active Hermes worker initially. A deterministic coordinator schedules research, experiments, and review preparation. A lightweight watcher can detect changes while that worker executes; it queues follow-up work rather than starting a second competing editor. Voice addresses the same mission and history.
 
@@ -93,10 +93,10 @@ A session is an interaction with the continuing mission. It presents the same ta
 
 For the selected first mission, show the current context beside the proposed context, explain why each evidence item was included or excluded, and expose baseline/candidate quality and token usage. Preserve a path back to the full source evidence. A small summary should say whether the candidate is better, worse, inconclusive, or blocked and name the supporting checks. Chat and a future voice control are ways to steer this work, not prerequisites for each scheduled cycle.
 
-Desktop displays history, conversation, and recorded case work together; narrow screens switch between the panels. The first implementation persists local user notes and session ancestry. It does not send those notes to Hermes or start a mission. Pending writes can be retried after reload with their original request IDs. Live conversation and the continuous mission evaluator remain later work.
+The first manual session form was removed after the user clarified that discovery must be autonomous. The existing route now presents automatic work history, evidence and decisions, and a repository monitor. Earlier notes remain archived. A local read-only harness watches tracked instruction files, records changes, and evaluates duplicate-content storage candidates automatically before requesting approval. This establishes a durable automatic discovery/review cycle. It does not yet run a coding agent, select task-specific context, or measure LLM token cost. Optional conversation and voice can later steer the same work; neither should become a prerequisite.
 
 ## Existing foundation and gaps
 
 Relay already has a PostgreSQL evidence history, reviewed memory, revision checks, a single investigation slot, an automatic report queue, and repair/verification contracts. These are useful foundations, not a completed general-purpose scheduler. The current queue is tied to cases and its time limit is cooperative; the API reports no hard token or dollar limit.
 
-New work includes mission records, reference capture, repository watching, an experiment evaluator, enforced aggregate budgets, a proven runtime, authenticated voice controls, and a user-facing improvement workflow. Preserve current case compatibility while adding mission-linked experiments. Keep Latch's verified Mac session distinct from Relay's still-unconfigured line and runtime.
+Remaining work includes general mission records, reference capture, task-specific context selection, protected model evaluation, enforced aggregate budgets, a proven coding runtime, and authenticated voice controls. The current watcher covers tracked agent instructions only; its lossless storage evaluator is not a model evaluator. Preserve current case compatibility while adding mission-linked experiments. Keep Latch's verified Mac session distinct from Relay's still-unconfigured line and runtime.

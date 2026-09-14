@@ -6,7 +6,7 @@ import type { View } from './index';
 const AsciiWaves=lazy(()=>import('@/components/react-bits/ascii-waves'));
 const items: {id: View; label: string; icon: typeof Bot}[] = [
  {id:'overview',label:'Overview',icon:LayoutDashboard},
- {id:'sessions',label:'Sessions',icon:MessageSquare},
+ {id:'sessions',label:'Autonomous work',icon:MessageSquare},
  {id:'inbox',label:'Case inbox',icon:Inbox},
  {id:'agents',label:'Agent controls',icon:Bot},
  {id:'memory',label:'Project memory',icon:BookOpen},

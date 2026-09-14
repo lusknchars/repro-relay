@@ -18,10 +18,10 @@ Its [domain model](https://github.com/kenn-io/roborev/blob/main/CONTEXT.md) dist
 | Bounded fix/review loop | Try a change in isolation, run protected checks, and stop on success, inconclusive results, or an exhausted allowance. |
 | Persistent queue | Keep interrupted and pending work visible across sessions; resume only after checking the current repository state. |
 
-The product should ask for an outcome and allowed scope. Users should not need to configure a roster of agents to get started. A later coordinator may request specialist research, implementation, or evaluation when the task justifies its cost. Preserve one writer per checkout and one merge queue. Multiple reviewers do not by themselves establish independent verification; evaluator data and permissions still matter.
+Connect the repository once and derive work from its signals and established project goals. Do not require users to write an outcome or configure a roster of agents before each task. Present proposals with approve/decline decisions. A later coordinator may request specialist research, implementation, or evaluation when the task justifies its cost. Preserve one writer per checkout and one merge queue. Multiple reviewers do not by themselves establish independent verification; evaluator data and permissions still matter.
 
 For the selected context-quality mission, the result should show which evidence changed, whether quality gates passed, and the measured token/cost difference. A source link or a favorable model opinion is insufficient.
 
 ## Current delivery
 
-The Sessions implementation adds persistent first prompts and notes, search, project filtering, previews, continuations, and adjacent recorded case work inside PaceUI. It does not implement RoboRev's background review loop or the proposed multi-worker coordinator. No external review or agent hook is active. The first live experiment remains the next execution milestone.
+The manual session form was replaced with automatic instruction audits, collected evidence, proposal decisions, and a repository monitor inside PaceUI. A separate local harness watches the repository and evaluates lossless context-pack candidates before requesting a decision. Notes from the earlier interface remain archived. This is a working read-only discovery/review loop, not RoboRev's coding loop or the proposed multi-worker coding coordinator. No RoboRev source or hook is active. Protected model evaluation and isolated source editing remain separate execution milestones.

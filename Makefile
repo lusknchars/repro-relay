@@ -1,7 +1,7 @@
 export PATH := $(HOME)/.cargo/bin:$(PATH)
 CARGO := $(or $(wildcard $(HOME)/.cargo/bin/cargo),cargo)
 export DATABASE_URL ?= postgres://relay:relay_local_only@127.0.0.1:55478/relay
-.PHONY: setup dev api check db desktop desktop-build plow-check
+.PHONY: setup dev api check db desktop desktop-build plow-check context-check
 setup:
 	npm ci --prefix web
 	npm exec --prefix web -- playwright install chromium
@@ -19,6 +19,7 @@ api:
 
 check:
 	$(MAKE) plow-check
+	$(MAKE) context-check
 	$(CARGO) fmt --all --check
 	$(CARGO) clippy -p relay-api --all-targets -- -D warnings
 	$(CARGO) test -p relay-api
@@ -38,3 +39,6 @@ desktop-build:
 
 plow-check:
 	python3 -m unittest discover -s integrations/plow -p 'test_*.py' -v
+
+context-check:
+	python3 -m unittest discover -s integrations/context-harness -p 'test_*.py' -v

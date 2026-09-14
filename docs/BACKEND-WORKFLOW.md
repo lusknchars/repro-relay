@@ -1,5 +1,9 @@
 # Backend workflow
 
+## Autonomous context discovery
+
+The [local context harness](../integrations/context-harness/README.md) adds automatic instruction snapshots, deduplicated proposals, version-bound decisions, fenced evaluation leases, pause/resume, and immutable result receipts. These records are independent of bug cases and saved user notes. Its only execution capability is lossless context-pack evaluation. It cannot edit source, invoke a model, deliver messages, or grant a repair runtime additional permissions.
+
 ## Local work sessions
 
 `GET /work-sessions` returns 40 summaries per page with `offset`, `q`, and `project` filters, a matching total, and the workspace's project list. `POST /work-sessions` saves `request_id`, `title`, `project`, and `prompt`, optionally linking `case_id`. A continuation also supplies `parent_id` and `parent_version`; parent history remains unchanged and the new session starts with its own prompt. Linked cases and parents must match the project and transaction workspace.

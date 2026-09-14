@@ -16,7 +16,7 @@ for (const [command, args] of [['docker',['compose','up','-d','--wait','db']], [
   const result = spawnSync(command, args, {stdio:'inherit'})
   if (result.status !== 0) process.exit(result.status || 1)
 }
-for (const [command, args] of [['cargo',['run','-p','relay-api']], ['npm',['run','dev','--prefix','web']]]) {
+for (const [command, args] of [['cargo',['run','-p','relay-api']], ['npm',['run','dev','--prefix','web']], ['python3',['integrations/context-harness/worker.py','--repo',process.cwd(),'--api',`http://127.0.0.1:${process.env.PORT || process.env.REPRO_PORT || '8178'}/api/v1`]]]) {
   const child = spawn(command,args,{stdio:'inherit',detached:process.platform !== 'win32'})
   children.push(child)
   child.on('error',error=>{console.error(error.message);stop(1)})

@@ -1,4 +1,5 @@
 pub mod automation;
+pub mod autonomy;
 pub mod channels;
 pub mod domain;
 pub mod evidence;
@@ -214,6 +215,7 @@ pub fn app_with_runner(pool: PgPool, hosting: Hosting, runner: runs::Runner) -> 
         .merge(repairs::routes())
         .merge(intake::routes())
         .merge(sessions::routes())
+        .merge(autonomy::routes())
         .route("/runner", get(runs::capabilities))
         .route("/cases/{id}/runs", get(runs::list).post(runs::start))
         .route("/cases/{id}/inspections", post(runs::record_inspection))
