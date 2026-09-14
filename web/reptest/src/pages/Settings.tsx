@@ -1,3 +1,4 @@
+import { GoogleCalendarConnection } from "@/components/google-calendar";
 import { CalendarDays } from "lucide-react";
 import { useState } from "react";
 import { Button, Badge } from "@/components/ui";
@@ -91,7 +92,7 @@ export function SettingsPage({
   const [error, setError] = useState("");
   const connection = connections.find((c) => c.id === selected)!;
   function status(id: (typeof connections)[number]["id"]) {
-    if (id === "calendar") return "Local calendar · iCalendar export";
+    if (id === "calendar") return "Local plans · Google Calendar";
     if (id === "hermes")
       return workspace.error
         ? "Status unavailable"
@@ -253,10 +254,7 @@ export function SettingsPage({
                 Calendar, Google Calendar or Outlook.
               </p>
               <Button onClick={onCalendar}>Open workspace calendar</Button>
-              <p className="text-xs text-muted">
-                External account synchronization is not connected. Export does
-                not grant another calendar access to Relay.
-              </p>
+              <GoogleCalendarConnection />
             </>
           )}
           {selected === "hermes" && (

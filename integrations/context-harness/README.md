@@ -53,3 +53,7 @@ When the API advertises `repository_architecture`, each unpaused cycle also publ
 Limits are 64 manifests, 64 KiB each, and a 2 MiB tracked-path listing. Symlinks and conflicted manifests fail inspection. Two matching inventories are required before publication. The API accepts only the repository already bound to this workspace. After 90 seconds without publication, the UI marks the snapshot stale and disables starting architecture research from it. Pausing monitoring stops publication.
 
 This inventory is not a complete runtime or call graph. Unsupported manifests and dependencies inherited from workspace configuration are not resolved. The separate Research improvements action creates a bounded Hermes investigation using the observed metadata and selected team brief. The local worker itself makes no model calls.
+
+## Team contribution activity
+
+When the API advertises `repository_contributions`, each unpaused cycle publishes up to 50 commits from HEAD to the workspace contribution feed. Only Git author names, subjects, commit hashes and commit timestamps are included; emails, diffs and source bodies are excluded. Team displays the latest four, with a searchable history. Attribution is Git metadata, not verified account ownership. The feed is a current-branch snapshot and goes stale after 90 seconds without capture.

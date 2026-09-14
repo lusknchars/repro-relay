@@ -4,9 +4,13 @@ pub mod architectures;
 pub mod automation;
 pub mod autonomy;
 pub mod calendar;
+pub mod case_environment;
 pub mod channels;
+pub mod communication;
+pub mod contributions;
 pub mod domain;
 pub mod evidence;
+pub mod google_calendar;
 pub mod hosting;
 pub mod intake;
 pub mod monitoring;
@@ -220,7 +224,11 @@ pub fn app_with_runner(pool: PgPool, hosting: Hosting, runner: runs::Runner) -> 
     let routes = Router::new()
         .merge(accounts::routes())
         .merge(architectures::routes())
+        .merge(communication::routes())
+        .merge(case_environment::routes())
+        .merge(contributions::routes())
         .merge(calendar::routes())
+        .merge(google_calendar::routes())
         .merge(monitoring::routes())
         .merge(automation::routes())
         .merge(channels::routes())

@@ -69,6 +69,24 @@ def snapshot(root):
             "revision": revision, "files": sorted(files, key=lambda f: f["path"])}
 
 
+def contribution_snapshot(root):
+    """Latest commits on HEAD. Names/subjects only: no email, diff, source or untracked files."""
+    root = pathlib.Path(root).resolve(strict=True)
+    revision = git(root, "rev-parse", "HEAD").decode().strip()
+    raw = git(root, "--no-pager", "log", "--no-show-signature", "--no-decorate", "-50", "--format=%H%x00%an%x00%cI%x00%s%x00", "HEAD", "--")
+    if len(raw) > 256 * 1024:
+        raise ValueError("Contribution metadata exceeds 256 KiB.")
+    fields = raw.decode("utf-8").split("\0")
+    commits = []
+    for index in range(0, len(fields) - 1, 4):
+        sha, author, committed_at, subject = fields[index:index + 4]
+        clean = lambda value, limit: "".join(c for c in value if c.isprintable()).strip()[:limit]
+        commits.append({"sha": sha.strip(), "author": clean(author, 120) or "Unknown author", "subject": clean(subject, 240) or "No subject", "committed_at": committed_at})
+    if git(root, "rev-parse", "HEAD").decode().strip() != revision:
+        raise ValueError("Repository changed during contribution capture.")
+    return {"repository": root.name + " · " + hashlib.sha256(str(root).encode()).hexdigest()[:8], "revision": revision, "commits": commits}
+
+
 def architecture_snapshot(root):
     """Read tracked package manifests only; never import code or run build scripts."""
     root = pathlib.Path(root).resolve(strict=True)
@@ -180,6 +198,8 @@ def cycle(api, root):
         if architecture_snapshot(root) != topology:
             return "repository architecture changed; retrying"
         api.request("/architectures/repository", topology)
+    if status.get("capabilities", {}).get("repository_contributions"):
+        api.request("/contributions", contribution_snapshot(root))
     claimed = api.request("/autonomy/claims", {"scan_id": saved["id"]})
     job = claimed.get("job")
     if job:

@@ -1,3 +1,4 @@
+import { CaseEnvironment } from "@/components/case-environment";
 import { useEffect, useRef, useState } from "react";
 import { RefreshCw, ArrowLeft, Play, Square, Search } from "lucide-react";
 import { Button, Badge, Input } from "@/components/ui";
@@ -207,6 +208,7 @@ function Detail({ item, onBack }: { item: Case; onBack: () => void }) {
       <div className="grid min-h-0 flex-1 xl:grid-cols-[minmax(280px,0.9fr)_minmax(0,1.1fr)]">
         <section className="grid min-w-0 grid-cols-1 content-start gap-4 [overflow-wrap:anywhere] border-b border-border p-4 xl:border-r xl:border-b-0">
           <h3 className="text-sm font-semibold">Conversation and decisions</h3>
+          <CaseEnvironment key={item.id} item={item} canWrite={!!canWrite} />
           <article className="rounded-md border border-border p-3">
             <Badge tone="outline">Reported behavior</Badge>
             <p className="mt-2 whitespace-pre-wrap text-sm">

@@ -89,7 +89,7 @@ async fn feed(
     let items: Vec<Value> = sqlx::query_scalar("SELECT jsonb_build_object('id',s.id,'repository',s.payload->>'repository','revision',s.payload->>'revision','created_at',s.created_at,'file_count',s.payload->'file_count','bytes',s.payload->'bytes','duplicate_bytes',s.payload->'duplicate_bytes','files',s.payload->'manifest','proposal',CASE WHEN p.id IS NULL THEN NULL ELSE jsonb_build_object('id',p.id,'version',p.version,'state',p.state,'attempts',p.attempts,'result',p.result-'bundle') END) FROM autonomy_scans s LEFT JOIN autonomy_proposals p ON p.scan_id=s.id AND p.workspace_id=s.workspace_id WHERE s.workspace_id=current_setting('relay.workspace') ORDER BY s.created_at DESC,s.id DESC LIMIT 100").fetch_all(&mut *tx).await?;
     tx.commit().await?;
     Ok(Json(
-        json!({"control":control,"items":items,"mission":"Improve agent context quality and reduce token cost","capabilities":{"repository_architecture":true,"discovery":"tracked_agent_instructions","evaluation":"lossless_context_pack_v1","source_editing":false,"model_calls":false,"automatic_merge":false},"history_limit":100}),
+        json!({"control":control,"items":items,"mission":"Improve agent context quality and reduce token cost","capabilities":{"repository_architecture":true,"repository_contributions":true,"discovery":"tracked_agent_instructions","evaluation":"lossless_context_pack_v1","source_editing":false,"model_calls":false,"automatic_merge":false},"history_limit":100}),
     ))
 }
 async fn control(

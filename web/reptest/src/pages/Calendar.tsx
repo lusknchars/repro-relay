@@ -16,7 +16,7 @@ type Entry = {
   id: string;
   version: number;
   pin: Pin;
-  source: "team" | "run";
+  source: "team" | "run" | "google";
   run_status?: string;
   execution_kind?: string;
 };
@@ -29,6 +29,11 @@ const add = (key: string, days: number) => {
   return dateKey(date);
 };
 const categories = [
+  {
+    id: "google",
+    label: "Google Calendar",
+    color: "border-cyan-300/40 bg-cyan-400/10 text-cyan-700 dark:text-cyan-300",
+  },
   {
     id: "review",
     label: "Reviews",
@@ -84,6 +89,10 @@ export function CalendarPage({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [google, setGoogle] = useState<Page>();
+  const [googleBusy, setGoogleBusy] = useState(false);
+  const [googleError, setGoogleError] = useState("");
+  const googleRange = useRef("");
   const dialog = useRef<HTMLDialogElement>(null);
   const workspace = useWorkspace();
   const canEdit =
@@ -102,7 +111,15 @@ export function CalendarPage({
     if (edit) dialog.current?.showModal();
     else dialog.current?.close();
   }, [!!edit]);
-  const entries = (data.data?.items || []).filter(
+  useEffect(() => {
+    googleRange.current = from + to;
+    setGoogle(undefined);
+    setGoogleError("");
+  }, [from, to]);
+  const entries = [
+    ...(data.data?.items || []),
+    ...(google?.items || []),
+  ].filter(
     (e) =>
       filter.includes(e.pin.category) &&
       (!search || e.pin.title.toLowerCase().includes(search.toLowerCase())),
@@ -131,7 +148,7 @@ export function CalendarPage({
     });
   }
   async function save(cancel = false) {
-    if (!edit || busy) return;
+    if (!edit || edit.source !== "team" || busy) return;
     setBusy(true);
     setError("");
     try {
@@ -160,7 +177,7 @@ export function CalendarPage({
       "CALSCALE:GREGORIAN",
       "METHOD:PUBLISH",
     ];
-    for (const e of entries)
+    for (const e of entries.filter((e) => e.source !== "google"))
       lines.push(
         "BEGIN:VEVENT",
         `UID:${e.id}@repro-relay.local`,
@@ -171,7 +188,7 @@ export function CalendarPage({
         `DTSTART;VALUE=DATE:${stamp(e.pin.starts_on)}`,
         `DTEND;VALUE=DATE:${stamp(add(e.pin.ends_on, 1))}`,
         `SUMMARY:${escapeICS(e.pin.title)}`,
-        `DESCRIPTION:${escapeICS(`${e.source === "run" ? "Recorded run" : "Team activity"}: ${e.pin.status}. ${e.pin.notes || ""}`)}`,
+        `DESCRIPTION:${escapeICS(`${e.source === "google" ? "Google Calendar" : e.source === "run" ? "Recorded run" : "Team activity"}: ${e.pin.status}. ${e.pin.notes || ""}`)}`,
         "END:VEVENT",
       );
     lines.push("END:VCALENDAR");
@@ -374,6 +391,46 @@ export function CalendarPage({
               <Button onClick={data.refresh}>Retry calendar</Button>
             </p>
           )}
+          <div className="flex flex-wrap items-center gap-3 border-b border-border p-3">
+            <Button
+              disabled={googleBusy}
+              onClick={async () => {
+                const range = from + to;
+                setGoogleBusy(true);
+                setGoogleError("");
+                setGoogle(undefined);
+                try {
+                  const result = await api<Page>(
+                    `/connections/google-calendar/events?from=${from}&to=${to}`,
+                  );
+                  if (googleRange.current === range) setGoogle(result);
+                } catch (e) {
+                  if (googleRange.current === range)
+                    setGoogleError(errorText(e));
+                } finally {
+                  setGoogleBusy(false);
+                }
+              }}
+            >
+              {googleBusy ? "Loading Google events…" : "Load Google Calendar"}
+            </Button>
+            <span className="text-xs text-muted">
+              {google
+                ? `${google.items.length} Google events loaded · read-only · timed events placed in UTC`
+                : "Connect in Settings, then load this month’s events."}
+            </span>
+            {googleError && (
+              <p role="alert" className="text-sm text-danger">
+                {googleError}
+              </p>
+            )}
+            {google?.truncated && (
+              <p role="alert" className="text-sm text-warn">
+                Google results are incomplete; narrow the date range in Google
+                Calendar.
+              </p>
+            )}
+          </div>
           {notice && (
             <p role="status" className="p-3 text-xs text-ok">
               {notice}
@@ -505,8 +562,12 @@ export function CalendarPage({
                   </span>
                   <span className="text-sm font-medium">{e.pin.title}</span>
                   <span className="text-xs">
-                    {e.source === "run" ? "Recorded run" : "Team activity"} ·{" "}
-                    {e.pin.status}
+                    {e.source === "google"
+                      ? "Google Calendar"
+                      : e.source === "run"
+                        ? "Recorded run"
+                        : "Team activity"}{" "}
+                    · {e.pin.status}
                   </span>
                 </button>
               ))}
@@ -532,11 +593,13 @@ export function CalendarPage({
           >
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold">
-                {edit.source === "run"
-                  ? "Recorded agent activity"
-                  : edit.version
-                    ? "Edit activity"
-                    : "Pin activity"}
+                {edit.source === "google"
+                  ? "Google Calendar event"
+                  : edit.source === "run"
+                    ? "Recorded agent activity"
+                    : edit.version
+                      ? "Edit activity"
+                      : "Pin activity"}
               </h2>
               <button
                 type="button"
@@ -548,7 +611,16 @@ export function CalendarPage({
                 <X size={18} />
               </button>
             </div>
-            {edit.source === "run" ? (
+            {edit.source === "google" ? (
+              <>
+                <h3 className="font-medium">{edit.pin.title}</h3>
+                <Badge tone="outline">Google Calendar · Read-only</Badge>
+                <p className="text-sm text-muted">{edit.pin.notes}</p>
+                <p className="text-xs text-muted">
+                  Edit this event in Google Calendar, then load it again.
+                </p>
+              </>
+            ) : edit.source === "run" ? (
               <>
                 <h3 className="font-medium">{edit.pin.title}</h3>
                 <Badge tone="outline">

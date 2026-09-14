@@ -488,6 +488,7 @@ async fn build_preview(
     // generation so the preview digest guards that boundary as well.
     context["owner_version"] = json!(case.owner_version);
     context["team_architecture"] = crate::architectures::brief(tx).await?;
+    context["reproduction_conditions"] = crate::case_environment::snapshot(tx, case).await?;
     context["related_reviewed_findings"] =
         json!(crate::evidence::reviewed_context(tx, case).await?);
     if let Some(review_id) = review_id {

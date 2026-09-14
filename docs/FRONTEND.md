@@ -1,5 +1,9 @@
 # Frontend design
 
+## Team integrations and workflow canvas
+
+The workflow view now follows the supplied video: a searchable node library, compact colored nodes, orthogonal connections, step picker, fit control and setup inspector. The four supported stages keep their execution order and human review. Team shows real Git contribution activity, role-based communication preferences and expiring call-context requests. Work records reproduction conditions, and Settings includes Google Calendar OAuth with read-only event loading in Calendar. See [implemented behavior, setup and provider boundaries](TEAM-CALENDAR-CALLS.md).
+
 ## Operational monitoring
 
 Monitoring adapts the supplied PaceUI log-block references to the existing frontend. Real Relay request summaries populate the live console, recent-request table and traffic heatmap. PostgreSQL supplies database size and probe latency; service limits show actual pool and buffer capacities. Pause and clear affect the console view only. Request detail dialogs, search, status filtering and investigation links work across desktop and narrow layouts. See [capture scope and retention](MONITORING.md).

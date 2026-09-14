@@ -1,3 +1,5 @@
+import { Contributions } from "@/components/contributions";
+import { TeamCommunication } from "@/components/team-communication";
 import type { ArchitectureRecord } from "./Architecture";
 import { useState } from "react";
 import { ArrowLeft, LogIn, UserPlus } from "lucide-react";
@@ -96,6 +98,8 @@ export function TeamPage({
       <p role="status" className="text-sm text-ok">
         {notice}
       </p>
+      {!accountOnly && <Contributions />}
+      {!accountOnly && <TeamCommunication />}
       {!accountOnly && architecture.data && (
         <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface p-4">
           <div>

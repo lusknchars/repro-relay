@@ -9,6 +9,10 @@ import {
   ShieldCheck,
   ZoomIn,
   ZoomOut,
+  Maximize,
+  X,
+  Layers,
+  Database,
 } from "lucide-react";
 import { IntegrationLogo } from "@/components/integration-logo";
 import { Button, Badge } from "@/components/ui";
@@ -52,10 +56,10 @@ export type ArchitectureRecord = {
   }[];
 };
 const initialPositions: Record<string, Point> = {
-  context: { x: 70, y: 100 },
-  investigate: { x: 480, y: 100 },
-  evidence: { x: 480, y: 350 },
-  human: { x: 70, y: 350 },
+  context: { x: 380, y: 60 },
+  investigate: { x: 70, y: 280 },
+  evidence: { x: 650, y: 280 },
+  human: { x: 70, y: 500 },
 };
 export function ArchitecturePage({
   onWork,
@@ -76,6 +80,29 @@ export function ArchitecturePage({
   const [selected, setSelected] = useState("investigate");
   const [zoom, setZoom] = useState(0.85);
   const [square, setSquare] = useState(false);
+  const [stepSearch, setStepSearch] = useState("");
+  const [pickerSearch, setPickerSearch] = useState("");
+  const picker = useRef<HTMLDialogElement>(null);
+  const viewport = useRef<HTMLDivElement>(null);
+  function focusStep(id: string) {
+    setSelected(id);
+    const p = position(id);
+    viewport.current?.scrollTo({
+      left: Math.max(0, (p.x + 115) * zoom - viewport.current.clientWidth / 2),
+      top: Math.max(0, p.y * zoom - 120),
+      behavior: "instant",
+    });
+    picker.current?.close();
+  }
+  function stepColor(kind: string) {
+    return kind === "agent"
+      ? "bg-violet-500"
+      : kind === "human"
+        ? "bg-emerald-600"
+        : kind === "evidence"
+          ? "bg-amber-500"
+          : "bg-blue-500";
+  }
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -150,15 +177,19 @@ export function ArchitecturePage({
           .map((n, i) => ({ from: n.id, to: graphStages[i + 1].id }));
   function edgePath(from: string, to: string) {
     const a = position(from),
-      b = position(to),
-      dx = b.x - a.x,
-      dy = b.y - a.y;
-    const t = Math.min(
-      125 / (Math.abs(dx) || 1),
-      65 / (Math.abs(dy) || 1),
-      0.4,
-    );
-    return `M ${a.x + 115 + dx * t} ${a.y + 56 + dy * t} L ${b.x + 115 - dx * t} ${b.y + 56 - dy * t}`;
+      b = position(to);
+    if (Math.abs(b.y - a.y) < 90) {
+      const right = b.x > a.x;
+      const x1 = a.x + (right ? 230 : 0),
+        x2 = b.x + (right ? 0 : 230);
+      const mid = (x1 + x2) / 2;
+      return `M ${x1} ${a.y + 34} H ${mid} V ${b.y + 34} H ${x2}`;
+    }
+    const down = b.y > a.y;
+    const y1 = a.y + (down ? 68 : 0),
+      y2 = b.y + (down ? 0 : 68);
+    const mid = (y1 + y2) / 2;
+    return `M ${a.x + 115} ${y1} V ${mid} H ${b.x + 115} V ${y2}`;
   }
   function move(id: string, x: number, y: number) {
     setDraft((d) =>
@@ -369,11 +400,72 @@ export function ArchitecturePage({
           </Button>
         )}
       </header>
-      <div className="grid min-h-0 lg:grid-cols-[230px_minmax(0,1fr)_260px]">
+      <div className="grid min-h-0 lg:grid-cols-[200px_minmax(0,1fr)_240px]">
         <aside
           aria-label="Workflow templates"
           className="grid content-start gap-3 border-b border-border bg-surface p-4 lg:overflow-y-auto lg:border-r lg:border-b-0"
         >
+          <div className="grid gap-3 border-b border-border pb-3">
+            <h2 className="text-sm font-semibold">Node library</h2>
+            <label className="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5">
+              <Search size={13} className="shrink-0 text-muted" />
+              <input
+                aria-label="Search workflow steps"
+                className="min-w-0 w-full bg-transparent text-xs outline-none"
+                placeholder="Search nodes…"
+                value={stepSearch}
+                onChange={(e) => setStepSearch(e.target.value)}
+              />
+            </label>
+            <p className="text-[10px] uppercase tracking-wider text-muted">
+              {mode === "workflow" ? "Core steps" : "Repository components"}
+            </p>
+            {graphStages
+              .filter((s) =>
+                (s.label + s.kind)
+                  .toLowerCase()
+                  .includes(stepSearch.toLowerCase()),
+              )
+              .map((s) => (
+                <button
+                  key={s.id}
+                  aria-label={`Inspect ${s.label}`}
+                  onClick={() => focusStep(s.id)}
+                  className={cn(
+                    "t-control flex items-center gap-2 rounded-md px-1 py-2 text-left hover:bg-surface-2",
+                    activeId === s.id && "bg-surface-2",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white",
+                      stepColor(s.kind),
+                    )}
+                  >
+                    {s.kind === "human" ? (
+                      <ShieldCheck size={13} />
+                    ) : s.kind === "agent" ? (
+                      <IntegrationLogo provider="hermes" size={16} />
+                    ) : (
+                      <Layers size={13} />
+                    )}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-xs font-medium">
+                      {s.label}
+                    </span>
+                    <span className="block text-[10px] text-muted">
+                      {s.kind}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            {!graphStages.some((s) =>
+              (s.label + s.kind)
+                .toLowerCase()
+                .includes(stepSearch.toLowerCase()),
+            ) && <p className="text-xs text-muted">No matching steps.</p>}
+          </div>
           {mode === "workflow" ? (
             <>
               {/* Saved team workflow templates */}{" "}
@@ -389,13 +481,13 @@ export function ArchitecturePage({
                     setDraft((d) => (d ? { ...d, focus: t.focus } : d))
                   }
                   className={cn(
-                    "t-control grid gap-2 rounded-lg border p-3 text-left",
+                    "t-control grid gap-1 rounded-md border p-2 text-left",
                     draft?.focus === t.focus
                       ? "border-accent bg-accent-soft"
                       : "border-border hover:bg-surface-2",
                   )}
                 >
-                  <span className="text-sm font-semibold">{t.name}</span>
+                  <span className="text-xs font-semibold">{t.name}</span>
                   <span className="text-xs leading-relaxed text-muted">
                     {t.summary}
                   </span>
@@ -494,13 +586,41 @@ export function ArchitecturePage({
           aria-label="Architecture canvas"
           className="relative min-h-[480px] min-w-0 bg-background"
         >
-          <div className="absolute left-3 right-3 top-3 z-10 flex flex-wrap justify-between gap-2 rounded-md border border-border bg-surface/95 p-2">
+          <div className="absolute inset-x-0 top-0 z-10 flex flex-wrap justify-between gap-2 border-b border-border bg-surface/95 px-3 py-2">
             <span className="self-center text-xs text-muted">
               {mode === "repository"
                 ? "Observed manifests · select to inspect"
                 : "Drag steps · arrow keys to move"}
             </span>
-            <div className="flex gap-1">
+            <div className="flex flex-wrap gap-1">
+              <Button
+                size="sm"
+                aria-label="Find workflow step"
+                onClick={() => {
+                  setPickerSearch("");
+                  picker.current?.showModal();
+                }}
+              >
+                <Search size={14} />
+              </Button>
+              <Button
+                size="sm"
+                aria-label="Fit workflow to view"
+                onClick={() => {
+                  setZoom(
+                    Math.max(
+                      0.5,
+                      Math.min(
+                        1.2,
+                        ((viewport.current?.clientWidth || 850) - 20) / 1000,
+                      ),
+                    ),
+                  );
+                  viewport.current?.scrollTo(0, 0);
+                }}
+              >
+                <Maximize size={14} />
+              </Button>
               <Button
                 size="sm"
                 aria-label="Zoom out"
@@ -539,11 +659,12 @@ export function ArchitecturePage({
             </div>
           </div>
           <div
-            className="h-full min-h-[480px] overflow-auto pt-16"
+            ref={viewport}
+            className="h-full min-h-[480px] overflow-auto pt-14"
             style={{
               backgroundImage: square
-                ? "linear-gradient(var(--color-border) 1px, transparent 1px),linear-gradient(90deg,var(--color-border) 1px,transparent 1px)"
-                : "radial-gradient(var(--color-border) 1.3px,transparent 1.3px)",
+                ? "linear-gradient(var(--border) 1px, transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px)"
+                : "radial-gradient(var(--border-strong) 0.7px,transparent 0.7px)",
               backgroundSize: "20px 20px",
             }}
           >
@@ -581,7 +702,9 @@ export function ArchitecturePage({
                       d={edgePath(edge.from, edge.to)}
                       stroke="currentColor"
                       className="text-muted"
-                      strokeWidth="2"
+                      strokeWidth="1.2"
+                      fill="none"
+                      strokeLinejoin="round"
                       markerEnd="url(#flow-arrow)"
                     />
                   ))}
@@ -595,7 +718,7 @@ export function ArchitecturePage({
                       aria-pressed={activeId === s.id}
                       disabled={!!busy}
                       className={cn(
-                        "absolute grid w-[230px] gap-3 rounded-xl border bg-surface p-4 text-left shadow-sm focus-visible:outline-2 focus-visible:outline-accent",
+                        "absolute flex h-[68px] w-[230px] items-center gap-3 rounded-lg border bg-surface px-3 text-left shadow-sm transition-[border-color,box-shadow] duration-150 hover:shadow-md focus-visible:outline-2 focus-visible:outline-accent",
                         activeId === s.id
                           ? "border-accent ring-2 ring-accent/20"
                           : "border-border",
@@ -604,7 +727,7 @@ export function ArchitecturePage({
                       onPointerDown={(e) => {
                         if (e.button !== 0) return;
                         setSelected(s.id);
-                        if (mode === "repository") return;
+                        if (mode === "repository" || !canEdit) return;
                         e.currentTarget.setPointerCapture(e.pointerId);
                         drag.current = {
                           id: s.id,
@@ -630,7 +753,7 @@ export function ArchitecturePage({
                       }}
                       onFocus={() => setSelected(s.id)}
                       onKeyDown={(e) => {
-                        if (mode === "repository") return;
+                        if (mode === "repository" || !canEdit) return;
                         const delta: Record<string, Point> = {
                           ArrowLeft: { x: -20, y: 0 },
                           ArrowRight: { x: 20, y: 0 },
@@ -644,20 +767,43 @@ export function ArchitecturePage({
                         }
                       }}
                     >
-                      <span className="flex items-center justify-between text-xs uppercase tracking-wider text-muted">
-                        {s.kind}
-                        <Grip size={13} />
-                      </span>
-                      <span className="flex items-center gap-2 break-all text-sm font-semibold">
+                      <span
+                        aria-hidden
+                        className="absolute left-1/2 top-0 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-border-strong bg-surface"
+                      />
+                      <span
+                        aria-hidden
+                        className="absolute bottom-0 left-1/2 h-2 w-2 -translate-x-1/2 translate-y-1/2 rounded-full border border-border-strong bg-surface"
+                      />
+                      <span
+                        className={cn(
+                          "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white",
+                          stepColor(s.kind),
+                        )}
+                      >
                         {s.kind === "agent" ? (
-                          <IntegrationLogo provider="hermes" size={18} />
+                          <IntegrationLogo provider="hermes" size={20} />
                         ) : s.kind === "human" ? (
-                          <ShieldCheck size={18} />
+                          <ShieldCheck size={16} />
                         ) : (
-                          <ArrowRight size={18} />
-                        )}{" "}
-                        {s.label}
+                          <Database size={16} />
+                        )}
                       </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold">
+                          {s.label}
+                        </span>
+                        <span className="mt-0.5 block text-xs text-muted">
+                          {s.kind === "agent"
+                            ? "Investigate and propose"
+                            : s.kind === "human"
+                              ? "Review before action"
+                              : s.kind}
+                        </span>
+                      </span>
+                      {mode === "workflow" && (
+                        <Grip size={12} className="shrink-0 text-muted" />
+                      )}
                     </button>
                   );
                 })}
@@ -671,7 +817,7 @@ export function ArchitecturePage({
         >
           <div>
             <p className="mb-2 text-xs uppercase tracking-wider text-muted">
-              Selected step
+              Step setup
             </p>
             <h2 className="text-base font-semibold">
               {node?.label || "Choose a step"}
@@ -741,6 +887,60 @@ export function ArchitecturePage({
           )}
         </aside>
       </div>
+      <dialog
+        ref={picker}
+        aria-label="Find workflow step"
+        className="w-[min(380px,calc(100vw-32px))] rounded-xl border border-border bg-surface p-0 text-foreground shadow-xl backdrop:bg-black/20 backdrop:backdrop-blur-sm"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) picker.current?.close();
+        }}
+      >
+        <div className="flex items-center gap-2 border-b border-border p-3">
+          <Search size={16} />
+          <input
+            autoFocus
+            aria-label="Search nodes in picker"
+            className="min-w-0 flex-1 bg-transparent text-sm outline-none"
+            placeholder="Search nodes…"
+            value={pickerSearch}
+            onChange={(e) => setPickerSearch(e.target.value)}
+          />
+          <button
+            aria-label="Close step picker"
+            className="t-control rounded p-1"
+            onClick={() => picker.current?.close()}
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div className="max-h-80 overflow-auto p-2">
+          {graphStages
+            .filter((s) =>
+              (s.label + s.kind)
+                .toLowerCase()
+                .includes(pickerSearch.toLowerCase()),
+            )
+            .map((s) => (
+              <button
+                key={s.id}
+                onClick={() => focusStep(s.id)}
+                className="t-control flex w-full items-center gap-3 rounded-md p-3 text-left hover:bg-surface-2"
+              >
+                <span
+                  className={cn("h-7 w-7 rounded-full", stepColor(s.kind))}
+                />
+                <span>
+                  <span className="block text-sm font-medium">{s.label}</span>
+                  <span className="text-xs text-muted">{s.kind}</span>
+                </span>
+              </button>
+            ))}
+        </div>
+        <p className="border-t border-border p-3 text-xs text-muted">
+          Jump to an existing step. The team workflow keeps its validated
+          execution order.
+        </p>
+      </dialog>
     </div>
   );
 }

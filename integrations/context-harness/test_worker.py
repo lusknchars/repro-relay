@@ -11,6 +11,17 @@ spec.loader.exec_module(worker)
 
 
 class HarnessTests(unittest.TestCase):
+    def test_contributions_are_bounded_git_metadata_without_email_or_source(self):
+        (self.root / "private.txt").write_text("private-source-marker")
+        self.git("add", "private.txt")
+        self.git("-c", "user.name=Team Builder", "-c", "user.email=never-export@example.invalid", "commit", "-qm", "Improve calendar role checks")
+        history = worker.contribution_snapshot(self.root)
+        self.assertEqual(history["commits"][0]["sha"], history["revision"])
+        self.assertEqual(history["commits"][0]["author"], "Team Builder")
+        self.assertEqual(len(history["commits"]), 2)
+        self.assertNotIn("private-source-marker", json.dumps(history))
+        self.assertNotIn("never-export@example.invalid", json.dumps(history))
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
