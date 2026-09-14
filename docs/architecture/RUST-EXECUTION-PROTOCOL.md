@@ -59,3 +59,13 @@ New account creation opens a five-step guide: Team → Settings → Knowledge �
 - Existing repair and evidence tests remain the regression proof for approvals and reported test artifacts during migration.
 
 No paid model request, provider signup, phone message or live repair is needed to validate this first migration.
+
+## Shipped architecture planning and calendar
+
+`relay-core::architecture::Architecture` validates three investigation briefs through an opaque `ValidArchitecture`. Their fixed stages retain reviewed context, one Hermes investigation, evidence and usage, and human review. The layout can move those stages without changing their order or permissions. This is a bounded precursor to full typed recipes; it does not implement additional workers, dollar reservations or role-specific tool enforcement.
+
+Migration 0017 persists versioned team settings, repository manifest snapshots and calendar activities. Team updates reject stale versions. The run preview includes the selected validated brief and version in its context hash; the dispatch request retains that frozen context after subsequent team updates. Ordinary investigations receive the selected objective. Protected repair and verification instructions retain their existing contracts.
+
+Architecture starts with the connected repository inventory. Research improvements saves a normal case and starts a two-minute Hermes assessment, using separate idempotency keys for case creation and run admission. It asks for source-linked alternatives and a validation plan. Snapshot metadata is bounded to fit the report; total component count reveals partial coverage. Search tool availability remains a runtime requirement, and suggestions do not change code. The deterministic team-workflow suggestion is explicitly labelled as inspection of saved records.
+
+Calendar reads recorded runs and versioned all-day team activities within a bounded date range. Saves reject conflicting revisions, support immediate identical retries and validate related-case workspace ownership. Cancellation retains the saved activity. Calendar dates do not dispatch work. iCalendar export is a dated snapshot, not external account synchronization.

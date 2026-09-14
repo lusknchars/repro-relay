@@ -730,3 +730,50 @@ async fn activity_is_durable_idempotent_scoped_and_append_only(pool: PgPool) {
         .unwrap();
     assert_eq!(remaining, 0);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn run_freezes_team_architecture_and_appears_on_calendar(pool: PgPool) {
+    let f = Fixture::new().await;
+    let app = relay_api::app_with_runner(pool.clone(), Hosting::local(), f.runner.clone());
+    assert_eq!(call(&app,"PUT","/architectures","",json!({"version":0,"settings":{"focus":"context_efficiency","guidance":"Inspect repeated instructions."}})).await.0,200);
+    let case = report(&app).await;
+    let admitted = start(&app, &case, "with-architecture").await;
+    assert_eq!(
+        admitted["context"]["team_architecture"]["focus"],
+        "context_efficiency"
+    );
+    assert_eq!(
+        call(
+            &app,
+            "PUT",
+            "/architectures",
+            "",
+            json!({"version":1,"settings":{"focus":"test_triage"}})
+        )
+        .await
+        .0,
+        200
+    );
+    runs::tick(&pool, &f.runner).await.unwrap();
+    assert_eq!(
+        latest(&app, &case).await["context"]["team_architecture"]["focus"],
+        "context_efficiency"
+    );
+    assert!(
+        f.state.lock().unwrap().submissions.values().next().unwrap()["input"]
+            .as_str()
+            .unwrap()
+            .contains("context_efficiency")
+    );
+    let day = chrono::Utc::now().date_naive();
+    let (_, calendar) = call(
+        &app,
+        "GET",
+        &format!("/calendar?from={day}&to={day}"),
+        "",
+        Value::Null,
+    )
+    .await;
+    assert_eq!(calendar["items"][0]["source"], "run");
+    assert_eq!(calendar["items"][0]["id"], admitted["id"]);
+}

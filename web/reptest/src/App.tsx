@@ -3,6 +3,8 @@ import { X } from "lucide-react";
 import { ThemeProvider } from "@/theme/ThemeProvider";
 import { Customizer } from "@/theme/Customizer";
 import { Shell, type Route } from "@/components/shell/Shell";
+import { ArchitecturePage } from "@/pages/Architecture";
+import { CalendarPage } from "@/pages/Calendar";
 import { WorkPage } from "@/pages/Work";
 import { KnowledgePage } from "@/pages/Knowledge";
 import { TeamPage } from "@/pages/Team";
@@ -17,13 +19,22 @@ function Root() {
     const view = new URLSearchParams(location.search).get("view");
     return location.hash.startsWith("#invite=")
       ? "team"
-      : ["team", "knowledge", "usage", "settings", "setup"].includes(view || "")
+      : [
+            "team",
+            "knowledge",
+            "usage",
+            "settings",
+            "setup",
+            "architecture",
+            "calendar",
+          ].includes(view || "")
         ? (view as Route)
         : "work";
   });
   useEffect(() => {
     const url = new URL(location.href);
     url.searchParams.set("view", route);
+    if (route !== "settings") url.searchParams.delete("connection");
     history.replaceState(null, "", url);
   }, [route]);
   const [customizer, setCustomizer] = useState(false);
@@ -36,6 +47,18 @@ function Root() {
   function navigate(next: Route) {
     setGuide(null);
     setRoute(next);
+  }
+  function openWork(id: string) {
+    const url = new URL(location.href);
+    url.searchParams.set("case", id);
+    history.replaceState(null, "", url);
+    navigate("work");
+  }
+  function openConnection(id: string) {
+    const url = new URL(location.href);
+    url.searchParams.set("connection", id);
+    history.replaceState(null, "", url);
+    navigate("settings");
   }
   function startGuide() {
     setAccountOpen(false);
@@ -56,7 +79,24 @@ function Root() {
         onOpenAccount={() => setAccountOpen(true)}
       >
         {route === "work" && <WorkPage />}
-        {route === "team" && <TeamPage onRegistered={startGuide} />}
+        {route === "architecture" && (
+          <ArchitecturePage
+            onWork={openWork}
+            onSettings={() => openConnection("hermes")}
+          />
+        )}
+        {route === "calendar" && (
+          <CalendarPage
+            onWork={openWork}
+            onSettings={() => openConnection("calendar")}
+          />
+        )}
+        {route === "team" && (
+          <TeamPage
+            onRegistered={startGuide}
+            onArchitecture={() => navigate("architecture")}
+          />
+        )}
         {route === "knowledge" && <KnowledgePage />}
         {route === "usage" && <UsagePage />}
         {route === "settings" && (
@@ -64,6 +104,7 @@ function Root() {
             onAccount={() => setAccountOpen(true)}
             onKnowledge={() => navigate("knowledge")}
             onGuide={startGuide}
+            onCalendar={() => navigate("calendar")}
           />
         )}
         {route === "setup" && (
@@ -72,6 +113,7 @@ function Root() {
             onAccount={() => setAccountOpen(true)}
             onKnowledge={() => navigate("knowledge")}
             onGuide={startGuide}
+            onCalendar={() => navigate("calendar")}
           />
         )}
       </Shell>

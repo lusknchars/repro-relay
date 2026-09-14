@@ -1,4 +1,5 @@
-//! Shared execution rules, independent of the API, database and renderer.
+pub mod architecture;
+// Shared execution rules, independent of the API, database and renderer.
 use serde::{Deserialize, Serialize};
 
 /// Adapter lifecycle. Completion is an agent proposal, never a verified repair.

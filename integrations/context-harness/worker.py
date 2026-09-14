@@ -5,6 +5,18 @@ import json
 import pathlib
 import subprocess
 import time
+import posixpath
+import re
+try:
+    import tomllib
+except ImportError:
+    try:
+        import tomli as tomllib
+    except ImportError:
+        try:
+            from pip._vendor import tomli as tomllib
+        except ImportError:
+            tomllib = None
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -57,6 +69,68 @@ def snapshot(root):
             "revision": revision, "files": sorted(files, key=lambda f: f["path"])}
 
 
+def architecture_snapshot(root):
+    """Read tracked package manifests only; never import code or run build scripts."""
+    root = pathlib.Path(root).resolve(strict=True)
+    revision = git(root, "rev-parse", "HEAD").decode().strip()
+    if pathlib.Path(git(root, "rev-parse", "--show-toplevel").decode().strip()).resolve() != root:
+        raise ValueError("Choose the repository root.")
+    listing = git(root, "ls-files", "--stage", "-z")
+    if len(listing) > 2 * 1024 * 1024:
+        raise ValueError("Repository file inventory exceeds 2 MiB.")
+    nodes, dependencies = [], {}
+    for record in listing.split(b"\0"):
+        if not record:
+            continue
+        meta, raw = record.split(b"\t", 1)
+        path = raw.decode("utf-8")
+        name = pathlib.PurePosixPath(path).name
+        if name not in {"Cargo.toml", "package.json", "pyproject.toml"}:
+            continue
+        mode, _, stage = meta.split()
+        candidate = root / path
+        if stage != b"0" or mode not in {b"100644", b"100755"} or any(p.is_symlink() for p in [candidate, *candidate.parents] if p != root):
+            raise ValueError("Resolve manifest conflicts or symlinks before inspecting architecture.")
+        if not candidate.exists():
+            continue
+        if not candidate.resolve().is_relative_to(root):
+            raise ValueError("Manifest path leaves the repository.")
+        with candidate.open("rb") as stream:
+            data = stream.read(65537)
+        if len(data) > 65536:
+            raise ValueError("Manifest exceeds 64 KiB.")
+        if name != "package.json" and tomllib is None:
+            raise ValueError("Architecture inspection needs Python 3.11+ or the tomli package.")
+        document = json.loads(data) if name == "package.json" else tomllib.loads(data.decode())
+        package = document.get("package", {}) if name == "Cargo.toml" else document.get("project", {}) if name == "pyproject.toml" else document
+        label = package.get("name", pathlib.PurePosixPath(path).parent.name or root.name)
+        if not isinstance(label, str) or not re.fullmatch(r"[A-Za-z0-9@._/-]{1,100}", label):
+            label = name
+        deps = document.get("dependencies", {})
+        deps = deps if isinstance(deps, dict) else {}
+        tech = [t for t in ["react", "vite", "next", "tauri", "axum", "sqlx", "tokio", "electron"] if t in deps]
+        kind = {"Cargo.toml": "Rust manifest", "package.json": "JavaScript package", "pyproject.toml": "Python project"}[name]
+        local = []
+        for value in deps.values():
+            relative = value.get("path") if isinstance(value, dict) else value[5:] if isinstance(value, str) and value.startswith("file:") else None
+            if isinstance(relative, str) and not relative.startswith("/"):
+                target = posixpath.normpath(posixpath.join(posixpath.dirname(path), relative, name))
+                if not target.startswith("../"):
+                    local.append(target)
+        dependencies[path] = local[:32]
+        nodes.append({"id": path, "name": label, "kind": kind, "technologies": tech,
+                      "dependencies": [], "sha256": hashlib.sha256(data).hexdigest()})
+        if len(nodes) > 64:
+            raise ValueError("Architecture inventory exceeds 64 manifests.")
+    ids = {n["id"] for n in nodes}
+    for node in nodes:
+        node["dependencies"] = sorted({d for d in dependencies[node["id"]] if d in ids})
+    if git(root, "rev-parse", "HEAD").decode().strip() != revision:
+        raise ValueError("Repository revision changed during inspection.")
+    return {"repository": root.name + " · " + hashlib.sha256(str(root).encode()).hexdigest()[:8],
+            "revision": revision, "dirty": bool(git(root, "status", "--porcelain", "--untracked-files=no")), "nodes": sorted(nodes, key=lambda n: n["id"])}
+
+
 def bundle(files):
     bodies, sources = {}, []
     for source in files:
@@ -101,6 +175,11 @@ def cycle(api, root):
     if snapshot(root) != scan:
         return "repository changed; retrying"
     saved = api.request("/autonomy/scans", scan)
+    if status.get("capabilities", {}).get("repository_architecture"):
+        topology = architecture_snapshot(root)
+        if architecture_snapshot(root) != topology:
+            return "repository architecture changed; retrying"
+        api.request("/architectures/repository", topology)
     claimed = api.request("/autonomy/claims", {"scan_id": saved["id"]})
     job = claimed.get("job")
     if job:

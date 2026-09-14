@@ -1,5 +1,11 @@
 # Frontend design
 
+## Repository architecture and calendar, September 14
+
+Architecture opens the connected repository's observed manifest map on a dot or square grid. Components show their source path, file hash and declared local dependencies. Stale and missing inventories remain visible. Research improvements creates a real Hermes assessment, whose saved findings are accessible from Suggested improvements and Work. Team workflow offers three validated investigation briefs with draggable, keyboard-movable stages, editable guidance and versioned Apply to team. Team displays the applied brief. Applying does not change an active run or refactor the repository.
+
+Calendar follows the supplied reference's month grid, small calendar sidebar and coloured activity categories while retaining the supplied Reptest theme. Users can pin, edit, complete, remove and filter activities, link cases and export an iCalendar snapshot. Recorded runs appear automatically and open their work. Phone layouts use an agenda; dialogs retain native focus and keyboard dismissal. Settings includes a Planning connection with a direct calendar action and explains that external calendar synchronization is not connected.
+
 ## Current default: supplied Reptest files
 
 The default web and Tauri clients use the supplied Reptest shell, theme and visual components from `web/reptest`. Their pages now read the Rust/PostgreSQL backend rather than the ZIP's example records. See [connected behavior and remaining release work](LIVE-WORKSPACE.md). Work, Team, Knowledge, Usage and Settings provide recorded investigations, in-app accounts/invitations, reviewed memory, usage graphs and local connection controls. Supplied logos and appearance preferences are retained. The previous client remains under `web/src` and `dev:legacy` for regression testing.

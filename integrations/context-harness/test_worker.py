@@ -91,3 +91,23 @@ class HarnessTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class ArchitectureTests(unittest.TestCase):
+    setUp = HarnessTests.setUp
+    git = HarnessTests.git
+    def test_manifest_inventory_reads_metadata_without_scripts_or_secrets(self):
+        (self.root / 'Cargo.toml').write_text('[package]\nname="fixture"\n[dependencies]\ncore={path="core"}\naxum="0.8"\n')
+        (self.root / 'core').mkdir()
+        (self.root / 'core/Cargo.toml').write_text('[package]\nname="core"\n')
+        (self.root / 'package.json').write_text(json.dumps({'name':'frontend','dependencies':{'react':'19'},'scripts':{'install':'touch SHOULD_NOT_EXIST'}}))
+        (self.root / '.env').write_text('SECRET=do-not-upload')
+        self.git('add','Cargo.toml','core/Cargo.toml','package.json','.env')
+        result=worker.architecture_snapshot(self.root)
+        self.assertEqual(len(result['nodes']),3)
+        self.assertNotIn('do-not-upload',json.dumps(result))
+        self.assertNotIn('SHOULD_NOT_EXIST',json.dumps(result))
+        self.assertFalse((self.root/'SHOULD_NOT_EXIST').exists())
+        self.assertEqual(result['nodes'][0]['dependencies'],['core/Cargo.toml'])
+        (self.root/'package.json').unlink()
+        (self.root/'package.json').symlink_to(self.root/'.env')
+        with self.assertRaises(ValueError): worker.architecture_snapshot(self.root)

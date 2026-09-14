@@ -1,3 +1,4 @@
+import type { ArchitectureRecord } from "./Architecture";
 import { useState } from "react";
 import { ArrowLeft, LogIn, UserPlus } from "lucide-react";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -18,8 +19,23 @@ type Team = {
     expires_at: string;
   }[];
 };
-export function TeamPage({ accountOnly = false, onRegistered }: { accountOnly?: boolean; onRegistered?: () => void }) {
+export function TeamPage({
+  accountOnly = false,
+  onRegistered,
+  onArchitecture,
+}: {
+  accountOnly?: boolean;
+  onRegistered?: () => void;
+  onArchitecture?: () => void;
+}) {
   const { resolvedMode } = useTheme();
+  const architecture = useLoad(
+    () =>
+      accountOnly
+        ? Promise.resolve<ArchitectureRecord | null>(null)
+        : api<ArchitectureRecord>("/architectures"),
+    [accountOnly],
+  );
   const workspace = useWorkspace();
   // Sign-in must remain usable when workspace data requires authentication.
   const accountState = useLoad(() => api<Account>("/account"), [], 15000);
@@ -59,13 +75,19 @@ export function TeamPage({ accountOnly = false, onRegistered }: { accountOnly?: 
     }
   }
   return (
-    <div className={accountOnly ? "grid gap-4 p-6 sm:p-10" : "grid gap-5 p-4 md:p-6"}>
-      {!accountOnly && <header>
-        <h1 className="text-xl font-semibold">Team</h1>
-        <p className="text-sm text-muted">
-          Account, team access, and invitations to this workspace.
-        </p>
-      </header>}
+    <div
+      className={
+        accountOnly ? "grid gap-4 p-6 sm:p-10" : "grid gap-5 p-4 md:p-6"
+      }
+    >
+      {!accountOnly && (
+        <header>
+          <h1 className="text-xl font-semibold">Team</h1>
+          <p className="text-sm text-muted">
+            Account, team access, and invitations to this workspace.
+          </p>
+        </header>
+      )}
       {(error || team.error || accountState.error) && (
         <p role="alert" className="text-danger">
           {error || team.error || accountState.error}
@@ -74,13 +96,41 @@ export function TeamPage({ accountOnly = false, onRegistered }: { accountOnly?: 
       <p role="status" className="text-sm text-ok">
         {notice}
       </p>
+      {!accountOnly && architecture.data && (
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface p-4">
+          <div>
+            <h2 className="text-sm font-semibold">
+              Team investigation workflow
+            </h2>
+            <p className="mt-1 text-sm text-muted">
+              {
+                architecture.data.templates.find(
+                  (t) => t.focus === architecture.data!.settings.focus,
+                )?.name
+              }{" "}
+              · version {architecture.data.version}
+            </p>
+            <p className="mt-1 text-xs text-muted">
+              Used by new investigations. Current runs retain their frozen
+              brief.
+            </p>
+          </div>
+          <Button onClick={onArchitecture}>Open architecture</Button>
+        </section>
+      )}
       {accountState.loading && !account ? (
         <p role="status">Loading account…</p>
       ) : accountState.error ? (
         <section className="mx-auto grid max-w-[320px] gap-4 py-8">
-          <h2 className="text-base font-semibold">Connect your local workspace</h2>
-          <p className="text-sm text-muted">Run this command from your Repro Relay checkout, then retry.</p>
-          <code className="rounded-md border border-border bg-surface p-3 text-sm">./relay setup</code>
+          <h2 className="text-base font-semibold">
+            Connect your local workspace
+          </h2>
+          <p className="text-sm text-muted">
+            Run this command from your Repro Relay checkout, then retry.
+          </p>
+          <code className="rounded-md border border-border bg-surface p-3 text-sm">
+            ./relay setup
+          </code>
           <Button onClick={accountState.refresh}>Retry connection</Button>
         </section>
       ) : !account?.enabled ? (
@@ -90,17 +140,40 @@ export function TeamPage({ accountOnly = false, onRegistered }: { accountOnly?: 
       ) : !account.authenticated && mode === "choose" ? (
         <section className="mx-auto grid w-full max-w-[320px] gap-4 py-8 text-center">
           <div className="mb-7 flex items-center justify-center gap-2.5">
-            <img src={`/brand/repro-relay-mark-${resolvedMode === "dark" ? "white" : "black"}.png`} alt="" width={32} height={32} className="h-8 w-8 object-contain" />
-            <span className="text-xl font-semibold tracking-tight">Repro Relay</span>
+            <img
+              src={`/brand/repro-relay-mark-${resolvedMode === "dark" ? "white" : "black"}.png`}
+              alt=""
+              width={32}
+              height={32}
+              className="h-8 w-8 object-contain"
+            />
+            <span className="text-xl font-semibold tracking-tight">
+              Repro Relay
+            </span>
           </div>
-          <h2 className="mb-1 text-sm font-medium">Choose a way to sign in or sign up</h2>
-          <Button variant="outline" className="h-12 w-full justify-center rounded-lg bg-surface text-foreground" onClick={() => setMode("login")}>
+          <h2 className="mb-1 text-sm font-medium">
+            Choose a way to sign in or sign up
+          </h2>
+          <Button
+            variant="outline"
+            className="h-12 w-full justify-center rounded-lg bg-surface text-foreground"
+            onClick={() => setMode("login")}
+          >
             <LogIn className="h-4 w-4" aria-hidden /> Sign in to Relay
           </Button>
-          <Button variant="outline" className="h-12 w-full justify-center rounded-lg bg-surface text-foreground" onClick={() => setMode("register")}>
-            <UserPlus className="h-4 w-4" aria-hidden /> {account.bootstrap_available ? "Create account" : "Join your team"}
+          <Button
+            variant="outline"
+            className="h-12 w-full justify-center rounded-lg bg-surface text-foreground"
+            onClick={() => setMode("register")}
+          >
+            <UserPlus className="h-4 w-4" aria-hidden />{" "}
+            {account.bootstrap_available ? "Create account" : "Join your team"}
           </Button>
-          <p className="mt-3 text-xs leading-relaxed text-muted">{account.shared ? "Use your account for this team workspace." : "Your account stays on this installation. Sign in here to manage your profile and team."}</p>
+          <p className="mt-3 text-xs leading-relaxed text-muted">
+            {account.shared
+              ? "Use your account for this team workspace."
+              : "Your account stays on this installation. Sign in here to manage your profile and team."}
+          </p>
         </section>
       ) : !account.authenticated ? (
         <form
@@ -125,7 +198,19 @@ export function TeamPage({ accountOnly = false, onRegistered }: { accountOnly?: 
             });
           }}
         >
-          <Button type="button" variant="ghost" className="justify-self-start" disabled={!!busy} onClick={() => {setMode("choose"); setError(""); setPassword("");}}><ArrowLeft className="h-4 w-4" aria-hidden /> Back</Button>
+          <Button
+            type="button"
+            variant="ghost"
+            className="justify-self-start"
+            disabled={!!busy}
+            onClick={() => {
+              setMode("choose");
+              setError("");
+              setPassword("");
+            }}
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden /> Back
+          </Button>
           <h2 className="text-base font-semibold">
             {mode === "login" ? "Sign in" : "Create account"}
           </h2>
@@ -152,7 +237,11 @@ export function TeamPage({ accountOnly = false, onRegistered }: { accountOnly?: 
               onChange={(e) => setPassword(e.target.value)}
             />
           </label>
-          {mode !== "login" && <p className="text-xs text-muted">Use at least 15 characters. A few words work well.</p>}
+          {mode !== "login" && (
+            <p className="text-xs text-muted">
+              Use at least 15 characters. A few words work well.
+            </p>
+          )}
           {mode !== "login" && (
             <>
               <label className="grid gap-1 text-sm">
@@ -171,8 +260,15 @@ export function TeamPage({ accountOnly = false, onRegistered }: { accountOnly?: 
                     value={invite}
                     onChange={(e) => {
                       const value = e.target.value.trim();
-                      try { setInvite(new URLSearchParams(new URL(value).hash.slice(1)).get("invite") || value); }
-                      catch { setInvite(value); }
+                      try {
+                        setInvite(
+                          new URLSearchParams(new URL(value).hash.slice(1)).get(
+                            "invite",
+                          ) || value,
+                        );
+                      } catch {
+                        setInvite(value);
+                      }
                     }}
                   />
                 </label>
@@ -200,7 +296,12 @@ export function TeamPage({ accountOnly = false, onRegistered }: { accountOnly?: 
               @{account.profile?.username}
             </span>
           </div>
-          {account.session_persistent === false && <p role="status" className="text-xs text-muted">Signed in for this app session. Secure session storage is unavailable; you will need to sign in again after closing the app.</p>}
+          {account.session_persistent === false && (
+            <p role="status" className="text-xs text-muted">
+              Signed in for this app session. Secure session storage is
+              unavailable; you will need to sign in again after closing the app.
+            </p>
+          )}
           <Button
             className="justify-self-start"
             disabled={!!busy}
@@ -303,10 +404,12 @@ export function TeamPage({ accountOnly = false, onRegistered }: { accountOnly?: 
           )}
         </section>
       )}
-      {!accountOnly && account?.authenticated && <p className="text-xs text-muted">
-        Team chat is not connected. Investigation reports and run reviews remain
-        attached to their case in Work.
-      </p>}
+      {!accountOnly && account?.authenticated && (
+        <p className="text-xs text-muted">
+          Team chat is not connected. Investigation reports and run reviews
+          remain attached to their case in Work.
+        </p>
+      )}
     </div>
   );
 }

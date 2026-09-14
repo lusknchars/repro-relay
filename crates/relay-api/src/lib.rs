@@ -1,7 +1,9 @@
 pub mod accounts;
 pub mod activity;
+pub mod architectures;
 pub mod automation;
 pub mod autonomy;
+pub mod calendar;
 pub mod channels;
 pub mod domain;
 pub mod evidence;
@@ -215,6 +217,8 @@ pub fn app_with_hosting(pool: PgPool, hosting: Hosting) -> Router {
 pub fn app_with_runner(pool: PgPool, hosting: Hosting, runner: runs::Runner) -> Router {
     let routes = Router::new()
         .merge(accounts::routes())
+        .merge(architectures::routes())
+        .merge(calendar::routes())
         .merge(automation::routes())
         .merge(channels::routes())
         .merge(evidence::routes())

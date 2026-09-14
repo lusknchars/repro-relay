@@ -1,3 +1,4 @@
+import { CalendarDays } from "lucide-react";
 import { useState } from "react";
 import { Button, Badge } from "@/components/ui";
 import { IntegrationLogo } from "@/components/integration-logo";
@@ -11,6 +12,12 @@ import {
 } from "@/lib/live";
 import { cn } from "@/lib/utils";
 const connections = [
+  {
+    id: "calendar",
+    name: "Workspace calendar",
+    role: "Team plans and recorded agent activity",
+    group: "Planning",
+  },
   {
     id: "hermes",
     name: "Hermes",
@@ -47,6 +54,7 @@ const groups = [
   "Models",
   "Context and memory",
   "Communication",
+  "Planning",
 ] as const;
 type Plow = {
   line_name?: string;
@@ -59,14 +67,20 @@ export function SettingsPage({
   onAccount,
   onKnowledge,
   onGuide,
+  onCalendar,
 }: {
   onAccount: () => void;
   onKnowledge: () => void;
   onGuide: () => void;
+  onCalendar: () => void;
 }) {
   const workspace = useWorkspace();
-  const [selected, setSelected] =
-    useState<(typeof connections)[number]["id"]>("plow");
+  const [selected, setSelected] = useState<(typeof connections)[number]["id"]>(
+    () => {
+      const id = new URLSearchParams(location.search).get("connection");
+      return connections.find((c) => c.id === id)?.id || "plow";
+    },
+  );
   const plow = useLoad(() => api<Plow>("/connections/plow"));
   const tools = useLoad(() =>
     api<{ version: number; mem0: boolean }>("/tool-profile"),
@@ -77,6 +91,7 @@ export function SettingsPage({
   const [error, setError] = useState("");
   const connection = connections.find((c) => c.id === selected)!;
   function status(id: (typeof connections)[number]["id"]) {
+    if (id === "calendar") return "Local calendar · iCalendar export";
     if (id === "hermes")
       return workspace.error
         ? "Status unavailable"
@@ -181,10 +196,14 @@ export function SettingsPage({
                     )}
                   >
                     <span className="flex items-center gap-2 text-sm font-medium">
-                      <IntegrationLogo
-                        provider={c.id}
-                        size={c.id === "mem0" ? 15 : 22}
-                      />
+                      {c.id === "calendar" ? (
+                        <CalendarDays size={22} />
+                      ) : (
+                        <IntegrationLogo
+                          provider={c.id}
+                          size={c.id === "mem0" ? 15 : 22}
+                        />
+                      )}
                       {c.name}
                     </span>
                     <span className="text-xs text-muted">{c.role}</span>
@@ -213,15 +232,33 @@ export function SettingsPage({
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="flex items-center gap-2 text-lg font-semibold">
-              <IntegrationLogo
-                provider={selected}
-                size={selected === "mem0" ? 20 : 28}
-              />
+              {selected === "calendar" ? (
+                <CalendarDays size={28} />
+              ) : (
+                <IntegrationLogo
+                  provider={selected}
+                  size={selected === "mem0" ? 20 : 28}
+                />
+              )}
               {connection.name}
             </h2>
             <Badge tone={ready ? "ok" : "outline"}>{status(selected)}</Badge>
           </div>
           <p className="text-sm text-muted">{connection.role}</p>
+          {selected === "calendar" && (
+            <>
+              <p className="text-sm">
+                Plan reviews, tests and follow-ups with your team. Recorded runs
+                appear automatically. Export a calendar snapshot for Apple
+                Calendar, Google Calendar or Outlook.
+              </p>
+              <Button onClick={onCalendar}>Open workspace calendar</Button>
+              <p className="text-xs text-muted">
+                External account synchronization is not connected. Export does
+                not grant another calendar access to Relay.
+              </p>
+            </>
+          )}
           {selected === "hermes" && (
             <>
               <p className="text-sm">

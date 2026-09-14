@@ -8,7 +8,7 @@ For another local installation, connect the repository once:
 python3 integrations/context-harness/worker.py --repo /absolute/repository/root
 ```
 
-`--api http://127.0.0.1:8178/api/v1` selects the local API. `--once` runs one cycle for diagnostics or a scheduler. The worker uses Python's standard library and Git. Credentials and a model account are unnecessary for this read-only harness. One Relay workspace binds to one repository identity; a second repository needs a separate workspace/database. The identity includes a hash of the absolute repository path.
+`--api http://127.0.0.1:8178/api/v1` selects the local API. `--once` runs one cycle for diagnostics or a scheduler. The worker uses Git and Python 3.9+. TOML manifest inspection uses Python 3.11's standard-library parser; on older Python it requires `tomli` or the copy bundled with pip. Credentials and a model account are unnecessary for this read-only harness. One Relay workspace binds to one repository identity; a second repository needs a separate workspace/database. The identity includes a hash of the absolute repository path.
 
 ## What runs automatically
 
@@ -45,3 +45,11 @@ The API caps audit storage at 1,000 immutable snapshots and reports a full-histo
 `make context-check` covers tracked-only access, symlinks, limits, exact Unicode/newline reconstruction, local-only transport, pause, and source drift. PostgreSQL tests exercise the proposal state machine and fencing. The browser suite uses a temporary Git repository and the actual Python worker against an isolated test API. Fixture findings are separate from the real repository audit.
 
 Next execution milestone: a versioned adapter for task-specific context selection, protected model evaluation, hard spend reservations, and isolated code changes. That adapter must prove cancellation and recovery before the UI offers code approval. Hermes and voice are not connected by this worker. Windows/Edge and a persistent OS service require separate validation.
+
+## Repository architecture inventory
+
+When the API advertises `repository_architecture`, each unpaused cycle also publishes a manifest inventory to `POST /architectures/repository`. Architecture opens this recorded view by default. The worker reads tracked `Cargo.toml`, `package.json` and `pyproject.toml` files, extracting package names, selected declared framework dependencies, relative local dependencies, Git revision and SHA-256 hashes. It never executes package scripts or uploads entire manifests, source files or credentials.
+
+Limits are 64 manifests, 64 KiB each, and a 2 MiB tracked-path listing. Symlinks and conflicted manifests fail inspection. Two matching inventories are required before publication. The API accepts only the repository already bound to this workspace. After 90 seconds without publication, the UI marks the snapshot stale and disables starting architecture research from it. Pausing monitoring stops publication.
+
+This inventory is not a complete runtime or call graph. Unsupported manifests and dependencies inherited from workspace configuration are not resolved. The separate Research improvements action creates a bounded Hermes investigation using the observed metadata and selected team brief. The local worker itself makes no model calls.

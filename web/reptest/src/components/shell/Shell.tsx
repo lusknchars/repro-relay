@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Bell, BookOpen, Menu, MessagesSquare, Rocket, ChevronsUpDown, Command, Gauge, HelpCircle, Inbox, Moon, PanelLeft, Search, Settings, SlidersHorizontal, Sun } from "lucide-react";
+import { CalendarDays, Workflow, Bell, BookOpen, Menu, MessagesSquare, Rocket, ChevronsUpDown, Command, Gauge, HelpCircle, Inbox, Moon, PanelLeft, Search, Settings, SlidersHorizontal, Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/theme/ThemeProvider";
 import { Avatar, Badge, Kbd } from "@/components/ui";
 import { useWorkspace } from "@/lib/live";
 
-export type Route = "work" | "team" | "knowledge" | "usage" | "settings" | "setup";
+export type Route = "work" | "team" | "knowledge" | "usage" | "settings" | "setup" | "architecture" | "calendar";
 
 const NAV: { id: Route; label: string; icon: typeof Inbox; hint: string }[] = [
   { id: "work", label: "Work", icon: Inbox, hint: "Decisions, active and blocked work, history" },
+  { id: "architecture", label: "Architecture", icon: Workflow, hint: "Repository structure, research and team workflows" },
+  { id: "calendar", label: "Calendar", icon: CalendarDays, hint: "Planned reviews and recorded agent activity" },
   { id: "team", label: "Team", icon: MessagesSquare, hint: "Talk with your team around a work record" },
   { id: "knowledge", label: "Knowledge", icon: BookOpen, hint: "Reviewed observations and private notes" },
   { id: "usage", label: "Usage", icon: Gauge, hint: "Tokens, time and cost with coverage" },
@@ -239,7 +241,7 @@ export function Shell({ route, onRoute, onOpenCustomizer, onOpenAccount, childre
           </div>
         </main>
         <nav className="flex h-14 flex-none items-stretch border-t border-border bg-surface md:hidden" aria-label="Phone navigation">
-          {NAV.map((n) => {
+          {NAV.filter(n => n.id !== "architecture" && n.id !== "calendar").map((n) => {
             const Icon = n.icon;
             const current = route === n.id;
             return (

@@ -6,11 +6,13 @@ export function SetupPage({
   onAccount,
   onKnowledge,
   onGuide,
+  onCalendar,
 }: {
   onFinish: () => void;
   onAccount: () => void;
   onKnowledge: () => void;
   onGuide: () => void;
+  onCalendar: () => void;
 }) {
   const { data } = useWorkspace();
   return (
@@ -31,6 +33,7 @@ export function SetupPage({
         onAccount={onAccount}
         onKnowledge={onKnowledge}
         onGuide={onGuide}
+        onCalendar={onCalendar}
       />
     </div>
   );

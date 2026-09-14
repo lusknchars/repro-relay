@@ -470,6 +470,8 @@ async fn target(pool: &PgPool, value: &str) -> ApiResult<String> {
                     "connections",
                     "team",
                     "usage",
+                    "architecture",
+                    "calendar",
                 ]
                 .contains(&v.as_ref()) => {}
             "case" => {
