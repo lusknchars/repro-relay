@@ -77,6 +77,9 @@ fn allowed(path: &str, method: &str) -> bool {
         "/account"
             | "/account/register"
             | "/account/login"
+            | "/account/phone/start"
+            | "/account/phone/verify"
+            | "/account/phone/complete"
             | "/account/logout"
             | "/account/password"
             | "/team/invites"
@@ -246,6 +249,14 @@ mod tests {
         }
         assert!(allowed("/team/invites/INV-123/revoke", "POST"));
         assert!(!allowed("/account", "DELETE"));
+        for path in [
+            "/account/phone/start",
+            "/account/phone/verify",
+            "/account/phone/complete",
+        ] {
+            assert!(allowed(path, "POST"));
+            assert!(!allowed(path, "GET"));
+        }
     }
     #[sqlx::test(migrations = "../../crates/relay-api/migrations")]
     async fn native_session_registers_restores_and_revokes_against_real_api(pool: sqlx::PgPool) {

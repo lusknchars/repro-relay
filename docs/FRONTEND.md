@@ -2,7 +2,11 @@
 
 ## Reach
 
-Team opens with Reach, a compact transcript/todo queue and action inspector using the existing supplied theme. Quick todo entry, owner/date review, saved decisions, copyable drafts and local item links use real Rust records. The opened editor retains its reviewed snapshot across polling; stale submissions are rejected. Calls are labelled as supplied transcripts and message drafts are not presented as deliveries. See [Reach](REACH.md).
+Reach is a primary page in the main sidebar and compact mobile navigation, with a transcript/todo queue and action inspector using the existing supplied theme. Quick todo entry, owner/date review, saved decisions, copyable drafts and local item links use real Rust records. The opened editor retains its reviewed snapshot across polling; stale submissions are rejected. Calls are labelled as supplied transcripts and message drafts are not presented as deliveries. See [Reach](REACH.md).
+
+## Phone-first account entry
+
+The account dialog now starts with an international phone number, followed by a verification code and a display name only for new accounts. The actual PaceUI Login 4 and Two Factor Authentication 4 registry entries were inspected for the centered form and footer structure. Existing username accounts have a secondary entry. Unconfigured SMS is visible as a setup state; no delivery is simulated. See [phone sign-in](PHONE-SIGN-IN.md).
 
 ## Team integrations and workflow canvas
 

@@ -4,7 +4,7 @@ Reach turns call requests, meeting action items and todos into a small team foll
 
 ## Use it
 
-Open **Team → Reach**. Add a todo in one line, or select a recorded call request. Review the action, choose an enabled communication profile and a due date, then save. Mark done and Dismiss are local coordination decisions. They do not change case verification or send messages. New todos also appear in Relay's Calendar. A Reach action's due date and completion are separate from the original calendar record; the source remains available for review.
+Open **Reach** in the main sidebar. Add a todo in one line, or select a recorded call request. Review the action, choose an enabled communication profile and a due date, then save. Mark done and Dismiss are local coordination decisions. They do not change case verification or send messages. Older `?view=team&reach=...` links open the standalone Reach page. Team retains membership, contribution history and call setup. New todos also appear in Relay's Calendar. A Reach action's due date and completion are separate from the original calendar record; the source remains available for review.
 
 Call requests appear before calendar activities. Case-linked records offer only enabled profiles from the same project; an unlinked local todo can use any enabled profile. Source text and profile changes invalidate the saved review. The editor keeps the snapshot that was opened, so background refresh cannot silently approve changed evidence. Agent proposals cannot overwrite a human decision.
 
@@ -64,7 +64,7 @@ The Rust `/api/v1/reach?on=YYYY-MM-DD` projection reads Relay calendar pins and 
 
 `PUT /reach/{id}/proposal` saves only a proposed action. `PUT /reach/{id}/decision` saves planned, done or dismissed. Both validate the source hash, expected action version and eligible owner within the workspace transaction lock. Migration 0022 stores at most 5,000 action records. The model-facing tool list exposes only the proposal endpoint; the trusted local operator still has the normal local API authority. MCP is not a sandbox for an agent that also has unrestricted shell/network access.
 
-The React Team view, terminal reader and stdio MCP share these endpoints. Guest/hosted mode is rejected. No cloud service, new Python dependency, provider credential or external message is required for these paths.
+The Reach page, terminal reader and stdio MCP share these endpoints. Guest/hosted mode is rejected. No cloud service, new Python dependency, provider credential or external message is required for these paths.
 
 ## Next complete integration
 

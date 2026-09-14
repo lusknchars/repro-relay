@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { fixture } from './fixtures/context-harness'
 
 async function mockWebMCP(page: import('@playwright/test').Page, legacy = false) {
   await page.addInitScript(({ legacy }) => {
@@ -24,6 +25,7 @@ async function invoke(page: import('@playwright/test').Page, name: string, args 
 }
 
 test('WebMCP exposes bounded evidence without granting approval or write tools', async ({ page }) => {
+  fixture()
   await mockWebMCP(page)
   const errors: string[] = []; page.on('pageerror', e => errors.push(e.message))
   let writes = 0; page.on('request', r => { if (r.method() !== 'GET' && r.url().includes('/autonomy')) writes++ })
@@ -78,6 +80,7 @@ test('overview gives direct routes and guest sessions never register local tools
 
 
 test('unsupported WebMCP keeps the human recipe usable', async ({ page }) => {
+  fixture()
   await page.addInitScript(() => {
     Object.defineProperty(document, 'modelContext', { value: undefined, configurable: true })
     Object.defineProperty(navigator, 'modelContext', { value: undefined, configurable: true })

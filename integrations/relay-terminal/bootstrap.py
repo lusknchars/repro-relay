@@ -4,6 +4,8 @@ import json
 import os
 from pathlib import Path
 import shutil
+import re
+import shlex
 import socket
 import subprocess
 import sys
@@ -38,6 +40,28 @@ def port_in_use():
 
 def environment():
     env = os.environ.copy()
+    config = ROOT / '.env'
+    if config.is_file():
+        if config.stat().st_size > 65536:
+            raise ValueError('The private .env file exceeds 64 KiB.')
+        for number, line in enumerate(config.read_text().splitlines(), 1):
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            if line.startswith('export '):
+                line = line[7:].lstrip()
+            key, separator, value = line.partition('=')
+            key = key.strip()
+            if not separator or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', key):
+                raise ValueError(f'Invalid private .env entry on line {number}.')
+            try:
+                parts = shlex.split(value, comments=True)
+            except ValueError:
+                raise ValueError(f'Invalid quoting in private .env on line {number}.') from None
+            if len(parts) > 1:
+                raise ValueError(f'Quote values containing spaces in private .env on line {number}.')
+            # Parse data only: no shell commands or variable interpolation.
+            env.setdefault(key, parts[0] if parts else '')
     env['PATH'] = str(Path.home() / '.cargo/bin') + os.pathsep + env.get('PATH', '')
     return env
 

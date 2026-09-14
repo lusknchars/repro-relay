@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Activity, CalendarDays, Workflow, Bell, BookOpen, Menu, MessagesSquare, Rocket, ChevronsUpDown, Command, Gauge, HelpCircle, Inbox, Moon, PanelLeft, Search, Settings, SlidersHorizontal, Sun } from "lucide-react";
+import { Activity, Radio, CalendarDays, Workflow, Bell, BookOpen, Menu, MessagesSquare, Rocket, ChevronsUpDown, Command, Gauge, HelpCircle, Inbox, Moon, PanelLeft, Search, Settings, SlidersHorizontal, Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/theme/ThemeProvider";
 import { Avatar, Badge, Kbd } from "@/components/ui";
 import { useWorkspace } from "@/lib/live";
 
-export type Route = "work" | "team" | "knowledge" | "usage" | "settings" | "setup" | "architecture" | "calendar" | "monitoring";
+export type Route = "work" | "reach" | "team" | "knowledge" | "usage" | "settings" | "setup" | "architecture" | "calendar" | "monitoring";
 
 const NAV: { id: Route; label: string; icon: typeof Inbox; hint: string }[] = [
   { id: "work", label: "Work", icon: Inbox, hint: "Decisions, active and blocked work, history" },
+  { id: "reach", label: "Reach", icon: Radio, hint: "Call action items, daily todos and follow-ups" },
   { id: "architecture", label: "Architecture", icon: Workflow, hint: "Repository structure, research and team workflows" },
   { id: "calendar", label: "Calendar", icon: CalendarDays, hint: "Planned reviews and recorded agent activity" },
   { id: "team", label: "Team", icon: MessagesSquare, hint: "Talk with your team around a work record" },
@@ -242,7 +243,7 @@ export function Shell({ route, onRoute, onOpenCustomizer, onOpenAccount, childre
           </div>
         </main>
         <nav className="flex h-14 flex-none items-stretch border-t border-border bg-surface md:hidden" aria-label="Phone navigation">
-          {NAV.filter(n => n.id !== "architecture" && n.id !== "calendar").map((n) => {
+          {NAV.filter(n => ["work", "reach", "team", "usage", "settings"].includes(n.id)).map((n) => {
             const Icon = n.icon;
             const current = route === n.id;
             return (

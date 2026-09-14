@@ -9,6 +9,20 @@ import bootstrap
 
 
 class SetupTests(unittest.TestCase):
+    def test_private_env_is_literal_and_process_environment_wins(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(bootstrap, 'ROOT', Path(directory)), patch.dict(bootstrap.os.environ, {'RELAY_TWILIO_AUTH_TOKEN': 'process-token'}, clear=True):
+            config = Path(directory) / '.env'
+            config.write_text("RELAY_TWILIO_AUTH_TOKEN=file-token\nRELAY_TWILIO_ACCOUNT_SID=\"ACfixture\" # comment\nLITERAL='$(touch forbidden) $HOME'\n")
+            env = bootstrap.environment()
+            self.assertEqual(env['RELAY_TWILIO_AUTH_TOKEN'], 'process-token')
+            self.assertEqual(env['RELAY_TWILIO_ACCOUNT_SID'], 'ACfixture')
+            self.assertEqual(env['LITERAL'], '$(touch forbidden) $HOME')
+            config.write_text('INVALID value with private content')
+            with self.assertRaisesRegex(ValueError, 'line 1') as error:
+                bootstrap.environment()
+            self.assertNotIn('private content', str(error.exception))
+
+
     def test_health_does_not_accept_unrelated_or_hosted_services(self):
         for body in (b'[]', b'null', b'not json', b'{"status":"ok","backend":"rust","database":"postgresql","mode":"team"}'):
             with patch.object(bootstrap.urllib.request, 'build_opener') as opener:

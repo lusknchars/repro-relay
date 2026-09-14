@@ -26,7 +26,7 @@ test('real case, bounded investigation, persisted review and inline usage in sup
  for(const name of ['Team','Knowledge','Settings','Work']){await page.locator('aside').getByRole('button',{name:new RegExp(`^${name}`)}).click();await expect(page.getByRole('heading',{name,exact:true})).toBeVisible();}
  await page.getByRole('button',{name:'Customize appearance'}).click();await page.getByRole('dialog').getByRole('radio',{name:'Violet',exact:true}).click();await page.getByRole('dialog').getByRole('button',{name:'Close',exact:true}).click();await page.reload();await expect(page.locator('html')).toHaveAttribute('data-accent','violet');
  await page.getByRole('button',{name:'Switch to dark mode'}).click();await expect(page.locator('html')).toHaveClass(/dark/);
- await page.setViewportSize({width:390,height:844});for(const name of ['Team','Knowledge','Usage','Settings','Work']){await page.getByRole('navigation',{name:'Phone navigation'}).getByRole('button',{name,exact:true}).click();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}
+ await page.setViewportSize({width:390,height:844});for(const name of ['Team','Reach','Usage','Settings','Work']){await page.getByRole('navigation',{name:'Phone navigation'}).getByRole('button',{name,exact:true}).click();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}
  if (await page.getByRole('button',{name:'Work history',exact:true}).isVisible()) await page.getByRole('button',{name:'Work history',exact:true}).click();
  await page.getByRole('region',{name:'Work history'}).getByRole('button',{name:new RegExp(item.title)}).click(); await expect(page.getByRole('heading',{name:item.title,exact:true})).toBeVisible(); expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  expect(errors).toEqual([]);
@@ -45,7 +45,7 @@ test('sign-in stays available when workspace reads require authentication', asyn
  await page.route('**/api/v1/account', route => route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({enabled:true,authenticated:false,shared:true,bootstrap_available:false})}));
  await page.route('**/api/v1/cases?*', route => route.fulfill({status:401,contentType:'application/json',body:JSON.stringify({detail:'Sign in to view this workspace.'})}));
  await page.goto('/?view=team');
- await page.getByRole('button',{name:'Sign in to Relay',exact:true}).click();
- await expect(page.getByRole('heading',{name:'Sign in',exact:true})).toBeVisible();
- await expect(page.getByLabel('Username',{exact:true})).toBeVisible();
+ await expect(page.getByRole('heading',{name:'Sign in with your phone',exact:true})).toBeVisible();
+ await expect(page.getByLabel('Phone number')).toBeVisible();
+ await expect(page.getByLabel('Username',{exact:true})).toHaveCount(0);
 });

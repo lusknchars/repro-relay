@@ -155,8 +155,8 @@ export function Reach() {
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-surface-2/40 p-4">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-base font-semibold">Reach</h2>
-            <Badge>Team follow-ups</Badge>
+            <h2 className="text-base font-semibold">Daily follow-ups</h2>
+            <Badge>Calls & todos</Badge>
           </div>
           <p className="mt-1 text-xs text-muted">
             Turn call notes into owned actions. Keep your todos and message
@@ -270,7 +270,7 @@ export function Reach() {
             {feed.data && !rows.length && (
               <p className="py-6 text-sm text-muted">
                 No open follow-ups for this day. Add a todo or record a request
-                with the call tool below.
+                with the call tool in Team & call setup.
               </p>
             )}
             {feed.data?.truncated && (
@@ -322,7 +322,7 @@ export function Reach() {
                 </label>
                 {!item.members.length && (
                   <p className="text-xs text-muted">
-                    Enable a communication profile below to assign an owner.
+                    Enable a communication profile in Team to assign an owner.
                     Case-linked items use teammates from that project.
                   </p>
                 )}
@@ -386,7 +386,7 @@ export function Reach() {
                       const url = new URL(location.href);
                       url.search = "";
                       url.hash = "";
-                      url.searchParams.set("view", "team");
+                      url.searchParams.set("view", "reach");
                       url.searchParams.set("reach", item.id);
                       url.searchParams.set("day", on);
                       void copy(url.toString());
@@ -444,7 +444,7 @@ export function Reach() {
               Hermes can suggest actions; decisions stay here.
             </p>
             <p>
-              For a call, select its case and participant in Call context below.
+              For a call, select its case and participant in Team → Call context.
               Use{" "}
               <code>
                 ./relay reach call --case CASE_ID --member MEMBER_UUID --consent

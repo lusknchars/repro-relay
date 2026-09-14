@@ -1,5 +1,7 @@
 # Accounts and returning to shared work
 
+Phone sign-in is now the primary account entry. See [setup and current limits](PHONE-SIGN-IN.md). Existing username accounts described below remain available through a secondary action.
+
 Relay supports one shared team per installation. Accounts attach to the existing local workspace, preserving cases, investigation results and saved audits. The temporary hosted guest beta continues to isolate each guest workspace.
 
 ## Create the owner account

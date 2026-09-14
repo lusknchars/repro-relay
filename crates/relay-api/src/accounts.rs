@@ -1,4 +1,5 @@
 //! Accounts for one self-hosted team. Local mode remains trusted loopback access.
+mod phone;
 use crate::{
     ApiError, ApiResult, domain,
     hosting::{Hosting, Workspace, rate_limit},
@@ -102,6 +103,7 @@ fn available(c: &Hosting) -> ApiResult<()> {
 }
 pub fn routes() -> Router<PgPool> {
     Router::new()
+        .merge(phone::routes())
         .route("/account", get(profile).post(update_profile))
         .route("/account/register", post(register))
         .route("/account/login", post(login))
@@ -112,8 +114,10 @@ pub fn routes() -> Router<PgPool> {
         .route("/team/join", post(join))
         .route("/team/invites/{id}/revoke", post(revoke_invite))
         .route("/team/members/{id}/remove", post(remove_member))
+        .layer(Extension(phone::PhoneAuth::from_env()))
 }
-pub async fn profile(
+async fn profile(
+    Extension(phone_auth): Extension<phone::PhoneAuth>,
     State(pool): State<PgPool>,
     Extension(c): Extension<Hosting>,
     h: HeaderMap,
@@ -127,15 +131,15 @@ pub async fn profile(
             .await?;
     let Some(i) = identity(&pool, &h, &c).await? else {
         return Ok(Json(
-            json!({"enabled":true,"authenticated":false,"bootstrap_available":bootstrap && c.origin.is_none(),"shared":c.team}),
+            json!({"enabled":true,"authenticated":false,"bootstrap_available":bootstrap && c.origin.is_none(),"shared":c.team,"phone_auth":phone_auth.status()}),
         ));
     };
-    let r = sqlx::query("SELECT username,name,bio FROM relay_accounts WHERE id=$1")
+    let r = sqlx::query("SELECT username,name,bio,phone FROM relay_accounts WHERE id=$1")
         .bind(&i.id)
         .fetch_one(&pool)
         .await?;
     Ok(Json(
-        json!({"enabled":true,"authenticated":true,"shared":c.team,"role":i.role,"profile":{"id":i.id,"username":r.get::<String,_>("username"),"name":r.get::<String,_>("name"),"bio":r.get::<String,_>("bio")}}),
+        json!({"enabled":true,"authenticated":true,"shared":c.team,"phone_auth":phone_auth.status(),"role":i.role,"profile":{"id":i.id,"username":r.get::<String,_>("username"),"name":r.get::<String,_>("name"),"bio":r.get::<String,_>("bio"),"phone":r.get::<Option<String>,_>("phone")}}),
     ))
 }
 #[derive(Deserialize)]
@@ -362,6 +366,7 @@ struct ProfileInput {
     bio: String,
 }
 async fn update_profile(
+    Extension(phone_auth): Extension<phone::PhoneAuth>,
     State(pool): State<PgPool>,
     Extension(c): Extension<Hosting>,
     h: HeaderMap,
@@ -376,7 +381,7 @@ async fn update_profile(
         .bind(i.id)
         .execute(&pool)
         .await?;
-    profile(State(pool), Extension(c), h).await
+    profile(Extension(phone_auth), State(pool), Extension(c), h).await
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

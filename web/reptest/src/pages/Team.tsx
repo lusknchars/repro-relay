@@ -1,10 +1,9 @@
-import { Reach } from "@/components/reach";
+import { PhoneSignIn } from "@/components/phone-sign-in";
 import { Contributions } from "@/components/contributions";
 import { TeamCommunication } from "@/components/team-communication";
 import type { ArchitectureRecord } from "./Architecture";
 import { useState } from "react";
-import { ArrowLeft, LogIn, UserPlus } from "lucide-react";
-import { useTheme } from "@/theme/ThemeProvider";
+import { ArrowLeft } from "lucide-react";
 import { Badge, Button, Input } from "@/components/ui";
 import {
   api,
@@ -31,7 +30,6 @@ export function TeamPage({
   onRegistered?: () => void;
   onArchitecture?: () => void;
 }) {
-  const { resolvedMode } = useTheme();
   const architecture = useLoad(
     () =>
       accountOnly
@@ -99,7 +97,6 @@ export function TeamPage({
       <p role="status" className="text-sm text-ok">
         {notice}
       </p>
-      {!accountOnly && <Reach />}
       {!accountOnly && <Contributions />}
       {!accountOnly && <TeamCommunication />}
       {!accountOnly && architecture.data && (
@@ -144,43 +141,22 @@ export function TeamPage({
           Accounts are unavailable in this workspace mode.
         </p>
       ) : !account.authenticated && mode === "choose" ? (
-        <section className="mx-auto grid w-full max-w-[320px] gap-4 py-8 text-center">
-          <div className="mb-7 flex items-center justify-center gap-2.5">
-            <img
-              src={`/brand/repro-relay-mark-${resolvedMode === "dark" ? "white" : "black"}.png`}
-              alt=""
-              width={32}
-              height={32}
-              className="h-8 w-8 object-contain"
-            />
-            <span className="text-xl font-semibold tracking-tight">
-              Repro Relay
-            </span>
-          </div>
-          <h2 className="mb-1 text-sm font-medium">
-            Choose a way to sign in or sign up
-          </h2>
-          <Button
-            variant="outline"
-            className="h-12 w-full justify-center rounded-lg bg-surface text-foreground"
-            onClick={() => setMode("login")}
-          >
-            <LogIn className="h-4 w-4" aria-hidden /> Sign in to Relay
-          </Button>
-          <Button
-            variant="outline"
-            className="h-12 w-full justify-center rounded-lg bg-surface text-foreground"
-            onClick={() => setMode("register")}
-          >
-            <UserPlus className="h-4 w-4" aria-hidden />{" "}
-            {account.bootstrap_available ? "Create account" : "Join your team"}
-          </Button>
-          <p className="mt-3 text-xs leading-relaxed text-muted">
-            {account.shared
-              ? "Use your account for this team workspace."
-              : "Your account stays on this installation. Sign in here to manage your profile and team."}
-          </p>
-        </section>
+        <PhoneSignIn
+          account={account}
+          invite={invite}
+          onPassword={() => setMode("login")}
+          onComplete={(created) => {
+            setInvite("");
+            const url = new URL(location.href);
+            url.hash = "";
+            history.replaceState(null, "", url);
+            accountState.refresh();
+            workspace.refresh();
+            team.refresh();
+            setNotice("Account connected.");
+            if (created) onRegistered?.();
+          }}
+        />
       ) : !account.authenticated ? (
         <form
           className="mx-auto grid w-full max-w-[320px] gap-4 py-5"
@@ -299,7 +275,7 @@ export function TeamPage({
             <h2 className="text-base font-semibold">{account.profile?.name}</h2>
             <Badge>{account.role}</Badge>
             <span className="text-sm text-muted">
-              @{account.profile?.username}
+              {account.profile?.phone || `@${account.profile?.username}`}
             </span>
           </div>
           {account.session_persistent === false && (
@@ -345,7 +321,8 @@ export function TeamPage({
                     className="flex flex-wrap justify-between gap-2 py-3 text-sm"
                   >
                     <span>
-                      {m.name} · @{m.username}
+                      {m.name}
+                      {!m.username.startsWith("phone_") && ` · @${m.username}`}
                     </span>
                     <Badge>{m.role}</Badge>
                   </li>

@@ -58,11 +58,12 @@ export type RunSummary = Pick<
 export type Account = {
   enabled: boolean;
   authenticated: boolean;
+  phone_auth?: { available: boolean; provider: string };
   session_persistent?: boolean;
   bootstrap_available?: boolean;
   shared?: boolean;
   role?: string;
-  profile?: { id: string; username: string; name: string; bio: string };
+  profile?: { id: string; username: string; name: string; bio: string; phone?: string | null };
 };
 export type Runner = { available: boolean; reason?: string };
 export function useLoad<T>(

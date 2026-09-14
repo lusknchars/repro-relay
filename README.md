@@ -22,7 +22,7 @@ From your checkout, run:
 ./relay setup
 ```
 
-On macOS this installs frontend dependencies, starts PostgreSQL, builds the native desktop app and opens it. Click the account button at the top right to sign in or create the first owner's account. Sign-in stays inside the app. Later accounts need a team invitation.
+On macOS this installs frontend dependencies, starts PostgreSQL, builds the native desktop app and opens it. Click the account button at the top right to sign in or create the first owner's account. Sign-in stays inside the app. Phone sign-in uses a verification code after the installation owner connects [Twilio Verify](docs/PHONE-SIGN-IN.md); existing username accounts remain available through a secondary entry. Later accounts need a team invitation.
 
 Source builds require Python 3.9+, Node 24+, Rust stable, and Docker with Compose. macOS desktop builds also require Xcode command-line tools. Setup lists missing prerequisites. It does not install system software, start a model, or create external accounts.
 

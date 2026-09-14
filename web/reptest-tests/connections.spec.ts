@@ -193,7 +193,13 @@ test("new account opens a skippable team guide and Settings can replay it withou
   await page.getByRole("button", { name: /^Account:/ }).click();
   const dialog = page.getByRole("dialog", { name: "Relay account" });
   await dialog
-    .getByRole("button", { name: "Create account", exact: true })
+    .getByRole("button", {
+      name: "Use an existing username account",
+      exact: true,
+    })
+    .click();
+  await dialog
+    .getByRole("button", { name: "Create an account", exact: true })
     .click();
   await dialog.getByLabel("Username", { exact: true }).fill("guide");
   await dialog
@@ -234,7 +240,9 @@ test("new account opens a skippable team guide and Settings can replay it withou
   await page.goto("/?view=settings");
   await page.getByRole("button", { name: "Guide me through Relay" }).click();
   await guide.getByRole("button", { name: "Next", exact: true }).click();
-  await page.getByRole("button", { name: "Reviewed project knowledge", exact: false }).click();
+  await page
+    .getByRole("button", { name: "Reviewed project knowledge", exact: false })
+    .click();
   await expect(page).toHaveURL(/view=knowledge/);
   await expect(guide).not.toBeVisible();
   expect(writes).toBe(1);

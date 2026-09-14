@@ -4,7 +4,7 @@ test("Reach todos, decisions and local links survive reload", async ({
   page,
 }) => {
   const title = `Reach todo ${Date.now()}`;
-  await page.goto("/?view=team");
+  await page.goto("/?view=reach");
   const reach = page.getByRole("region", { name: "Reach", exact: true });
   await reach.getByLabel("New Reach todo").fill(title);
   await reach.getByRole("button", { name: "Add todo", exact: true }).click();
@@ -30,7 +30,7 @@ test("Reach todos, decisions and local links survive reload", async ({
   const item = feed.items.find((i: any) => i.title === title);
   expect(item.action.status).toBe("done");
   expect(item.action.delivery_status).toBe("not_sent");
-  await page.goto(`/?view=team&reach=${item.id}&day=${day}`);
+  await page.goto(`/?view=reach&reach=${item.id}&day=${day}`);
   await expect(reach.getByLabel("Reach action")).toHaveValue(
     `${title} · check Windows`,
   );
@@ -62,7 +62,7 @@ test("Reach rejects review after the source changed", async ({ page }) => {
       })
     ).ok(),
   ).toBeTruthy();
-  await page.goto(`/?view=team&reach=calendar-${id}&day=${day}`);
+  await page.goto(`/?view=reach&reach=calendar-${id}&day=${day}`);
   const reach = page.getByRole("region", { name: "Reach", exact: true });
   await expect(reach.getByLabel("Reach action")).toHaveValue(title);
   expect(
@@ -76,4 +76,47 @@ test("Reach rejects review after the source changed", async ({ page }) => {
   await expect(reach.getByRole("alert")).toContainText(
     "source or team preferences changed",
   );
+});
+
+test("Reach is a primary page and old Team item links redirect to it", async ({
+  page,
+}) => {
+  await page.goto("/?view=team");
+  await expect(
+    page.getByRole("region", { name: "Reach", exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("complementary", { name: "Primary navigation" })
+    .getByRole("button", { name: "Reach", exact: true })
+    .click();
+  await expect(page).toHaveURL(/view=reach/);
+  await expect(
+    page.getByRole("heading", { name: "Reach", exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Reach", exact: true }),
+  ).toBeVisible();
+  await page.goto("/?view=team&reach=calendar-previous-link");
+  await expect(page).toHaveURL(/view=reach/);
+  await page
+    .getByRole("complementary", { name: "Primary navigation" })
+    .getByRole("button", { name: "Team", exact: true })
+    .click();
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Team", exact: true }),
+  ).toBeVisible();
+  await expect(page).not.toHaveURL(/reach=/);
+  await page.setViewportSize({ width: 320, height: 740 });
+  await expect(
+    page
+      .getByRole("navigation", { name: "Phone navigation" })
+      .getByRole("button", { name: "Reach", exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
 });

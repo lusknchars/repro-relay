@@ -8,6 +8,7 @@ import { MonitoringPage } from "@/pages/Monitoring";
 import { CalendarPage } from "@/pages/Calendar";
 import { WorkPage } from "@/pages/Work";
 import { KnowledgePage } from "@/pages/Knowledge";
+import { ReachPage } from "@/pages/Reach";
 import { TeamPage } from "@/pages/Team";
 import { UsagePage } from "@/pages/Usage";
 import { SettingsPage } from "@/pages/Settings";
@@ -17,10 +18,15 @@ import { WorkspaceGuide, guideSteps } from "@/components/workspace-guide";
 
 function Root() {
   const [route, setRoute] = useState<Route>(() => {
-    const view = new URLSearchParams(location.search).get("view");
+    const params = new URLSearchParams(location.search);
+    const view =
+      params.get("reach") && params.get("view") === "team"
+        ? "reach"
+        : params.get("view");
     return location.hash.startsWith("#invite=")
       ? "team"
       : [
+            "reach",
             "team",
             "knowledge",
             "usage",
@@ -37,6 +43,7 @@ function Root() {
     const url = new URL(location.href);
     url.searchParams.set("view", route);
     if (route !== "settings") url.searchParams.delete("connection");
+    if (route !== "reach") url.searchParams.delete("reach");
     history.replaceState(null, "", url);
   }, [route]);
   const [customizer, setCustomizer] = useState(false);
@@ -81,6 +88,7 @@ function Root() {
         onOpenAccount={() => setAccountOpen(true)}
       >
         {route === "work" && <WorkPage />}
+        {route === "reach" && <ReachPage />}
         {route === "monitoring" && <MonitoringPage onWork={openWork} />}
         {route === "architecture" && (
           <ArchitecturePage
@@ -132,7 +140,7 @@ function Root() {
         ref={accountDialog}
         aria-label="Relay account"
         onClose={() => setAccountOpen(false)}
-        className="fixed inset-0 m-auto max-h-[90dvh] w-[calc(100%-2rem)] max-w-[480px] overflow-y-auto rounded-xl border border-border bg-background p-0 text-foreground shadow-2xl backdrop:bg-black/60"
+        className="fixed inset-0 m-auto max-h-[90dvh] w-[calc(100%-2rem)] max-w-[480px] overflow-y-auto rounded-xl border border-border bg-surface p-0 text-foreground shadow-2xl backdrop:bg-black/60"
       >
         <button
           autoFocus
