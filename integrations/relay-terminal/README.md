@@ -10,6 +10,8 @@ Run these commands from the Repro Relay checkout. Python 3 and Git are enough fo
 
 `doctor` reads the real API and Hermes connection. Terminal readiness is separate from runtime readiness. This CLI does not install Hermes or turn the existing context monitor into a coding agent.
 
+For the additional Pi terminal harness, run `./relay pi doctor` and `./relay pi start`. Pi reads recorded context audits through Relay tools; `/relay-review` supplies the latest evidence to your selected model. Its session, authentication and usage are separate from Hermes. See [Pi setup and scope](../pi-harness/README.md).
+
 ## Investigate a case
 
 ```sh

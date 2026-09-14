@@ -1,7 +1,7 @@
 export PATH := $(HOME)/.cargo/bin:$(PATH)
 CARGO := $(or $(wildcard $(HOME)/.cargo/bin/cargo),cargo)
 export DATABASE_URL ?= postgres://relay:relay_local_only@127.0.0.1:55478/relay
-.PHONY: setup dev api check db desktop desktop-build plow-check context-check tools-check terminal-check
+.PHONY: setup dev api check db desktop desktop-build plow-check context-check tools-check terminal-check pi-check
 setup:
 	npm ci --prefix web
 	npm exec --prefix web -- playwright install chromium
@@ -22,6 +22,7 @@ check:
 	$(MAKE) context-check
 	$(MAKE) tools-check
 	$(MAKE) terminal-check
+	$(MAKE) pi-check
 	python3 -m unittest discover -s integrations/hermes-assessment -p 'test_*.py' -v
 	$(CARGO) fmt --all --check
 	$(CARGO) clippy -p relay-api --all-targets -- -D warnings
@@ -51,3 +52,6 @@ tools-check:
 
 terminal-check:
 	python3 -m unittest discover -s integrations/relay-terminal -p 'test_*.py' -v
+
+pi-check:
+	python3 -m unittest discover -s integrations/pi-harness -p 'test_*.py' -v

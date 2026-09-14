@@ -4,6 +4,8 @@ Repro Relay uses the authenticated `@paceui/ultimate-dashboard-template` source 
 
 ## Shared application
 
+Connections now offers a Pi / Codex terminal setup selector within the existing template. Pi's launch command opens a dedicated evidence-review session with `/relay` and `/relay-review`. Provider sign-in stays in Pi; the web view does not infer installation or readiness from a copied command. Connection checks, resume instructions and scope are expandable, and Hermes CLI controls remain separately labeled. Pi usage stays in Pi's session, outside Hermes charts. See [the Pi integration](../integrations/pi-harness/README.md).
+
 The native desktop also has [repository tools](DESKTOP-DEVELOPER-WORKSPACE.md) in an expandable bottom bar, available even while the local service is offline. A native folder picker selects the checkout; Changes, Worktrees and Connection keep Git context and runtime availability separate. macOS Terminal opens in that checkout. The panel uses existing theme tokens, keyboard commands and reduced-motion behavior, without adding a dashboard template or browser shell endpoint.
 
 Web and Tauri render the same React, TypeScript, Vite, Tailwind application. PaceUI supplies the sidebar, sticky top bar, page title, footer, AI dashboard composition, statistic cards, chart cards, and table layout. Their source is in `web/src/components/templates/ultimate-dashboard` and `web/src/components/blocks/dashboard`.

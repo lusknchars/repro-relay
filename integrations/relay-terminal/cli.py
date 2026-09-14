@@ -224,6 +224,13 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog='relay', description='Relay investigations and approved repairs from your terminal.')
     parser.add_argument('--api', default='http://127.0.0.1:8178/api/v1')
     sub = parser.add_subparsers(dest='action', required=True)
+    pi = sub.add_parser('pi', help='Connect the Pi terminal harness to Relay evidence')
+    pi_actions = pi.add_subparsers(dest='pi_action', required=True)
+    pi_actions.add_parser('doctor', help='Check Pi installation and the local evidence connection; no model call')
+    pi_start = pi_actions.add_parser('start', help='Open Pi with Relay tools and its own local session profile')
+    pi_start.add_argument('--provider', help='Optional Pi provider name; use /login inside Pi')
+    pi_start.add_argument('--model', help='Optional Pi model name; use /model inside Pi')
+    pi_start.add_argument('--resume', action='store_true', help='Continue the latest Relay Pi session')
     sub.add_parser('doctor', help='Check the API and investigator connection without starting work')
     sub.add_parser('cases', help='List saved cases')
     case = sub.add_parser('case', help='Inspect case, runs, evidence and repair plans'); case.add_argument('case', type=identifier)
@@ -266,6 +273,9 @@ def main(argv=None):
     if hasattr(args, 'seconds') and not 1 <= args.seconds <= 3600:
         parser.error('--seconds must be between 1 and 3600')
     api = API(args.api)
+    if args.action == 'pi':
+        from pi_harness import run
+        return run(args)
     if args.action == 'doctor':
         emit({'health': api.call('/health'), 'investigator': api.call('/runner'),
               'terminal': 'ready', 'repair': 'Checked by the server at stage admission. Requires isolated_repair/protected_verification and protected_acceptance.',
