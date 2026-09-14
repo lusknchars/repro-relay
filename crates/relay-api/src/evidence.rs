@@ -170,6 +170,7 @@ enum CaptureMode {
     Fixture,
     RuntimeReported,
     HumanRecorded,
+    LocalValidation,
 }
 impl Environment {
     fn validate(&self) -> ApiResult<()> {

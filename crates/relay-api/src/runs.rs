@@ -915,7 +915,7 @@ pub async fn tick(pool: &PgPool, runner: &Runner) -> ApiResult<()> {
                 );
                 if matches!(
                     value["status"].as_str(),
-                    Some("completed" | "failed" | "cancelled")
+                    Some("completed" | "failed" | "cancelled" | "interrupted")
                 ) {
                     run.output = value["output"]
                         .as_str()
@@ -926,6 +926,7 @@ pub async fn tick(pool: &PgPool, runner: &Runner) -> ApiResult<()> {
                         run.note("completed",if run.context_stale {"Hermes finished against earlier context. Review this result against the current case."} else {"Hermes finished. Review its proposed result; this does not establish reproduction or a verified fix."});
                     },
                     "failed" => run.note("failed","Hermes reported a failed run. Inspect the runtime for details."),
+                    "interrupted" => run.note("failed","Hermes reported that the run was interrupted before it settled. Any retained output is partial; no automatic retry was started."),
                     "cancelled" => run.note("cancelled","Hermes confirmed that the run stopped."),
                     "waiting_for_approval" if !run.stop_requested => run.note("waiting_for_approval","Hermes is waiting for approval. Review the request in the trusted runtime, or stop this run."),
                     "queued" | "started" | "running" | "stopping" | "waiting_for_approval" => {

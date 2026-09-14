@@ -87,6 +87,92 @@ async fn memories(app: &Router) -> Value {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn local_validation_capture_preserves_artifact_and_journal_provenance(pool: PgPool) {
+    let app = relay_api::app(pool.clone());
+    let case = ok(&app,"POST","/cases","",json!({"title":"Local capture provenance","project":"Evidence fixtures","url":"https://example.com","description":"Inspect captured test output","expected":"Keep local validation separate from Hermes","build":"fixture-build"}),201).await;
+    let case_id = case["id"].as_str().unwrap();
+    let now = chrono::Utc::now().to_rfc3339();
+    let run = ok(&app,"POST",&format!("/cases/{case_id}/inspections"),"local-capture",json!({"revision":1,"inspector":"Local test fixture","summary":"Captured local output fixture; no live browser exercised.","command":["fixture-capture"],"exit_code":0,"started_at":now,"finished_at":now}),201).await;
+    let run_id = run["id"].as_str().unwrap();
+    let mut environment = env();
+    environment["capture_mode"] = json!("local_validation");
+    let content = "Local capture fixture: button Start investigation\n";
+    let artifact = ok(&app,"POST",&format!("/runs/{run_id}/artifacts"),"local-artifact",json!({"captured_at":now,"name":"page-snapshot.txt","media_type":"text/plain","content":content,"environment":environment}),201).await;
+    let mut captured = event(1);
+    captured["captured_at"] = json!(now);
+    captured["producer"] = json!("local-capture-fixture");
+    captured["environment"] = environment.clone();
+    captured["artifact_ids"] = json!([artifact["id"]]);
+    captured["data"] = json!({"hermes_executed":false});
+    let journal = ok(
+        &app,
+        "POST",
+        &format!("/runs/{run_id}/journal"),
+        "local-event",
+        captured,
+        201,
+    )
+    .await;
+
+    let restarted = relay_api::app(pool);
+    let stored_artifact = ok(
+        &restarted,
+        "GET",
+        &format!("/artifacts/{}", artifact["id"].as_str().unwrap()),
+        "",
+        Value::Null,
+        200,
+    )
+    .await;
+    assert_eq!(stored_artifact["environment"], environment);
+    assert_eq!(stored_artifact["content"], content);
+    assert_eq!(
+        stored_artifact["sha256"],
+        format!("{:x}", Sha256::digest(content.as_bytes()))
+    );
+    let stored_journal = ok(
+        &restarted,
+        "GET",
+        &format!("/runs/{run_id}/journal"),
+        "",
+        Value::Null,
+        200,
+    )
+    .await;
+    assert_eq!(stored_journal["items"][0], journal);
+    assert_eq!(stored_journal["items"][0]["environment"], environment);
+    assert_eq!(
+        stored_journal["items"][0]["producer"],
+        "local-capture-fixture"
+    );
+    assert_eq!(stored_journal["items"][0]["data"]["hermes_executed"], false);
+    let runs = ok(
+        &restarted,
+        "GET",
+        &format!("/cases/{case_id}/runs"),
+        "",
+        Value::Null,
+        200,
+    )
+    .await;
+    assert_eq!(runs[0]["execution_kind"], "local_validation");
+    assert_eq!(runs[0]["context"]["inspection"]["hermes_executed"], false);
+    assert!(runs[0]["remote_id"].is_null());
+    assert_eq!(
+        case,
+        ok(
+            &restarted,
+            "GET",
+            &format!("/cases/{case_id}"),
+            "",
+            Value::Null,
+            200
+        )
+        .await
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn journal_is_durable_ordered_by_receipt_and_preserves_late_out_of_order_events(
     pool: PgPool,
 ) {

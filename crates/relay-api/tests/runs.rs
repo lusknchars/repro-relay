@@ -163,6 +163,46 @@ async fn run_reconnect_preserves_output_without_publishing_evidence(pool: PgPool
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn interrupted_runtime_preserves_partial_result_and_releases_slot(pool: PgPool) {
+    let f = Fixture::new().await;
+    let app = relay_api::app_with_runner(pool.clone(), Hosting::local(), f.runner.clone());
+    let case = report(&app).await;
+    let admitted = start(&app, &case, "interrupted").await;
+    runs::tick(&pool, &f.runner).await.unwrap();
+    f.state.lock().unwrap().status = "interrupted".into();
+    runs::tick(&pool, &f.runner).await.unwrap();
+
+    let restarted = relay_api::app_with_runner(pool.clone(), Hosting::local(), f.runner.clone());
+    let result = latest(&restarted, &case).await;
+    assert_eq!(result["status"], "failed");
+    assert!(result["detail"].as_str().unwrap().contains("interrupted"));
+    assert_eq!(result["remote_id"], "run_fixture");
+    assert_eq!(result["usage"]["total_tokens"], 42);
+    assert!(result["output"].as_str().unwrap().contains("[redacted]"));
+    assert!(!result.to_string().contains("fixture-secret-key"));
+    assert_eq!(
+        result["events"].as_array().unwrap().last().unwrap()["kind"],
+        "run.failed"
+    );
+
+    // Polling and the original admission identity must never restart interrupted work.
+    runs::tick(&pool, &f.runner).await.unwrap();
+    let repeated = start(&restarted, &case, "interrupted").await;
+    assert_eq!(repeated["id"], admitted["id"]);
+    assert_eq!(repeated["status"], "failed");
+    assert_eq!(f.state.lock().unwrap().posts, 1);
+    assert_eq!(f.state.lock().unwrap().polls, 1);
+
+    // A new explicit request can use the released workspace slot.
+    let next = start(&restarted, &case, "new-request").await;
+    assert_ne!(next["id"], admitted["id"]);
+    assert_eq!(next["status"], "queued");
+    let (_, current) = call(&app, "GET", &format!("/cases/{case}"), "", Value::Null).await;
+    assert_eq!(current["revision"], 1);
+    assert_eq!(current["observations"], json!([]));
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn admission_is_serialized_and_changed_context_never_dispatches(pool: PgPool) {
     let f = Fixture::new().await;
     let app = relay_api::app_with_runner(pool.clone(), Hosting::local(), f.runner.clone());

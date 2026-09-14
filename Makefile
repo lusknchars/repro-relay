@@ -22,6 +22,7 @@ check:
 	$(MAKE) context-check
 	$(MAKE) tools-check
 	$(MAKE) terminal-check
+	python3 -m unittest discover -s integrations/hermes-assessment -p 'test_*.py' -v
 	$(CARGO) fmt --all --check
 	$(CARGO) clippy -p relay-api --all-targets -- -D warnings
 	$(CARGO) test -p relay-api

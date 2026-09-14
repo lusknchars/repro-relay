@@ -1,6 +1,8 @@
 # Hermes investigation runner
 
-Updated September 12, 2026.
+Updated September 14, 2026.
+
+The [dedicated assessment setup](../integrations/hermes-assessment/README.md) uses pinned official Hermes with captured-evidence MCP tools. Provider sign-in and a real model run remain required before claiming live integration. Native `interrupted` run status is terminal failure in Relay, with partial output retained and no automatic resubmission. The optional isolated-repair/protected-verification extension is not advertised by the pinned native runtime.
 
 The Rust API coordinates one investigation at a time in the local workspace. Web and Tauri use the same commands and poll saved state every three seconds while Agent context is open. Closing either client does not stop execution. PostgreSQL stores the original request, runtime identity, remote run ID, state changes, context, answer, and reported usage.
 

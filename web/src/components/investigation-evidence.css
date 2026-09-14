@@ -12,3 +12,12 @@
 .ie-inspector dd { margin: 0; overflow-wrap: anywhere; }
 .ie-digest { font-family: monospace; }
 @media (max-width: 480px) { .ie-inspector dl { grid-template-columns: 1fr; gap: .2rem; } .ie-inspector dd { margin-bottom: .5rem; } }
+.ie-triage { padding: 1rem; margin: 1rem 0; }
+.ie-triage h3 { margin: 0 0 .5rem; }
+.ie-test-filters { display: flex; flex-wrap: wrap; gap: .5rem; margin: .75rem 0; }
+.ie-test-filters button { min-height: 44px; }
+.ie-test-filters button[aria-pressed="true"] { border-color: var(--primary); background: var(--surface); box-shadow: inset 0 0 0 1px var(--primary); }
+.ie-test-record { padding: 1rem 0; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
+.ie-test-record > button { min-height: 44px; }
+.ie-record { scroll-margin-top: 88px; }
+.ie-record:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }

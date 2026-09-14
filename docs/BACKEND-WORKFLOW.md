@@ -44,6 +44,8 @@ Raw journal events and artifacts do not increment the case revision. Findings re
 
 ## Evidence and findings
 
+Test triage uses explicit `test_result` journal events with `data: {test_id,name,status,detail?}`. Status is `passed`, `failed`, `blocked`, `not_run`, or `running`; highest producer sequence wins for a producer/test ID. This is reported evidence, never inferred from narrative or generic logs. The `local_validation` capture mode preserves local-tool receipts separately from runtime, human and fixture attribution. See the [assessment workflow](../integrations/hermes-assessment/README.md).
+
 All paths are relative to `/api/v1`. Writes require `Idempotency-Key` unless a version-bound command explicitly specifies otherwise.
 
 | API | Persisted behavior |
