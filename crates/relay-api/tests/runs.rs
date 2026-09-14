@@ -541,6 +541,11 @@ async fn guest_cannot_operate_or_read_local_runs_and_missing_runtime_is_explicit
     for (method, path, expected) in [
         ("GET", format!("/cases/{case}/runs"), 404),
         (
+            "GET",
+            format!("/runs/{}/activity", run["id"].as_str().unwrap()),
+            404,
+        ),
+        (
             "POST",
             format!("/runs/{}/stop", run["id"].as_str().unwrap()),
             403,
@@ -642,4 +647,86 @@ async fn usage_receipts_survive_partial_updates_and_restart(pool: PgPool) {
         result["usage_audit"]["fields_observed_at"]["cost_usd"],
         first["usage_audit"]["fields_observed_at"]["cost_usd"]
     );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn activity_is_durable_idempotent_scoped_and_append_only(pool: PgPool) {
+    let f = Fixture::new().await;
+    let app = relay_api::app_with_runner(pool.clone(), Hosting::local(), f.runner.clone());
+    let case = report(&app).await;
+    let run = start(&app, &case, "ledger").await;
+    let id = run["id"].as_str().unwrap();
+    let path = format!("/runs/{id}/activity");
+    start(&app, &case, "ledger").await;
+    let (_, first) = call(&app, "GET", &path, "", Value::Null).await;
+    assert_eq!(first["items"].as_array().unwrap().len(), 1);
+    assert_eq!(first["items"][0]["event_type"], "run.queued");
+    runs::tick(&pool, &f.runner).await.unwrap();
+    runs::tick(&pool, &f.runner).await.unwrap();
+    let (_, before) = call(&app, "GET", &path, "", Value::Null).await;
+    // Repeated identical status/usage polls must not create ledger spam.
+    runs::tick(&pool, &f.runner).await.unwrap();
+    let (_, same) = call(&app, "GET", &path, "", Value::Null).await;
+    assert_eq!(before, same);
+    assert!(!same.to_string().contains("fixture-secret-key"));
+    assert!(!same.to_string().contains("request_body"));
+    assert!(!same.to_string().contains("runtime_identity"));
+    assert!(!same.to_string().contains("report"));
+    // Retain more than the legacy 128 embedded events. A correction back to
+    // an earlier cumulative value must remain a new event, not disappear.
+    for value in 0..140 {
+        sqlx::query("UPDATE investigation_runs SET payload=jsonb_set(payload,'{usage,cost_usd}',to_jsonb($2::integer)) WHERE id=$1")
+            .bind(id).bind(value % 2).execute(&pool).await.unwrap();
+    }
+    let restarted = relay_api::app(pool.clone());
+    let (_, page) = call(&restarted, "GET", &path, "", Value::Null).await;
+    assert_eq!(page["items"].as_array().unwrap().len(), 100);
+    let cursor = page["next_cursor"].as_i64().unwrap();
+    let (_, tail) = call(
+        &restarted,
+        "GET",
+        &format!("{path}?after={cursor}"),
+        "",
+        Value::Null,
+    )
+    .await;
+    assert!(tail["items"].as_array().unwrap().len() >= 40);
+    assert_eq!(tail["next_cursor"], Value::Null);
+    assert!(tail["items"][0]["sequence"].as_i64().unwrap() > cursor);
+    assert_eq!(
+        call(&app, "GET", &format!("{path}?after=-1"), "", Value::Null)
+            .await
+            .0,
+        422
+    );
+    assert_eq!(
+        call(&app, "GET", "/runs/missing/activity", "", Value::Null)
+            .await
+            .0,
+        404
+    );
+    assert!(
+        sqlx::query("UPDATE run_activity SET event_type='invented' WHERE run_id=$1")
+            .bind(id)
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    assert!(
+        sqlx::query("DELETE FROM run_activity WHERE run_id=$1")
+            .bind(id)
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    // Retention still permits deleting the enclosing workspace and its history.
+    sqlx::query("DELETE FROM workspaces WHERE id='local'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let remaining: i64 = sqlx::query_scalar("SELECT count(*) FROM run_activity")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(remaining, 0);
 }

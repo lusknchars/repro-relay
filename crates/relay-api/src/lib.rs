@@ -1,4 +1,5 @@
 pub mod accounts;
+pub mod activity;
 pub mod automation;
 pub mod autonomy;
 pub mod channels;
@@ -230,6 +231,7 @@ pub fn app_with_runner(pool: PgPool, hosting: Hosting, runner: runs::Runner) -> 
         .route("/cases/{id}/run-reviews", get(runs::reviews))
         .route("/runs/{id}/reviews", post(runs::review))
         .route("/runs/{id}/stop", post(runs::stop))
+        .route("/runs/{id}/activity", get(activity::list))
         .route("/runs/{id}/reconcile", post(runs::reconcile))
         .route("/health", get(health))
         .route(

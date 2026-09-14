@@ -18,7 +18,7 @@ type Team = {
     expires_at: string;
   }[];
 };
-export function TeamPage({ accountOnly = false }: { accountOnly?: boolean }) {
+export function TeamPage({ accountOnly = false, onRegistered }: { accountOnly?: boolean; onRegistered?: () => void }) {
   const { resolvedMode } = useTheme();
   const workspace = useWorkspace();
   // Sign-in must remain usable when workspace data requires authentication.
@@ -119,6 +119,7 @@ export function TeamPage({ accountOnly = false }: { accountOnly?: boolean }) {
                 const url = new URL(location.href);
                 url.hash = "";
                 history.replaceState(null, "", url);
+                onRegistered?.();
               }
               setNotice("Account connected.");
             });

@@ -1,7 +1,17 @@
 import { Button, Badge } from "@/components/ui";
 import { useWorkspace } from "@/lib/live";
 import { SettingsPage } from "./Settings";
-export function SetupPage({ onFinish }: { onFinish: () => void }) {
+export function SetupPage({
+  onFinish,
+  onAccount,
+  onKnowledge,
+  onGuide,
+}: {
+  onFinish: () => void;
+  onAccount: () => void;
+  onKnowledge: () => void;
+  onGuide: () => void;
+}) {
   const { data } = useWorkspace();
   return (
     <div className="grid gap-4">
@@ -17,7 +27,11 @@ export function SetupPage({ onFinish }: { onFinish: () => void }) {
         </Badge>
         <Button onClick={onFinish}>Open work</Button>
       </header>
-      <SettingsPage />
+      <SettingsPage
+        onAccount={onAccount}
+        onKnowledge={onKnowledge}
+        onGuide={onGuide}
+      />
     </div>
   );
 }

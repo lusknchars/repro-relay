@@ -27,8 +27,8 @@ check:
 	python3 -m unittest discover -s integrations/mem0-memory -p 'test_*.py' -v
 	python3 -m unittest discover -s integrations/hermes-assessment -p 'test_*.py' -v
 	$(CARGO) fmt --all --check
-	$(CARGO) clippy -p relay-api --all-targets -- -D warnings
-	$(CARGO) test -p relay-api
+	$(CARGO) clippy -p relay-core -p relay-api --all-targets -- -D warnings
+	$(CARGO) test -p relay-core -p relay-api
 	$(CARGO) build -p relay-api
 	npm run build --prefix web
 	npm run build:legacy --prefix web

@@ -3475,6 +3475,7 @@ dependencies = [
  "argon2",
  "axum",
  "chrono",
+ "relay-core",
  "reqwest",
  "rustls",
  "serde",
@@ -3488,6 +3489,14 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
+]
+
+[[package]]
+name = "relay-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

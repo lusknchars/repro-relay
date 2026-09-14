@@ -5,6 +5,7 @@ edition = "2024"
 license = "MIT"
 
 [dependencies]
+relay-core = { path = "../relay-core" }
 argon2 = { version = "0.6", features = ["getrandom"] }
 axum = "0.8"
 chrono = { version = "0.4", features = ["serde"] }

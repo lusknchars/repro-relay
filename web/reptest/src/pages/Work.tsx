@@ -70,7 +70,7 @@ function Detail({ item, onBack }: { item: Case; onBack: () => void }) {
       if (pane === "changes") return api(`/cases/${item.id}/repairs`);
       if (!run) return { items: [] };
       return api<EvidencePage>(
-        `/runs/${run.id}/${pane === "findings" ? "findings" : "journal"}?after=${after}`,
+        `/runs/${run.id}/${pane === "findings" ? "findings" : pane === "activity" ? "activity" : "journal"}?after=${after}`,
       );
     },
     [item.id, item.revision, run?.id, run?.version, pane, after],
@@ -130,7 +130,9 @@ function Detail({ item, onBack }: { item: Case; onBack: () => void }) {
           <span className="text-sm">
             {run
               ? `${run.execution_kind === "local_validation" ? "Local validation" : "Hermes"} · ${run.status}`
-              : runs.loading ? "Loading attempts…" : "No investigation started"}
+              : runs.loading
+                ? "Loading attempts…"
+                : "No investigation started"}
           </span>
           <Button
             size="sm"
@@ -336,24 +338,29 @@ function Detail({ item, onBack }: { item: Case; onBack: () => void }) {
             role="tablist"
             aria-label="Investigation evidence"
           >
-            {["findings", "changes", "tests", "activity", "context"].map(
-              (p) => (
-                <button
-                  key={p}
-                  role="tab"
-                  aria-selected={p === pane}
-                  onClick={() => setPane(p)}
-                  className={cn(
-                    "t-control rounded-md px-3 py-2 text-xs capitalize",
-                    p === pane
-                      ? "bg-accent-soft text-accent-text"
-                      : "text-muted hover:bg-surface-2",
-                  )}
-                >
-                  {p}
-                </button>
-              ),
-            )}
+            {[
+              "findings",
+              "changes",
+              "tests",
+              "activity",
+              "tools",
+              "context",
+            ].map((p) => (
+              <button
+                key={p}
+                role="tab"
+                aria-selected={p === pane}
+                onClick={() => setPane(p)}
+                className={cn(
+                  "t-control rounded-md px-3 py-2 text-xs capitalize",
+                  p === pane
+                    ? "bg-accent-soft text-accent-text"
+                    : "text-muted hover:bg-surface-2",
+                )}
+              >
+                {p}
+              </button>
+            ))}
           </div>
           {details.loading && <p role="status">Loading recorded evidence…</p>}
           {details.error && (
@@ -394,7 +401,8 @@ function Detail({ item, onBack }: { item: Case; onBack: () => void }) {
                             )}
                             {typeof e.data.status === "string" && (
                               <Badge tone="outline">
-                                Reported: {e.data.status}
+                                {pane === "activity" ? "State: " : "Reported: "}
+                                {e.data.status}
                               </Badge>
                             )}
                             {typeof e.data.detail === "string" && (
@@ -414,7 +422,9 @@ function Detail({ item, onBack }: { item: Case; onBack: () => void }) {
                         )}
                         <details className="text-xs text-muted">
                           <summary className="cursor-pointer">
-                            Inspect source receipt
+                            {pane === "activity"
+                              ? "Inspect activity record"
+                              : "Inspect source receipt"}
                           </summary>
                           <Records value={e} />
                         </details>
@@ -423,35 +433,22 @@ function Detail({ item, onBack }: { item: Case; onBack: () => void }) {
                         )}
                       </article>
                     ))}
-                  {pane === "activity" &&
-                    run?.events.map((e) => (
-                      <article
-                        key={e.sequence}
-                        className="rounded-md border border-border p-3 text-sm"
-                      >
-                        <span className="text-xs text-muted">
-                          {when(e.at)} · {e.kind}
-                        </span>
-                        <p>{e.detail}</p>
-                      </article>
-                    ))}
                   {!events.filter(
                     (e) => pane !== "tests" || e.event_type === "test_result",
-                  ).length &&
-                    pane !== "activity" && (
-                      <p className="rounded-md border border-border p-4 text-sm text-muted">
-                        No {pane} recorded for this attempt.
-                      </p>
-                    )}
+                  ).length && (
+                    <p className="rounded-md border border-border p-4 text-sm text-muted">
+                      No {pane} recorded for this attempt.
+                    </p>
+                  )}
                   <p className="text-xs text-muted">
-                    Evidence page starting after record {after} (up to 50
-                    entries). Test receipts retain their reported environment;
-                    model output alone is not a passing test.
+                    {pane === "activity"
+                      ? `Activity after record ${after}, up to 100 entries. Lifecycle and reported usage are saved together. Earlier runs begin with a migration snapshot.`
+                      : `Evidence after record ${after}, up to 50 entries. Test receipts retain their reported environment; model output alone is not a passing test.`}
                   </p>
                   <div className="flex gap-2">
                     {after > 0 && (
                       <Button size="sm" onClick={() => setAfter(0)}>
-                        First evidence page
+                        First page
                       </Button>
                     )}
                     {page?.next_cursor != null && (
@@ -459,7 +456,7 @@ function Detail({ item, onBack }: { item: Case; onBack: () => void }) {
                         size="sm"
                         onClick={() => setAfter(page.next_cursor!)}
                       >
-                        Next evidence page
+                        Next page
                       </Button>
                     )}
                   </div>

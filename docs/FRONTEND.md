@@ -6,6 +6,10 @@ The default web and Tauri clients use the supplied Reptest shell, theme and visu
 
 The account chooser follows the user-supplied Kiro screenshot: centered Relay branding, a short heading, and outlined sign-in/create-account choices. It uses existing theme tokens, not another dashboard template. The top-right profile control opens a native HTML dialog with keyboard dismissal and focus restoration. Desktop authentication uses the bounded native account transport; local accounts no longer open a browser. OAuth choices are omitted until backed by configured providers.
 
+Settings now groups connections by Agents, Models, Context and memory, and Communication. The selected connection has an accent border and shows its actual status. Plow + Latch has one primary connect action; terminal authorization details stay collapsed. Desktop requests Latch launch only after line verification and reports launch failure separately. New account registration opens a skippable tour of Team, Settings, Knowledge, Work and Usage; Settings can replay it. The guide makes no model calls or configuration writes.
+
+Work → Activity reads the durable run lifecycle/usage ledger with cursor pagination. Tools retains the source-event journal, Tests filters its test receipts, and existing evidence/review views remain. Migration snapshots are explicitly distinguished from historical events. See the [Rust execution protocol](architecture/RUST-EXECUTION-PROTOCOL.md) for the implemented boundary and remaining architecture changes.
+
 ## Previous client, retained for backend integration
 
 The following describes the retained client, not the new default prototype.

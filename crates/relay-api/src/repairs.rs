@@ -368,7 +368,7 @@ async fn command(
 }
 async fn finished(tx: &mut Tx<'_>, id: &str) -> ApiResult<()> {
     let run = runs::get(tx, id).await?;
-    if run.status != "completed" || runs::context_changed(tx, &run).await? {
+    if run.status.as_str() != "completed" || runs::context_changed(tx, &run).await? {
         return Err(ApiError::conflict(
             "A completed, current stage run is required.",
         ));

@@ -1,4 +1,4 @@
 [workspace]
-members = ["crates/relay-api", "web/src-tauri"]
+members = ["crates/relay-core", "crates/relay-api", "web/src-tauri"]
 default-members = ["crates/relay-api"]
 resolver = "2"

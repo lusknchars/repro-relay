@@ -11,15 +11,42 @@ import {
 } from "@/lib/live";
 import { cn } from "@/lib/utils";
 const connections = [
-  { id: "hermes", name: "Hermes", role: "Investigation runtime" },
+  {
+    id: "hermes",
+    name: "Hermes",
+    role: "Investigates reports and proposes changes",
+    group: "Agents",
+  },
   {
     id: "plow",
     name: "Plow + Latch",
     role: "Phone reports and approved delivery",
+    group: "Communication",
   },
-  { id: "pi", name: "Pi", role: "Local terminal harness" },
-  { id: "moonshot", name: "Moonshot / Kimi", role: "Model provider" },
-  { id: "mem0", name: "Mem0", role: "Optional private working notes" },
+  {
+    id: "pi",
+    name: "Pi",
+    role: "Reviews Relay evidence in your terminal",
+    group: "Agents",
+  },
+  {
+    id: "moonshot",
+    name: "Moonshot / Kimi",
+    role: "Model access for your configured Pi profile",
+    group: "Models",
+  },
+  {
+    id: "mem0",
+    name: "Mem0",
+    role: "Private working notes for new Pi sessions",
+    group: "Context and memory",
+  },
+] as const;
+const groups = [
+  "Agents",
+  "Models",
+  "Context and memory",
+  "Communication",
 ] as const;
 type Plow = {
   line_name?: string;
@@ -28,7 +55,15 @@ type Plow = {
   checked_at?: string;
   latch_advertised?: boolean;
 };
-export function SettingsPage() {
+export function SettingsPage({
+  onAccount,
+  onKnowledge,
+  onGuide,
+}: {
+  onAccount: () => void;
+  onKnowledge: () => void;
+  onGuide: () => void;
+}) {
   const workspace = useWorkspace();
   const [selected, setSelected] =
     useState<(typeof connections)[number]["id"]>("plow");
@@ -41,7 +76,37 @@ export function SettingsPage() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const connection = connections.find((c) => c.id === selected)!;
+  function status(id: (typeof connections)[number]["id"]) {
+    if (id === "hermes")
+      return workspace.error
+        ? "Status unavailable"
+        : workspace.loading && !workspace.data
+          ? "Checking runtime…"
+          : workspace.data?.runner.available
+            ? "Runtime available"
+            : "Runtime unavailable";
+    if (id === "plow")
+      return receipt?.grant_verified
+        ? "Line grant verified"
+        : plow.error
+          ? "Status unavailable"
+          : plow.loading && !plow.data
+            ? "Checking configuration…"
+            : plow.data?.configured
+              ? "Configured · check required"
+              : "Not connected";
+    if (id === "mem0")
+      return tools.error
+        ? "Preference unavailable"
+        : !tools.data
+          ? "Loading preference…"
+          : tools.data.mem0
+            ? "Selected for new Pi sessions"
+            : "Optional · disabled";
+    return "Check in your terminal";
+  }
   async function perform(name: string, fn: () => Promise<unknown>) {
+    if (busy) return;
     setBusy(name);
     setError("");
     setNotice("");
@@ -64,56 +129,82 @@ export function SettingsPage() {
       <header>
         <h1 className="text-xl font-semibold">Settings</h1>
         <p className="text-sm text-muted">
-          Connect the runtime, tools, and owner channel for this installation.
+          Manage what your agents use, what they remember, and how reports reach
+          you.
         </p>
       </header>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
+        <div className="grid gap-1">
+          <h2 className="text-sm font-semibold">Your account</h2>
+          <p className="text-xs text-muted">
+            {workspace.data?.account.profile?.name ||
+              "Sign in to manage your profile and team."}{" "}
+            Account sign-in is separate from tool access.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={onGuide}>Guide me through Relay</Button>
+          <Button onClick={onAccount}>Account settings</Button>
+        </div>
+      </div>
+      <p className="text-sm text-muted">
+        These connections work together. Selecting one below opens its settings;
+        it does not switch off your other tools.
+      </p>
       <div className="grid overflow-hidden rounded-lg border border-border bg-surface lg:grid-cols-[340px_1fr]">
         <section
           aria-label="Connections"
           className="border-b border-border lg:border-r lg:border-b-0"
         >
-          {connections.map((c) => (
-            <button
-              key={c.id}
-              onClick={() => {
-                setSelected(c.id);
-                setError("");
-                setNotice("");
-              }}
-              aria-current={selected === c.id ? "true" : undefined}
-              className={cn(
-                "t-control grid w-full gap-2 border-b border-l-2 border-border p-4 text-left hover:bg-surface-2",
-                selected === c.id
-                  ? "border-l-accent bg-accent-soft/40"
-                  : "border-l-transparent",
+          {groups.map((group) => (
+            <section key={group} aria-label={group}>
+              <h2 className="border-b border-border bg-surface-2 px-4 py-2 text-xs font-semibold">
+                {group}
+              </h2>
+              {connections
+                .filter((c) => c.group === group)
+                .map((c) => (
+                  <button
+                    key={c.id}
+                    disabled={!!busy}
+                    onClick={() => {
+                      setSelected(c.id);
+                      setError("");
+                      setNotice("");
+                    }}
+                    aria-current={selected === c.id ? "true" : undefined}
+                    className={cn(
+                      "t-control grid w-full gap-2 border-b border-l-2 border-border p-4 text-left hover:bg-surface-2",
+                      selected === c.id
+                        ? "border-l-accent bg-accent-soft/40 ring-1 ring-inset ring-accent/40"
+                        : "border-l-transparent",
+                    )}
+                  >
+                    <span className="flex items-center gap-2 text-sm font-medium">
+                      <IntegrationLogo
+                        provider={c.id}
+                        size={c.id === "mem0" ? 15 : 22}
+                      />
+                      {c.name}
+                    </span>
+                    <span className="text-xs text-muted">{c.role}</span>
+                    <span className="text-xs text-muted">{status(c.id)}</span>
+                  </button>
+                ))}
+              {group === "Context and memory" && (
+                <button
+                  onClick={onKnowledge}
+                  className="t-control grid w-full gap-1 border-b border-border px-4 py-3 text-left hover:bg-surface-2"
+                >
+                  <span className="text-sm font-medium">
+                    Reviewed project knowledge
+                  </span>
+                  <span className="text-xs text-muted">
+                    Inspect saved evidence and its source in Knowledge.
+                  </span>
+                </button>
               )}
-            >
-              <span className="flex items-center gap-2 text-sm font-medium">
-                <IntegrationLogo
-                  provider={c.id}
-                  size={c.id === "mem0" ? 15 : 22}
-                />
-                {c.name}
-              </span>
-              <span className="text-xs text-muted">{c.role}</span>
-              <span className="text-xs text-muted">
-                {c.id === "hermes"
-                  ? workspace.data?.runner.available
-                    ? "Runtime available"
-                    : "Runtime unavailable"
-                  : c.id === "plow"
-                    ? receipt?.grant_verified
-                      ? "Line grant verified"
-                      : plow.data?.configured
-                        ? "Configured · check required"
-                        : "Not connected"
-                    : c.id === "mem0"
-                      ? tools.data?.mem0
-                        ? "Selected for new Pi sessions"
-                        : "Optional · disabled"
-                      : "Managed in the local terminal"}
-              </span>
-            </button>
+            </section>
           ))}
         </section>
         <section
@@ -128,9 +219,7 @@ export function SettingsPage() {
               />
               {connection.name}
             </h2>
-            <Badge tone={ready ? "ok" : "outline"}>
-              {ready ? "Verified connection" : "Setup / inspection"}
-            </Badge>
+            <Badge tone={ready ? "ok" : "outline"}>{status(selected)}</Badge>
           </div>
           <p className="text-sm text-muted">{connection.role}</p>
           {selected === "hermes" && (
@@ -139,8 +228,15 @@ export function SettingsPage() {
                 {workspace.data?.runner.reason ||
                   "Check the runtime to see its current capabilities."}
               </p>
-              <Command text="python3 integrations/hermes-assessment/runtime.py gateway" />
-              <Command text="python3 integrations/hermes-assessment/runtime.py dev" />
+              <details className="rounded-md border border-border p-3">
+                <summary className="cursor-pointer text-sm font-medium">
+                  Terminal setup
+                </summary>
+                <div className="mt-3 grid gap-3">
+                  <Command text="python3 integrations/hermes-assessment/runtime.py gateway" />
+                  <Command text="python3 integrations/hermes-assessment/runtime.py dev" />
+                </div>
+              </details>
               <p className="text-xs text-muted">
                 Use separate terminals for the gateway and Relay. Hermes
                 requires its own provider configuration; Pi login does not
@@ -156,66 +252,63 @@ export function SettingsPage() {
                 that grant before importing reports or delivering an approved
                 update.
               </p>
-              <Command text="python3 integrations/plow/connect.py --login" />
-              <Command text="python3 integrations/plow/connect.py" />
-              <p className="text-xs text-muted">
-                Configuration stays in .data/plow/bridge.json; credentials stay
-                in a private local file. Opening Latch alone does not connect
-                the line.
-              </p>
               <div className="flex flex-wrap gap-2">
                 <Button
+                  variant="default"
                   pending={busy === "connect"}
                   disabled={!!busy}
                   onClick={() =>
                     void perform("connect", async () => {
                       setReceipt(undefined);
+                      // Connect also verifies the line grant. Opening Latch is a
+                      // follow-up step of this same explicit action on desktop.
                       const value = await api<Plow>(
                         "/connections/plow/connect",
                         "POST",
                       );
                       setReceipt(value);
                       plow.refresh();
-                      setNotice("Assistant line connected.");
+                      if (desktop) {
+                        try {
+                          const { invoke } = await import(
+                            "@tauri-apps/api/core"
+                          );
+                          await invoke("open_plow_latch");
+                          setNotice(
+                            "Plow line verified. Latch launch requested.",
+                          );
+                        } catch {
+                          setNotice(
+                            "Plow line verified. Open the installed Latch app to finish connecting this Mac.",
+                          );
+                        }
+                      } else {
+                        setNotice(
+                          "Plow line verified. Open Latch on your Mac to use desktop actions.",
+                        );
+                      }
                     })
                   }
                 >
-                  Connect authorized Plow account
+                  {receipt?.grant_verified
+                    ? "Reconnect Plow + Latch"
+                    : "Connect Plow + Latch"}
                 </Button>
-                <Button
-                  pending={busy === "check"}
-                  disabled={!!busy}
-                  onClick={() =>
-                    void perform("check", async () => {
-                      setReceipt(undefined);
-                      const value = await api<Plow>(
-                        "/connections/plow/check",
-                        "POST",
-                      );
-                      setReceipt(value);
-                      setNotice("Line and owner chat verified.");
-                    })
-                  }
-                >
-                  Check Plow connection
-                </Button>
-                {desktop ? (
-                  <Button
-                    disabled={!!busy}
-                    onClick={() =>
-                      void perform("open", async () => {
-                        const { invoke } = await import("@tauri-apps/api/core");
-                        await invoke("open_plow_latch");
-                        setNotice("Plow Latch launch requested.");
-                      })
-                    }
-                  >
-                    Open Plow Latch
-                  </Button>
-                ) : (
-                  <Command text="open -b co.plow.domo-desktop" />
-                )}
               </div>
+              <details className="rounded-md border border-border p-3">
+                <summary className="cursor-pointer text-sm font-medium">
+                  First-time authorization and terminal setup
+                </summary>
+                <div className="mt-3 grid gap-3">
+                  <p className="text-xs text-muted">
+                    Use the login command if your Plow account has not been
+                    authorized on this computer. Then connect the line. Opening
+                    Latch alone does not authorize it.
+                  </p>
+                  <Command text="python3 integrations/plow/connect.py --login" />
+                  <Command text="python3 integrations/plow/connect.py" />
+                </div>
+              </details>
               {receipt && (
                 <div className="rounded-md border border-border p-3 text-sm">
                   <p className="font-medium">

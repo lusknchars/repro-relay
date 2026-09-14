@@ -11,6 +11,11 @@ test('real case, bounded investigation, persisted review and inline usage in sup
  const submitted=page.waitForResponse(r=>r.url().endsWith(`/cases/${item.id}/runs`)&&r.request().method()==='POST');
  await page.getByRole('button',{name:'Investigate · 2 min limit'}).click();expect((await submitted).ok()).toBe(true);
  await expect(page.getByText('Controlled fixture proposal',{exact:false})).toBeVisible({timeout:25000});
+ await page.getByRole('tab',{name:'activity',exact:true}).click();
+ await expect(page.getByText('run.completed',{exact:true})).toBeVisible();
+ await expect(page.getByText('run.dispatching',{exact:true})).toBeVisible();
+ await page.getByRole('tab',{name:'tools',exact:true}).click();
+ await expect(page.getByText('No tools recorded for this attempt.',{exact:true})).toBeVisible();
  await page.getByLabel('Reviewer',{exact:true}).fill('UI fixture reviewer');await page.getByLabel('Review feedback').fill('Fixture-only assessment; persistence verified.');
  const reviewed=page.waitForResponse(r=>r.url().includes('/reviews')&&r.request().method()==='POST');await page.getByRole('button',{name:'Accept result',exact:true}).click();expect((await reviewed).ok()).toBe(true);
  await page.reload();await expect(page.getByRole('heading',{name:item.title,exact:true})).toBeVisible();
@@ -31,8 +36,8 @@ test('API failure is visible and never leaves invented work or connection succes
  await page.route('**/api/v1/workspace/runs*',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({detail:'Workspace temporarily unavailable.'})}));
  await page.goto('/');await expect(page.getByRole('alert')).toContainText('Workspace temporarily unavailable.');await expect(page.getByText('REL-142',{exact:true})).toHaveCount(0);
  await page.locator('aside').getByRole('button',{name:/^Settings/}).click();
- await page.route('**/api/v1/connections/plow/check',route=>route.fulfill({status:502,contentType:'application/json',body:JSON.stringify({detail:'Line verification unavailable.'})}));
- await page.getByRole('button',{name:'Check Plow connection'}).click();await expect(page.getByRole('alert')).toContainText('Line verification unavailable.');await expect(page.getByText('Line and owner chat verified.',{exact:true})).toHaveCount(0);
+ await page.route('**/api/v1/connections/plow/connect',route=>route.fulfill({status:502,contentType:'application/json',body:JSON.stringify({detail:'Line verification unavailable.'})}));
+ await page.getByRole('button',{name:'Connect Plow + Latch'}).click();await expect(page.getByRole('alert')).toContainText('Line verification unavailable.');await expect(page.getByText('Line and owner chat verified.',{exact:true})).toHaveCount(0);
 });
 
 
