@@ -1,5 +1,13 @@
 # Backend workflow
 
+## Local work sessions
+
+`GET /work-sessions` returns 40 summaries per page with `offset`, `q`, and `project` filters, a matching total, and the workspace's project list. `POST /work-sessions` saves `request_id`, `title`, `project`, and `prompt`, optionally linking `case_id`. A continuation also supplies `parent_id` and `parent_version`; parent history remains unchanged and the new session starts with its own prompt. Linked cases and parents must match the project and transaction workspace.
+
+`GET /work-sessions/{id}` reads the saved conversation. `POST /work-sessions/{id}/notes` appends a locally supplied note with `request_id`, expected `version`, and `body`. It cannot accept an assistant role, start a model, queue an investigation, or mutate case evidence. Commands are serialized per workspace. Repeating an identical request returns HTTP 200 and the current session; conflicting reuse or a stale version returns 409. New writes return 201. Compact command receipts retain identity without duplicating the conversation for every note.
+
+These endpoints are local-maintainer-only; guest access is rejected. The workspace limit is 1,000 sessions, each with at most 200 notes and 512 KiB of stored conversation. Prompts and notes have an 8,000-character limit. The session UI distinguishes saved notes from agent delivery and can recover an uncertain write with its original request ID after reload.
+
 Repro Relay's Rust API and PostgreSQL database serve the same case to web and desktop. Channel connectors use a local bridge contract. The bridge does not itself authenticate a Plow or Slack webhook. Provider authentication and transport must be implemented by a trusted adapter before enabling an external channel.
 
 The [Plow adapter](../integrations/plow/README.md) now implements provider grant checks, selected owner-message import, and approved outbound REST delivery from a trusted local process. It has fixture coverage; live line activation and provider action receipts remain separate validation requirements. The API still does not authenticate an incoming provider webhook or manage a persistent channel connection.

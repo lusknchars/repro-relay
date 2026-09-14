@@ -1,11 +1,12 @@
 // Adapted from PaceUI Ultimate Dashboard sidebar.
 import { lazy, Suspense } from 'react';
-import { Bot, GitBranch, LayoutDashboard, Inbox, BookOpen, FileCheck2, Settings2, CircleDot } from 'lucide-react';
+import { Bot, GitBranch, LayoutDashboard, Inbox, BookOpen, FileCheck2, Settings2, CircleDot, MessageSquare } from 'lucide-react';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 import type { View } from './index';
 const AsciiWaves=lazy(()=>import('@/components/react-bits/ascii-waves'));
 const items: {id: View; label: string; icon: typeof Bot}[] = [
  {id:'overview',label:'Overview',icon:LayoutDashboard},
+ {id:'sessions',label:'Sessions',icon:MessageSquare},
  {id:'inbox',label:'Case inbox',icon:Inbox},
  {id:'agents',label:'Agent controls',icon:Bot},
  {id:'memory',label:'Project memory',icon:BookOpen},

@@ -6,7 +6,7 @@ import { Topbar } from "./topbar";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 const PerspectiveGrid=lazy(()=>import('@/components/react-bits/perspective-grid'));
 
-export type View = 'overview' | 'inbox' | 'agents' | 'memory' | 'handoffs' | 'connections';
+export type View = 'sessions' | 'overview' | 'inbox' | 'agents' | 'memory' | 'handoffs' | 'connections';
 export const AdminLayout = ({ children, view, navigate, search, guest = false, connected = false }: {
  children: ReactNode; view: View; navigate: (view: View) => void; search: () => void; guest?: boolean; connected?: boolean;
 }) => <SidebarProvider style={{"--sidebar-width": "250px"} as CSSProperties}>

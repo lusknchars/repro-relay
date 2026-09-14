@@ -87,13 +87,13 @@ Test restart recovery, source drift, budget exhaustion, developer edits during e
 
 ## Session workspace request
 
-The user also requested a session view resembling a referenced work view. The exact reference is still being clarified. Treat the following as a functional contract; retain PaceUI and do not choose a replacement template.
+The user selected conversation beside the agent's work and supplied an Agent Session History screenshot with search, project grouping, expandable first/latest turn previews, and continuation actions. Retain PaceUI and adapt this interaction model. [RoboRev](research/roborev-workflow-benchmark.md) is an additional benchmark for automatic review and coordinated work.
 
 A session is an interaction with the continuing mission. It presents the same task/run state as the coordinator. Conversation, references, context selection, proposed changes, and evaluation artifacts remain linked by IDs and versions. Closing a session does not stop its mission. The user must be able to resume, inspect partial results, redirect priorities, and explicitly pause work.
 
 For the selected first mission, show the current context beside the proposed context, explain why each evidence item was included or excluded, and expose baseline/candidate quality and token usage. Preserve a path back to the full source evidence. A small summary should say whether the candidate is better, worse, inconclusive, or blocked and name the supporting checks. Chat and a future voice control are ways to steer this work, not prerequisites for each scheduled cycle.
 
-Desktop can display conversation and evidence together; narrow screens should let users switch between them without losing the active run or draft. Pending work, missing runtime, and simulated content need explicit labels. The backend continues the work independently of a mounted UI component. No session interface has been implemented by this proposal.
+Desktop displays history, conversation, and recorded case work together; narrow screens switch between the panels. The first implementation persists local user notes and session ancestry. It does not send those notes to Hermes or start a mission. Pending writes can be retried after reload with their original request IDs. Live conversation and the continuous mission evaluator remain later work.
 
 ## Existing foundation and gaps
 

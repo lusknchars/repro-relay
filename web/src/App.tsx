@@ -25,6 +25,7 @@ import { ShortcutHint } from './components/ShortcutHint'
 import plowLogo from './assets/plow-logo.png'
 import hermesLogo from './assets/hermes-logo.webp'
 
+const SessionWorkspace = lazy(() => import('./components/SessionWorkspace').then(module => ({default: module.SessionWorkspace})))
 const InvestigationWorkspace = lazy(() => import('./components/InvestigationWorkspace').then(module => ({default: module.InvestigationWorkspace})))
 
 const labels: Record<CaseStatus, string> = {
@@ -66,7 +67,7 @@ export default function App() {
   const [health, setHealth] = useState<Health | null>(null)
   const [selectedId, setSelectedId] = useState(()=>new URLSearchParams(window.location.search).get('case') || '')
   const [related, setRelated] = useState<Memory[]>([])
-  const [view, setView] = useState<View>(()=>{ const params=new URLSearchParams(window.location.search); const v=params.get('view'); return ['overview','inbox','agents','memory','handoffs','connections'].includes(v||'') ? v as View : params.has('case') ? 'inbox' : 'overview' })
+  const [view, setView] = useState<View>(()=>{ const params=new URLSearchParams(window.location.search); const v=params.get('view'); return ['overview','inbox','agents','sessions','memory','handoffs','connections'].includes(v||'') ? v as View : params.has('case') ? 'inbox' : 'overview' })
   const [tab, setTab] = useState<'evidence' | 'context' | 'handoff' | 'activity'>('evidence')
   const [showCase, setShowCase] = useState(new URLSearchParams(window.location.search).has('case'))
   const [query, setQuery] = useState('')
@@ -97,6 +98,7 @@ export default function App() {
     const url = new URL(window.location.href)
     if(selectedId&&((view==='inbox'&&showCase)||view==='agents'))url.searchParams.set('case',selectedId)
     else url.searchParams.delete('case')
+    if(view!=='sessions')url.searchParams.delete('session')
     if(view==='overview')url.searchParams.delete('view');else url.searchParams.set('view',view)
     window.history.replaceState(null,'',url)
   },[selectedId,view,showCase])
@@ -197,9 +199,9 @@ export default function App() {
 
   if (session?.mode === 'guest' && !session.authenticated) return <GuestGate ready={openWorkspace}/>
   const isGuest = session?.mode === 'guest'
-  const titles:Record<View,string>={overview:'Investigation overview',inbox:'Case inbox',agents:'Agent controls',memory:'Project memory',handoffs:'Handoffs',connections:'Connections'}
+  const titles:Record<View,string>={sessions:'Sessions',overview:'Investigation overview',inbox:'Case inbox',agents:'Agent controls',memory:'Project memory',handoffs:'Handoffs',connections:'Connections'}
   return <AdminLayout view={view} navigate={navigate} search={focusCaseSearch} guest={isGuest} connected={!!health}>
-    <PageTitle title={titles[view]} description={view==='overview'?'Keep reports, agent work, and evidence in one place.':undefined} endContent={<ShortcutHint label="Create a report" keys="Shift N"><Button onClick={()=>openModal('report')} disabled={!health}><Plus/>New report</Button></ShortcutHint>}/>
+    <PageTitle title={titles[view]} description={view==='overview'?'Keep reports, agent work, and evidence in one place.':undefined} endContent={view!=='sessions' && <ShortcutHint label="Create a report" keys="Shift N"><Button onClick={()=>openModal('report')} disabled={!health}><Plus/>New report</Button></ShortcutHint>}/>
     {isGuest && <div className="mt-5"><BetaFeedback/></div>}
     {error && <div className="notice error" role="alert">{error}<Button variant="ghost" size="sm" onClick={()=>void action(openWorkspace)}>Retry connection</Button></div>}
     {notice && <div ref={noticeRef} className="notice" role="status"><Check size={16}/>{notice}</div>}
@@ -231,6 +233,7 @@ export default function App() {
             </TabsContent>
             </Tabs>
           </section> : <Table7 cases={cases} open={openCase} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} searchRef={searchRef}/>}</div>}
+     {view==='sessions' && <Suspense fallback={<p role="status">Loading sessions…</p>}><SessionWorkspace cases={cases} guest={isGuest} openWork={id => {setSelectedId(id);setView('agents')}} /></Suspense>}
      {view==='agents' && <Suspense fallback={<Card className="mt-5"><CardContent role="status">Loading the investigation workspace…</CardContent></Card>}><InvestigationWorkspace cases={cases} selectedId={selectedId} onSelect={setSelectedId} guest={isGuest} onOpenCase={openCase} onNewReport={()=>openModal('report')} onRefresh={refresh}/></Suspense>}
 {view === 'memory' && <section className="memory-view"><div className="memory-heading"><div><h2>Reviewed observations</h2><p>References for investigation. These entries do not establish a root cause or a verified fix.</p></div><label className="search"><Search size={16}/><input aria-label="Search memory" placeholder="Search observations…" value={query} onChange={e => setQuery(e.target.value)}/></label></div>
         {memories.filter(memory => `${memory.title} ${memory.observation.observed}`.toLowerCase().includes(query.toLowerCase())).map(memory => <article className="memory-card" key={memory.id}><div className="memory-card-icon"><Database size={21}/></div><div className="memory-copy"><span className="subtle">{memory.project} · {memory.case_id} · Revision {memory.revision}</span><h3>{memory.title}</h3><p>{memory.observation.observed}</p><small>Reviewed by {memory.reviewer} · {time(memory.created_at)}</small></div><div className="memory-actions"><Button variant="outline" size="sm" onClick={() => {setSelectedId(memory.case_id); setView('inbox'); setShowCase(true); setTab('evidence')}}>Open case</Button><Button variant="ghost" size="sm" disabled={busy} onClick={() => void action(async () => {await request(`/memories/${memory.id}`, {method: 'DELETE'}); await refresh(); setNotice('Memory removed from retrieval. The original case is preserved.')})}>Remove from memory</Button></div></article>)}

@@ -6,7 +6,9 @@ Repro Relay uses the authenticated `@paceui/ultimate-dashboard-template` source 
 
 Web and Tauri render the same React, TypeScript, Vite, Tailwind application. PaceUI supplies the sidebar, sticky top bar, page title, footer, AI dashboard composition, statistic cards, chart cards, and table layout. Their source is in `web/src/components/templates/ultimate-dashboard` and `web/src/components/blocks/dashboard`.
 
-The six views are Overview, Case inbox, Agent controls, Project memory, Handoffs, and Connections. Navigation persists in the URL. Case detail opens from the table; All reports returns to the list. On mobile the template sidebar opens in a drawer.
+The seven views are Overview, Sessions, Case inbox, Agent controls, Project memory, Handoffs, and Connections. Navigation persists in the URL. Case detail opens from the table; All reports returns to the list. On mobile the template sidebar opens in a drawer.
+
+Sessions adapts the supplied Agent Session History interaction inside PaceUI. Desktop has searchable history, conversation, and recorded work in adjacent panels. Mobile switches between History, Conversation, and Agent work. First prompts and later notes are saved by the local session API; continuing creates a child session that links back to the unchanged parent at its reviewed version. Download log exports local notes. A related case can be selected at creation to inspect its runs, context, reported usage, and existing evidence. These runs do not inherit session notes. Voice and continuous execution remain unavailable, and no synthetic agent replies or token savings are shown. Pending writes retain their original request in tab session storage for manual recovery after reload; unsaved composer drafts remain only while the workspace is mounted.
 
 Overview values come from stored cases, observations, reviewed memories, and handoff snapshots. The activity chart groups reports and observations by UTC date over fourteen days. Agent controls use the existing Hermes coordinator with one active investigation. Phone intake, owner delivery, and Latch actions remain labeled as unconnected.
 

@@ -6,6 +6,7 @@ pub mod hosting;
 pub mod intake;
 pub mod repairs;
 pub mod runs;
+pub mod sessions;
 use axum::{
     Extension, Json, Router,
     extract::{DefaultBodyLimit, Path, Query, State},
@@ -212,6 +213,7 @@ pub fn app_with_runner(pool: PgPool, hosting: Hosting, runner: runs::Runner) -> 
         .merge(evidence::routes())
         .merge(repairs::routes())
         .merge(intake::routes())
+        .merge(sessions::routes())
         .route("/runner", get(runs::capabilities))
         .route("/cases/{id}/runs", get(runs::list).post(runs::start))
         .route("/cases/{id}/inspections", post(runs::record_inspection))
