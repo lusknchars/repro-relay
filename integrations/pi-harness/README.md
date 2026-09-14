@@ -17,6 +17,17 @@ The doctor reports the executable version, evidence API reachability and reposit
 
 In Pi, use `/login` for your provider and `/model` to select a model. Relay uses its own ignored `.data/pi-agent` profile, so personal Pi settings and credentials are preserved. No credentials are copied from Hermes or Codex. Provider API-key environment variables remain available to Pi. Sign-in is performed by Pi, outside the web application.
 
+If you already signed in using plain `pi`, explicitly reuse that personal Pi profile:
+
+```sh
+./relay pi doctor --profile personal --provider anthropic
+./relay pi start --profile personal --provider anthropic
+```
+
+This reads Pi authentication/settings from `~/.pi/agent` without copying credentials. Relay still limits model tools and keeps its session history in `.data/pi-agent/sessions`. Pi may refresh credentials normally during use. The doctor only checks local credential readiness with `--no-refresh`; a ready result is not proof of a successful model request or account entitlement. Hermes keeps its own separate provider configuration.
+
+Run `start` in an interactive Terminal window. A one-shot shell command cannot host Pi's interactive `/login` flow, and Relay now explains that before launching. Plain `pi start` supplies the word `start` as a prompt to Pi; it does not invoke Relay. `/login` is a command inside Pi, not a shell executable. From another directory, use the absolute path to your checkout's `relay` executable.
+
 Use `/relay` to inspect the latest context audit. It records the evidence and a link back to Relay in the Pi conversation without starting a model. Use `/relay-review` to have your selected model assess that audit. The command supplies the review task and its evidence; no case or direction form is required. Empty history and unavailable evidence do not trigger a model call.
 
 ```sh

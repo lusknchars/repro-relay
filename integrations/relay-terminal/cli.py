@@ -226,9 +226,12 @@ def main(argv=None):
     sub = parser.add_subparsers(dest='action', required=True)
     pi = sub.add_parser('pi', help='Connect the Pi terminal harness to Relay evidence')
     pi_actions = pi.add_subparsers(dest='pi_action', required=True)
-    pi_actions.add_parser('doctor', help='Check Pi installation and the local evidence connection; no model call')
+    pi_doctor = pi_actions.add_parser('doctor', help='Check Pi installation, local evidence and optional provider credentials; no model call')
     pi_start = pi_actions.add_parser('start', help='Open Pi with Relay tools and its own local session profile')
-    pi_start.add_argument('--provider', help='Optional Pi provider name; use /login inside Pi')
+    for pi_command in (pi_doctor, pi_start):
+        pi_command.add_argument('--profile', choices=('relay', 'personal'), default='relay',
+                                help='Pi authentication/settings profile; personal reuses ~/.pi/agent without copying credentials')
+        pi_command.add_argument('--provider', help='Optional Pi provider name; doctor checks local credential readiness without refreshing')
     pi_start.add_argument('--model', help='Optional Pi model name; use /model inside Pi')
     pi_start.add_argument('--resume', action='store_true', help='Continue the latest Relay Pi session')
     sub.add_parser('doctor', help='Check the API and investigator connection without starting work')

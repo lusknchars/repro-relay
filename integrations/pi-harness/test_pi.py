@@ -1,5 +1,6 @@
 import copy
 import importlib.util
+import io
 import json
 import pathlib
 import queue
@@ -9,6 +10,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from types import SimpleNamespace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import patch
 
@@ -87,6 +89,49 @@ class PiTests(unittest.TestCase):
             self.assertIn('--continue', command)
             self.assertEqual(harness.environment(profile)['PI_CODING_AGENT_DIR'], str(profile))
             self.assertFalse(profile.exists(), 'Constructing a launch must not write settings.')
+
+    def test_provider_check_returns_only_readiness_without_secrets_or_refresh(self):
+        result = subprocess.CompletedProcess([], 0, json.dumps({'provider': 'anthropic', 'status': 'ready',
+                                                               'credential': 'fixture-private-value'}), '')
+        with patch.object(harness.subprocess, 'run', return_value=result) as run:
+            status = harness.provider_status('/bin/pi', 'anthropic', pathlib.Path('/profile'))
+        self.assertEqual(status, 'ready')
+        self.assertIn('--no-refresh', run.call_args.args[0])
+        self.assertNotIn('--credentials', run.call_args.args[0])
+        self.assertEqual(run.call_args.kwargs['env']['PI_CODING_AGENT_DIR'], '/profile')
+        result.returncode = 1
+        with patch.object(harness.subprocess, 'run', return_value=result):
+            self.assertEqual(harness.provider_status('/bin/pi', 'anthropic', pathlib.Path('/profile')), 'check_failed')
+
+    def test_personal_profile_keeps_relay_tools_and_session_storage(self):
+        args = SimpleNamespace(pi_action='start', api=self.api, profile='personal', provider='anthropic', model=None, resume=False)
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(harness, 'PROFILE', pathlib.Path(directory)), \
+             patch.object(harness.sys.stdin, 'isatty', return_value=True), \
+             patch.object(harness.sys.stdout, 'isatty', return_value=True), \
+             patch.object(harness, 'check', return_value={'installed': True, 'workspace': 'reachable'}), \
+             patch.object(harness.shutil, 'which', return_value='/bin/pi'), \
+             patch.object(harness.subprocess, 'call', return_value=0) as launch:
+            self.assertEqual(harness.run(args), 0)
+        self.assertEqual(launch.call_args.kwargs['env']['PI_CODING_AGENT_DIR'], str(pathlib.Path.home() / '.pi/agent'))
+        command = launch.call_args.args[0]
+        self.assertEqual(command[command.index('--tools') + 1], ','.join(harness.TOOLS))
+        self.assertIn(str(ROOT / '.data/pi-agent/sessions'), command)
+
+    def test_one_shot_shell_gets_interactive_terminal_instructions(self):
+        args = SimpleNamespace(pi_action='start', profile='personal')
+        with patch.object(harness.sys.stdin, 'isatty', return_value=False):
+            with self.assertRaisesRegex(ValueError, 'Enter /login only inside Pi'):
+                harness.run(args)
+
+    def test_doctor_preserves_selected_profile_and_reports_missing_auth(self):
+        args = SimpleNamespace(pi_action='doctor', api=self.api, profile='personal', provider='anthropic')
+        with patch.object(harness, 'check', return_value={'installed': True, 'workspace': 'reachable', 'provider': 'not_ready'}), \
+             patch.object(harness.sys, 'stdout', new_callable=io.StringIO) as output:
+            self.assertEqual(harness.run(args), 1)
+            data = json.loads(output.getvalue())
+        self.assertIn('--profile personal --provider anthropic', data['next'])
+        self.assertEqual(data['auth_profile'], 'personal')
 
     @unittest.skipUnless(shutil.which('pi'), 'Install Pi to run the real extension smoke test.')
     def test_real_pi_loads_tools_and_reads_evidence_without_model_usage(self):
