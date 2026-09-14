@@ -1,121 +1,144 @@
-# Repro Relay
+<p align="center">
+  <img src="web/src-tauri/icons/icon.png" alt="Repro Relay app icon" width="112" height="112" />
+</p>
 
-Repro Relay connects support and operations reports to agent investigation and developer review. Its web and desktop clients share cases, recorded evidence, project memory, and engineering handoffs.
+<h1 align="center">Repro Relay</h1>
 
-## Start Relay
+<p align="center">Investigate together. Keep the evidence. Decide what happens next.</p>
 
-Install and open Docker Desktop, then run this in Terminal:
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#connect-your-tools">Connections</a> ·
+  <a href="#macos-and-development">macOS & development</a> ·
+  <a href="docs/STATUS.md">Project status</a>
+</p>
+
+Repro Relay brings agent investigations, code review, and team follow-ups into one workspace. See the conversation beside findings, changes, tests, and activity. Use Reach to organize recorded meeting actions and todos. Review the evidence before approving the next action.
+
+## Quick start
+
+Install and open Docker Desktop, then run:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/lusknchars/repro-relay/main/install.sh | sh
 ```
 
-Relay opens at **http://127.0.0.1:8178** with a local administrator session. No signup, phone number, provider key, Node, Rust, Python or Git installation is required. The installer downloads the app, starts its database, and waits for readiness before opening the browser. A published image skips compilation; if it is unavailable, Docker builds the included source, which takes several minutes.
+Open **http://127.0.0.1:8178**. The installer starts the app and PostgreSQL, waits until they are ready, and opens the browser. Local access creates or resumes your administrator profile automatically.
 
-Already downloaded the repository? Double-click **Start Relay.command** on macOS, or run `sh start.sh`. The packaged path currently opens the browser interface; the macOS app build is described below. Connect Hermes and optional tools from Settings when you need them. Installation does not start a model or connect external accounts.
+- No signup, phone number, or provider key is needed to open Relay.
+- No Node, Rust, Python, or Git installation is needed on your Mac.
+- Your records and private settings survive restarts.
+- Connect an investigator when you are ready. Installation does not start a model or authorize external accounts.
 
-Records and settings survive restarts. Run the same command to reopen your installation. See [setup, stop, updates and sharing](docs/EASY-START.md). This is a private local workspace; cross-device team links require a shared HTTPS service.
+A published package skips compilation. If it is unavailable, Docker builds the included source; the first build can take several minutes.
 
-The web and desktop clients use the supplied Reptest interface with persisted cases, investigations, reviewed evidence, usage and connection checks from the Rust/PostgreSQL backend. Account setup opens inside the app. The previous client remains available for regression testing. See [connected behavior](docs/LIVE-WORKSPACE.md).
-
-For the next implementation work, use the [delivery protocol](docs/DELIVERY-PROTOCOL.md), [product depth review](docs/PRODUCT-DEPTH-REVIEW.md), [Orca/Warp interaction benchmark](docs/research/orca-warp-dashboard-benchmark.md), and the user-selected [Vercel configuration benchmark](docs/research/vercel-configuration-benchmark.md). The protocol defines resources, dependencies and acceptance evidence; it does not describe all of those capabilities as shipped.
-
-The local API can submit, monitor, stop, and reconcile investigations on a configured Hermes runtime. Runs survive client reloads and retain agent answers as proposals for review. The adapter has passed protocol-fixture tests; live Hermes and Latch execution still need verification. Phone intake, outbound delivery, and automatic fixes remain planned. See [the release plan](docs/ROADMAP.md) and [client architecture](docs/CLIENT-ARCHITECTURE.md).
-
-The [backend workflow](docs/BACKEND-WORKFLOW.md) now includes durable evidence and findings, reviewed finding memory, opt-in automatic investigation, local channel intake and delivery contracts, decisions, approved repair stages, and protected verification reports. Provider transports and live runtime enforcement remain separate integration requirements. Agent controls can display the actual stored logs and distinguish local validation from Hermes execution.
-
-The [SwiftUI iPhone app](apple/README.md) now implements the first isolated, text-driven investigator-call simulation with report review, repair decisions, and inspectable evidence. Open `apple/ReproRelay.xcodeproj` to run it. Its [implementation plan](docs/SWIFTUI-CLIENT-PLAN.md) separates authenticated phone access, real voice execution, and native Mac adaptation into later gates.
-
-The [local Plow bridge](integrations/plow/README.md) checks an authorized phone line, imports a selected owner report into Relay, and dispatches an exact approved update with durable receipt recovery. Setup requires Plow phone activation and a line-scoped credential. This adapter does not yet connect the SwiftUI simulation or implement live Hermes/Latch execution.
-
-## Build the macOS app from source
-
-From your checkout, run:
+Already downloaded the repository? Double-click **[Start Relay.command](Start%20Relay.command)** on macOS, or run `sh start.sh`.
 
 ```sh
-./relay setup
+cd ~/.local/share/repro-relay
+./start.sh          # Start and open Relay
+./start.sh status   # Check the app and database
+./start.sh logs     # Inspect startup problems
+./start.sh stop     # Stop services and keep your data
 ```
 
-On macOS this installs frontend dependencies, starts PostgreSQL, builds the native desktop app and opens it. Local access creates or resumes the administrator profile automatically; no login, phone number, or Twilio setup is needed. Open **Team → Invite teammate by link** to add someone by name. Links from a local installation work on that computer; remote teammates need a shared HTTPS deployment. See [local access, invitations and the shared Hermes conversation](docs/LOCAL-ACCESS-AND-CHAT.md). Existing password/phone accounts remain available as optional access methods.
+This path opens the local browser app. Native macOS builds are available from source below. For updates, existing installations, and troubleshooting, see the [setup guide](docs/EASY-START.md).
 
-Source builds require Python 3.9+, Node 24+, Rust stable, and Docker with Compose. macOS desktop builds also require Xcode command-line tools. Setup lists missing prerequisites. It does not install system software, start a model, or create external accounts.
+## Your workspace
+
+| Area | What you can do |
+| --- | --- |
+| Work | Follow an investigation with conversation, findings, changes, test records, and activity together. Review a selected attempt and its source evidence. |
+| Reach | Organize recorded call requests, meeting action items, and todos. Assign follow-ups, record decisions, and prepare message drafts. |
+| Knowledge | Keep reviewed findings and source references available for future investigations. Inspect freshness before reusing context. |
+| Usage | Inspect recorded tokens and costs in the app, including missing cost data and reported versus estimated values. |
+| Team | Invite teammates by link and use one shared conversation with an administrator-managed Hermes agent. |
+
+Reports, model proposals, human observations, and verification receipts remain distinct. A completed agent run does not establish that a fix passed. See [connected application behavior](docs/LIVE-WORKSPACE.md) and [current implementation status](docs/STATUS.md).
+
+## Connect your tools
+
+Start in **Settings**. Each connection has its own purpose and setup; signing into one does not automatically connect the others.
+
+| Connection | Purpose | Setup |
+| --- | --- | --- |
+| Hermes | Submit, monitor, stop, and review investigations through a configured gateway. | [Runner configuration](docs/HERMES-RUNNER.md) |
+| Pi | Use Relay evidence from a local terminal agent. Model authentication belongs to that agent's provider configuration. | [Pi setup](integrations/pi-harness/README.md) |
+| Plow + Latch | Connect an authorized phone line and owner chat for report intake and approved updates. Host app control requires its own working connection. | [Plow setup](integrations/plow/README.md) |
+| Mem0 | Add optional private working notes, separate from reviewed project evidence. | [Memory setup](integrations/mem0-memory/README.md) |
+| MCP / WebMCP | Expose bounded evidence tools to compatible agents and browsers. | [Evidence tools](integrations/relay-tools/README.md) |
+
+The Docker package has its own filesystem. It does not automatically inherit your Mac's repositories, Pi login, keychain, or running Latch application. Use the [connection boundaries](docs/EASY-START.md#connections-and-desktop) to choose between the package and native/source setup.
+
+Reach also has terminal commands and MCP tools for recorded work:
 
 ```sh
-./relay setup --check         # Check prerequisites without changing anything
-./relay setup --web           # Open the local web app on any supported host
-./relay setup --no-open       # Build/start without opening a window
+./relay reach today
+./relay reach listen
 ```
 
-Linux and Windows use the web app by default. In Windows PowerShell, run `python relay setup --web`. Its interface and API share `http://127.0.0.1:8178`; signing in does not redirect to another address. Docker keeps local PostgreSQL data on port 55478 in the `repro-relay_relay-data` volume. Setup reuses a healthy running API and preserves the database and provider configuration. If you changed backend source while an older API is running, restart that service to load the new binary. A setup-started service records its PID and private log in `.data/setup/`.
+See [Reach](docs/REACH.md) for setup, event listeners, and current limits. Live meeting attendance, audio transcription, and automatic team message delivery are not included in the local installation.
 
-For an existing PostgreSQL server, export `DATABASE_URL` before setup. It then skips Docker. Source setup reads a private `.env` as literal configuration, with existing process variables taking precedence. `.env.example` documents available variables. This command configures a trusted local installation, not a public hosted deployment.
+## Invite your team
 
-For hot-reload development, run `make dev` after setup. For tests, the existing `make setup` also installs Chromium and prepares the test database. See [account setup and sharing](docs/ACCOUNTS-AND-TEAM.md) for local versus hosted account access.
+Open **Team → Invite teammate by link**. A teammate joins with a display name and can follow the work and talk to the shared Hermes agent. The administrator controls execution and connections.
 
-## Try the retained backend workflow
+A localhost link works on the same computer. Teammates on other computers need a shared HTTPS service. Public guest workspaces are a separate mode, not a shared team deployment. Read [local access and chat](docs/LOCAL-ACCESS-AND-CHAT.md) or [shared account setup](docs/ACCOUNTS-AND-TEAM.md) before sharing remotely.
 
-Run `npm run dev:legacy --prefix web -- --port 5179` with the API running, then open localhost:5179. The workflow and investigator instructions below apply to that retained client. The default Reptest screens use the same persisted API; this walkthrough describes the retained client.
+## macOS and development
 
-1. Create a bug report and name its current build.
-2. Record what you observed. A reproduced result requires steps, a build, an evidence URL, and a named author.
-3. Review the observation for project memory. Another report in the same project can retrieve it by matching terms.
-4. Open **Agent context**, choose a role, and prepare a handoff. Check its freshness.
-5. Change the build or reassign the worker, then check the saved handoff again. The server rejects it and preserves the reason in Activity.
-6. Reload the page. The report, observations, and saved handoff remain. Export the repair packet from its tab.
+The macOS desktop app uses Tauri and the same frontend and Rust API. It is currently a development build, not a signed or notarized installer. iPhone development is deferred while the macOS experience takes priority.
 
-An evidence URL is a reference supplied by the recorder. The application has not fetched or independently verified its contents. A successful freshness check does not execute a repair.
-
-`node scripts/seed-demo.mjs` adds two explicitly labeled fixture reports through the API for a quick walkthrough. It does not contact an external system.
-
-## Connect an investigator
-
-Run a dedicated Hermes gateway with its authenticated run API enabled. Pass `REPRO_HERMES_URL` and `REPRO_HERMES_KEY` to the Relay API process, then open **Agent controls**. Select a case, inspect the exact context packet, check the connection, and start a bounded investigation. Review its saved proposal, request a correction, and inspect the next context before starting a follow-up. Both web and desktop read the same saved history; reviews preserve the original output and do not automatically publish evidence or memory.
-
-See [runner setup and recovery](docs/HERMES-RUNNER.md) for the required capabilities, endpoints, limits, and interruption behavior. Runtime credentials stay in the backend. Hosted guest workspaces cannot operate this runner. Time limits request a cooperative stop; token and spending limits must be configured in Hermes.
-
-## Desktop
-
-Build and open the actual macOS desktop application:
+Source setup requires Python 3.9+, Node 24+, Rust stable, and Docker with Compose. macOS also needs Xcode command-line tools. From a checkout:
 
 ```sh
-make desktop-build
-open 'target/debug/bundle/macos/Repro Relay.app'
+./relay setup --check   # Inspect prerequisites
+./relay setup           # Build, start, and open the macOS app
+./relay setup --web     # Use the browser app instead
 ```
 
-The bundled app loads the frontend directly and connects to its local service for account and workspace data. `make desktop` starts desktop development with Vite. Web and desktop share the same supplied source; there is no separate approximation of its layout. The existing Tauri native commands remain in Rust but need integration with the new screens. The app is a local debug build, not a signed or notarized distribution.
+Linux and Windows use the browser app by default. In Windows PowerShell, use `python relay setup --web`.
 
-## Check
+Source setup reads a private `.env`, with existing process variables taking precedence. Set `DATABASE_URL` to use an existing PostgreSQL server and skip Docker. Source and packaged installations use separate database volumes; see [setup and data storage](docs/EASY-START.md).
 
 ```sh
-make check
+make dev               # Frontend hot reload and local API
+./relay doctor         # Inspect local readiness
+./relay --help         # Terminal investigation and worktree controls
 ```
 
-This runs Rust formatting, Clippy, PostgreSQL integration tests, the frontend production build, and browser tests covering the workflow, guest isolation, themes, keyboard interaction, mobile navigation, and the Hermes protocol fixture. SQLx creates isolated test databases. Browser tests use `relay_e2e` on the local PostgreSQL server. The workflow API uses port 8180, runner tests use API 8182 and fixture 8654, Vite uses 5180, and the guest service uses 5190. Tests do not write into the development workspace. Test fixtures may remain in `relay_e2e` between runs.
+Use [terminal tooling](integrations/relay-terminal/README.md) for isolated repair worktrees and execution records. The [backend workflow](docs/BACKEND-WORKFLOW.md) describes evidence, decisions, and verification. Runtime permissions and provider limits still apply.
 
-The browser test covers intake, observation, memory review, export, stale handoff rejection, reload, and mobile overflow. Screenshots are saved under `web/test-results/` and excluded from Git. Desktop packaging is a separate `make desktop-build` check.
+## Contributing
 
-The investigation fixture also covers proposal review retries and corrective follow-ups. `npm run test:compatibility --prefix web` checks the responsive review view and keyboard interaction against explicit mock data on port 5186. `npm run test:edge --prefix web` runs the same UI checks in installed Microsoft Edge. The Windows compatibility workflow runs Edge on Windows and checks native desktop compilation; it does not prove native interaction or live Hermes execution.
+Read [current status](docs/STATUS.md) and the repository's [agent instructions](AGENTS.md) before choosing work. Keep credentials and runtime data out of commits, and distinguish fixture results from live agent execution.
 
-## Code map
+```sh
+make setup             # Install test dependencies and prepare PostgreSQL
+make check             # Python, Rust, frontend, and browser checks
+make desktop-build     # Build the macOS development bundle
+```
 
-- `crates/relay-api`: Rust API, input validation, transactional workflow, PostgreSQL migration, and integration tests.
-- `web/src`: React interface and locally owned UI primitives.
-- `web/src-tauri`: desktop shell, native save dialog, and link opening.
-- `.agents/skills`: the four occasion-specific investigation, memory, interface, and release skills.
-- [Current status](docs/STATUS.md), [Frontend Lab provenance](docs/FRONTEND.md), [research and experiments](docs/research/agent-techniques-aug-sep-2026.md).
+Container contributors can exercise a fresh installation and restart persistence separately:
 
-The case database owns source truth. Memory retrieval provides leads, not verified root causes. Local mode serves one team on loopback. Use the configured guest runtime for public testing; its cookie sessions and workspace filters protect separate visitors.
+```sh
+docker build -t relay-package:test .
+python3 scripts/test-local-container.py
+```
 
-Repro Relay's original code is MIT. PaceUI template source retains its product license; other components and packages retain their upstream licenses. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Browser checks cover recorded workflows, access boundaries, keyboard navigation, and responsive layouts. Hermes protocol fixtures do not establish live provider execution. See [frontend provenance](docs/FRONTEND.md) before importing components or visual assets.
 
-## Hosted guest beta
+| Directory | Contents |
+| --- | --- |
+| `crates/relay-core` | Shared workflow types and policies |
+| `crates/relay-api` | Rust API, PostgreSQL migrations, and backend tests |
+| `web/reptest` | Current React interface |
+| `web/src` | Retained frontend and regression coverage |
+| `web/src-tauri` | Native macOS shell and app icons |
+| `integrations` | Terminal, agent, memory, and connection adapters |
 
-The new `REPRO_MODE=guest` runtime serves the web UI and API from one public HTTPS origin. It requires `DATABASE_URL` and `PUBLIC_ORIGIN`, or Railway's generated domain variable. Each browser receives an isolated, seven-day test workspace. Guest quotas and a feedback form are included. Existing local records stay in the `local` workspace and cannot be read by hosted guests.
+For public browser previews, see the [hosted guest deployment guide](docs/deployment/public-beta.md). For planned work, see the [roadmap](docs/ROADMAP.md).
 
-See the [deployment plan and launch checklist](docs/deployment/public-beta.md). Run `make check` for both local and guest-browser workflows. `Dockerfile` and `railway.toml` package the web service; the Tauri app is excluded.
+## License
 
-## Local investigation and repair controls
-
-Run `./relay doctor` from this checkout, then `./relay cases` and `./relay --help`. The CLI reads the same records as the app, starts and watches configured Hermes investigations, prepares isolated Git worktrees, and dispatches approved repair stages. See [terminal setup and runtime requirements](integrations/relay-terminal/README.md). A worktree is a separate checkout, not an installed or sandboxed coding runtime.
-
-`./relay ledger` adds local execution state for prepared repairs: fresh file observations, conditional read reuse, command proposals, and reported outcomes. It makes no model calls and never suppresses tests. Hermes action interception still needs the documented runtime adapter hooks; local ledger support alone does not establish live correction or token savings.
+Repro Relay's original code is [MIT licensed](LICENSE). PaceUI template source retains its product license; other components and assets retain their upstream licenses. See [third-party notices](THIRD_PARTY_NOTICES.md).
