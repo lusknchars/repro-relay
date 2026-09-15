@@ -1,3 +1,4 @@
+import { DiscordDiscussion } from "@/components/discord";
 import { ReachMeetings } from "@/components/meetings";
 import { Reach } from "@/components/reach";
 
@@ -26,6 +27,7 @@ export function ReachPage() {
           </a>
         </div>
       </header>
+      <DiscordDiscussion />
       <ReachMeetings />
       <Reach />
     </div>

@@ -1,7 +1,8 @@
 import { ExaConnection } from "@/components/exa";
 import { SentryConnection } from "@/components/sentry";
+import { DiscordConnection } from "@/components/discord";
 import { DailyConnection } from "@/components/meetings";
-import { Bug, Search, Video } from "lucide-react";
+import { Bug, Search, Video, MessageSquare } from "lucide-react";
 import { GoogleCalendarConnection } from "@/components/google-calendar";
 import { CalendarDays } from "lucide-react";
 import { useState } from "react";
@@ -47,6 +48,7 @@ const connections = [
     role: "Phone reports and approved delivery",
     group: "Communication",
   },
+  { id: "discord", name: "Discord", role: "Team channel discussions and Reach todos", group: "Communication" },
   { id: "daily", name: "Daily video", role: "Team calls and saved transcripts", group: "Communication" },
   {
     id: "pi",
@@ -111,6 +113,7 @@ export function SettingsPage({
   const [error, setError] = useState("");
   const connection = connections.find((c) => c.id === selected)!;
   function status(id: (typeof connections)[number]["id"]) {
+    if (id === "discord") return "Selected channel · read-only collection";
     if (id === "daily") return "Private rooms · optional transcription";
     if (id === "exa") return "Web search and page text";
     if (id === "sentry") return "Account and project monitoring";
@@ -220,7 +223,7 @@ export function SettingsPage({
                     )}
                   >
                     <span className="flex items-center gap-2 text-sm font-medium">
-                      {c.id === "daily" ? <Video size={22} /> : c.id === "exa" ? (
+                      {c.id === "discord" ? <MessageSquare size={22} /> : c.id === "daily" ? <Video size={22} /> : c.id === "exa" ? (
                         <Search size={22} />
                       ) : c.id === "sentry" ? (
                         <Bug size={22} />
@@ -260,7 +263,7 @@ export function SettingsPage({
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="flex items-center gap-2 text-lg font-semibold">
-              {selected === "daily" ? <Video size={28} /> : selected === "exa" ? (
+              {selected === "discord" ? <MessageSquare size={28} /> : selected === "daily" ? <Video size={28} /> : selected === "exa" ? (
                 <Search size={28} />
               ) : selected === "sentry" ? (
                 <Bug size={28} />
@@ -280,6 +283,7 @@ export function SettingsPage({
           {selected === "sentry" && <SentryConnection />}
           {selected === "exa" && <ExaConnection />}
           {selected === "daily" && <DailyConnection />}
+          {selected === "discord" && <DiscordConnection />}
           {selected === "calendar" && (
             <>
               <p className="text-sm">
