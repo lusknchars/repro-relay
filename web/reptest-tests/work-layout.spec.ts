@@ -22,6 +22,9 @@ test("work uses three proportional panes and keeps warnings scoped to the select
   await page.goto(`/?case=${blocked.id}`);
   const checklist = page.getByRole("region", {name:"Investigation record checklist"});
   await expect(checklist.getByRole("progressbar", {name:"Record coverage"})).toHaveAttribute("value", "3");
+  await page.setViewportSize({width:1440,height:600});
+  expect(await checklist.evaluate(element => element.scrollHeight <= element.clientHeight)).toBe(true);
+  await page.setViewportSize({width:1440,height:940});
   await checklist.getByRole("button", {name:/Reported behavior/}).click();
   await expect(checklist.getByText("Fixture report for layout validation.")).toBeVisible();
   await checklist.getByRole("button", {name:"Inspect evidence"}).click();
