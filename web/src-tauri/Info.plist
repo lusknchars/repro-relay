@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>NSCameraUsageDescription</key><string>Use your camera when you join a team video call in Reach.</string>
+<key>NSMicrophoneUsageDescription</key><string>Use your microphone in team calls and optional meeting transcription.</string>
+</dict></plist>

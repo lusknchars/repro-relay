@@ -20,11 +20,12 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:8178; img-src 'self' data:; object-src 'none'; base-uri 'self'"
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:8178 https://*.daily.co; frame-src https://*.daily.co; img-src 'self' data:; object-src 'none'; base-uri 'self'"
     }
   },
   "bundle": {
     "active": true,
+    "resources": { "../../docs/licenses/daily-js.txt": "licenses/daily-js.txt" },
     "targets": [
       "app"
     ],

@@ -15,6 +15,7 @@ pub mod exa;
 pub mod google_calendar;
 pub mod hosting;
 pub mod intake;
+pub mod meetings;
 pub mod monitoring;
 pub mod programs;
 pub mod reach;
@@ -247,6 +248,7 @@ pub fn app_with_connectors(
         .merge(google_calendar::routes())
         .merge(sentry::routes(sentry))
         .merge(exa::routes(exa::Connector::default()))
+        .merge(meetings::routes(meetings::Connector::default()))
         .merge(monitoring::routes())
         .merge(automation::routes())
         .merge(channels::routes())
