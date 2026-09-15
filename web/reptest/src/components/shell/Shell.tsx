@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { useTheme } from "@/theme/ThemeProvider";
 import { Avatar, Badge, Kbd } from "@/components/ui";
 import { WorkspaceContext } from "./WorkspaceContext";
+import { PageSidebarProvider } from "./PageSidebar";
 import { useWorkspace } from "@/lib/live";
 
 export type Route = "work" | "reach" | "team" | "agents" | "knowledge" | "usage" | "settings" | "setup" | "architecture" | "calendar" | "monitoring";
@@ -196,6 +197,7 @@ export function Shell({ route, onRoute, onOpenCustomizer, onOpenAccount, childre
   );
 
   return (
+    <PageSidebarProvider>
     <div className={cn("flex h-screen w-full overflow-hidden", variant === "inset" && "bg-surface-2")}>
       {mobileOpen && <button className="fixed inset-0 z-40 bg-black/30 md:hidden" aria-label="Close navigation" onClick={() => setMobileOpen(false)} />}
       {sidebar}
@@ -272,5 +274,6 @@ export function Shell({ route, onRoute, onOpenCustomizer, onOpenAccount, childre
         </nav>
       </div>
     </div>
+    </PageSidebarProvider>
   );
 }

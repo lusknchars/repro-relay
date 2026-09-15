@@ -2,6 +2,7 @@ import { ArrowUpRight, X } from "lucide-react";
 import { useWorkspace } from "@/lib/live";
 import { IntegrationLogo } from "@/components/integration-logo";
 import type { Route } from "./Shell";
+import { PageSidebarMount } from "./PageSidebar";
 
 const CONTEXT: Record<
   Route,
@@ -127,6 +128,19 @@ export function WorkspaceContext({
   const recent = [...(data?.cases || [])]
     .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
     .slice(0, 4);
+  if (route === "architecture" || route === "agents" || route === "knowledge") {
+    return (
+      <aside id="workspace-context" aria-label="Workspace context" className="page-context">
+        <header className="page-context-header">
+          <h2>{route === "architecture" ? "Architecture explorer" : route === "agents" ? "Agent workspace" : "Knowledge library"}</h2>
+          <button type="button" aria-label="Close workspace sidebar" onClick={onClose} className="t-control grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-2">
+            <X size={16} />
+          </button>
+        </header>
+        <PageSidebarMount />
+      </aside>
+    );
+  }
   return (
     <aside
       id="workspace-context"

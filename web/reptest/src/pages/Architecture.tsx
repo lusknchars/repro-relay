@@ -1,3 +1,4 @@
+import { PageSidebar } from "@/components/shell/PageSidebar";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowDown,
@@ -74,7 +75,18 @@ export function ArchitecturePage({
     [],
     15000,
   );
-  const [mode, setMode] = useState<"repository" | "workflow">("repository");
+  const [mode, updateMode] = useState<"repository" | "workflow">(() =>
+    new URLSearchParams(location.search).get("architecture-section") ===
+    "workflow"
+      ? "workflow"
+      : "repository",
+  );
+  function setMode(value: "repository" | "workflow") {
+    updateMode(value);
+    const url = new URL(location.href);
+    url.searchParams.set("architecture-section", value);
+    history.replaceState(null, "", url);
+  }
   const saved = useLoad(() => api<ArchitectureRecord>("/architectures"));
   const [draft, setDraft] = useState<Settings>();
   const [selected, setSelected] = useState("investigate");
@@ -279,6 +291,229 @@ export function ArchitecturePage({
   }
   return (
     <div className="grid h-full min-h-0 grid-rows-[auto_1fr]">
+      <PageSidebar>
+        <nav className="page-sidebar-nav" aria-label="Architecture sections">
+          <button
+            className="page-sidebar-link"
+            aria-pressed={mode === "repository"}
+            onClick={() => setMode("repository")}
+          >
+            <Database size={16} />
+            Current repository
+          </button>
+          <button
+            className="page-sidebar-link"
+            aria-pressed={mode === "workflow"}
+            onClick={() => setMode("workflow")}
+          >
+            <Layers size={16} />
+            Team workflow
+          </button>
+        </nav>
+        <section
+          aria-label="Workflow templates"
+          className="grid content-start gap-4"
+        >
+          <div className="grid gap-3 border-b border-border pb-3">
+            <h2 className="text-sm font-semibold">Node library</h2>
+            <label className="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5">
+              <Search size={13} className="shrink-0 text-muted" />
+              <input
+                aria-label="Search workflow steps"
+                className="min-w-0 w-full bg-transparent text-xs outline-none"
+                placeholder="Search nodes…"
+                value={stepSearch}
+                onChange={(e) => setStepSearch(e.target.value)}
+              />
+            </label>
+            <p className="text-[10px] uppercase tracking-wider text-muted">
+              {mode === "workflow" ? "Core steps" : "Repository components"}
+            </p>
+            {graphStages
+              .filter((s) =>
+                (s.label + s.kind)
+                  .toLowerCase()
+                  .includes(stepSearch.toLowerCase()),
+              )
+              .map((s) => (
+                <button
+                  key={s.id}
+                  aria-label={`Inspect ${s.label}`}
+                  aria-current={activeId === s.id ? "true" : undefined}
+                  onClick={() => focusStep(s.id)}
+                  className={cn(
+                    "page-sidebar-link",
+                    activeId === s.id && "bg-accent-soft",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white",
+                      stepColor(s.kind),
+                    )}
+                  >
+                    {s.kind === "human" ? (
+                      <ShieldCheck size={13} />
+                    ) : s.kind === "agent" ? (
+                      <IntegrationLogo provider="hermes" size={16} />
+                    ) : (
+                      <Layers size={13} />
+                    )}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-xs font-medium">
+                      {s.label}
+                    </span>
+                    <span className="block text-[10px] text-muted">
+                      {s.kind}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            {!graphStages.some((s) =>
+              (s.label + s.kind)
+                .toLowerCase()
+                .includes(stepSearch.toLowerCase()),
+            ) && (
+              <p className="text-xs text-muted">
+                {graphStages.length
+                  ? "No matching steps."
+                  : mode === "repository"
+                    ? repository.loading
+                      ? "Loading repository components…"
+                      : repository.error
+                        ? "Repository components unavailable."
+                        : "No repository components recorded yet."
+                    : saved.loading
+                      ? "Loading workflow steps…"
+                      : "Workflow steps unavailable."}
+              </p>
+            )}
+          </div>
+          {mode === "workflow" ? (
+            <>
+              {/* Saved team workflow templates */}{" "}
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted">
+                Investigation workflows
+              </p>
+              {saved.data?.templates.map((t) => (
+                <button
+                  key={t.focus}
+                  disabled={!!busy}
+                  aria-pressed={draft?.focus === t.focus}
+                  onClick={() =>
+                    setDraft((d) => (d ? { ...d, focus: t.focus } : d))
+                  }
+                  className={cn(
+                    "t-control grid gap-1 rounded-md border p-2 text-left",
+                    draft?.focus === t.focus
+                      ? "border-accent bg-accent-soft"
+                      : "border-border hover:bg-surface-2",
+                  )}
+                >
+                  <span className="text-xs font-semibold">{t.name}</span>
+                  <span className="line-clamp-2 text-xs leading-relaxed text-muted">
+                    {t.summary}
+                  </span>
+                </button>
+              ))}
+            </>
+          ) : (
+            <>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted">
+                Connected repository
+              </p>
+              <h2 className="break-words text-sm font-semibold">
+                {repository.data?.snapshot?.repository ||
+                  "Awaiting repository inspection"}
+              </h2>
+              <Badge tone={repository.data?.current ? "ok" : "outline"}>
+                {repository.data?.current
+                  ? "Current snapshot"
+                  : "Snapshot unavailable or stale"}
+              </Badge>
+              <details className="grid gap-2 text-xs">
+                <summary className="cursor-pointer text-muted">
+                  Source details and setup
+                </summary>
+                <div className="mt-3 grid gap-3">
+                  {repository.data?.snapshot && (
+                    <>
+                      <p className="mono break-all text-xs text-muted">
+                        {repository.data.snapshot.revision}
+                      </p>
+                      <p className="text-xs text-muted">
+                        {repository.data.snapshot.dirty
+                          ? "Working tree has uncommitted changes."
+                          : "Clean tracked working tree."}
+                      </p>
+                      <p className="text-xs text-muted">
+                        {repository.data.snapshot.nodes.length} observed
+                        manifests. Lines show declared local dependencies. This
+                        is a manifest inventory, not a full runtime call graph.
+                      </p>
+                    </>
+                  )}
+                  <p className="text-xs leading-relaxed text-muted">
+                    The connected context harness updates this map. Source files
+                    and secrets are not uploaded; only manifest metadata and
+                    hashes are recorded.
+                  </p>
+                  {!repository.data?.current && (
+                    <code className="break-all rounded border border-border p-2 text-xs">
+                      python3 integrations/context-harness/worker.py --repo .
+                    </code>
+                  )}
+                </div>
+              </details>
+              {repository.error && (
+                <p role="alert" className="text-xs text-danger">
+                  {repository.error}
+                </p>
+              )}
+            </>
+          )}
+          {mode === "repository" && (
+            <section className="grid gap-2 border-t border-border pt-3">
+              <h2 className="text-xs font-semibold">Suggested improvements</h2>
+              {workspace.data?.cases
+                .filter((c) => c.title.startsWith("Architecture research:"))
+                .slice(0, 8)
+                .map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => onWork(c.id)}
+                    className="rounded border border-border p-2 text-left text-xs hover:bg-surface-2"
+                  >
+                    {c.title}
+                    <span className="mt-1 block text-muted">
+                      Open research and review
+                    </span>
+                  </button>
+                ))}
+              {!workspace.data?.cases.some((c) =>
+                c.title.startsWith("Architecture research:"),
+              ) && (
+                <p className="text-xs text-muted">
+                  No research recorded yet. Research improvements creates a
+                  Hermes assessment with references and a test plan.
+                </p>
+              )}
+            </section>
+          )}
+          {discovery && (
+            <div className="grid gap-2 rounded-lg border border-border p-3 text-xs">
+              <h2 className="font-semibold">Workspace inspection</h2>
+              <p>{discovery.reason}</p>
+              <p className="text-muted">
+                {discovery.reports} reports · {discovery.failed_runs} failed
+                runs · {discovery.runs_missing_cost} missing cost receipts
+              </p>
+              <p className="text-muted">{discovery.source}</p>
+            </div>
+          )}
+        </section>
+      </PageSidebar>
       <header className="grid gap-3 border-b border-border bg-surface p-4 md:px-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -295,18 +530,6 @@ export function ArchitecturePage({
           </Badge>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button
-            aria-pressed={mode === "repository"}
-            onClick={() => setMode("repository")}
-          >
-            Current repository
-          </Button>
-          <Button
-            aria-pressed={mode === "workflow"}
-            onClick={() => setMode("workflow")}
-          >
-            Team workflow
-          </Button>
           <Button onClick={repository.refresh}>Refresh repository</Button>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -400,188 +623,7 @@ export function ArchitecturePage({
           </Button>
         )}
       </header>
-      <div className="grid min-h-0 lg:grid-cols-[200px_minmax(0,1fr)_240px]">
-        <aside
-          aria-label="Workflow templates"
-          className="grid content-start gap-3 border-b border-border bg-surface p-4 lg:overflow-y-auto lg:border-r lg:border-b-0"
-        >
-          <div className="grid gap-3 border-b border-border pb-3">
-            <h2 className="text-sm font-semibold">Node library</h2>
-            <label className="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5">
-              <Search size={13} className="shrink-0 text-muted" />
-              <input
-                aria-label="Search workflow steps"
-                className="min-w-0 w-full bg-transparent text-xs outline-none"
-                placeholder="Search nodes…"
-                value={stepSearch}
-                onChange={(e) => setStepSearch(e.target.value)}
-              />
-            </label>
-            <p className="text-[10px] uppercase tracking-wider text-muted">
-              {mode === "workflow" ? "Core steps" : "Repository components"}
-            </p>
-            {graphStages
-              .filter((s) =>
-                (s.label + s.kind)
-                  .toLowerCase()
-                  .includes(stepSearch.toLowerCase()),
-              )
-              .map((s) => (
-                <button
-                  key={s.id}
-                  aria-label={`Inspect ${s.label}`}
-                  onClick={() => focusStep(s.id)}
-                  className={cn(
-                    "t-control flex items-center gap-2 rounded-md px-1 py-2 text-left hover:bg-surface-2",
-                    activeId === s.id && "bg-surface-2",
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white",
-                      stepColor(s.kind),
-                    )}
-                  >
-                    {s.kind === "human" ? (
-                      <ShieldCheck size={13} />
-                    ) : s.kind === "agent" ? (
-                      <IntegrationLogo provider="hermes" size={16} />
-                    ) : (
-                      <Layers size={13} />
-                    )}
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block truncate text-xs font-medium">
-                      {s.label}
-                    </span>
-                    <span className="block text-[10px] text-muted">
-                      {s.kind}
-                    </span>
-                  </span>
-                </button>
-              ))}
-            {!graphStages.some((s) =>
-              (s.label + s.kind)
-                .toLowerCase()
-                .includes(stepSearch.toLowerCase()),
-            ) && <p className="text-xs text-muted">No matching steps.</p>}
-          </div>
-          {mode === "workflow" ? (
-            <>
-              {/* Saved team workflow templates */}{" "}
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted">
-                Investigation workflows
-              </p>
-              {saved.data?.templates.map((t) => (
-                <button
-                  key={t.focus}
-                  disabled={!!busy}
-                  aria-pressed={draft?.focus === t.focus}
-                  onClick={() =>
-                    setDraft((d) => (d ? { ...d, focus: t.focus } : d))
-                  }
-                  className={cn(
-                    "t-control grid gap-1 rounded-md border p-2 text-left",
-                    draft?.focus === t.focus
-                      ? "border-accent bg-accent-soft"
-                      : "border-border hover:bg-surface-2",
-                  )}
-                >
-                  <span className="text-xs font-semibold">{t.name}</span>
-                  <span className="text-xs leading-relaxed text-muted">
-                    {t.summary}
-                  </span>
-                </button>
-              ))}
-            </>
-          ) : (
-            <>
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted">
-                Connected repository
-              </p>
-              <h2 className="break-words text-sm font-semibold">
-                {repository.data?.snapshot?.repository ||
-                  "Awaiting repository inspection"}
-              </h2>
-              <Badge tone={repository.data?.current ? "ok" : "outline"}>
-                {repository.data?.current
-                  ? "Current snapshot"
-                  : "Snapshot unavailable or stale"}
-              </Badge>
-              {repository.data?.snapshot && (
-                <>
-                  <p className="mono break-all text-xs text-muted">
-                    {repository.data.snapshot.revision}
-                  </p>
-                  <p className="text-xs text-muted">
-                    {repository.data.snapshot.dirty
-                      ? "Working tree has uncommitted changes."
-                      : "Clean tracked working tree."}
-                  </p>
-                  <p className="text-xs text-muted">
-                    {repository.data.snapshot.nodes.length} observed manifests.
-                    Lines show declared local dependencies. This is a manifest
-                    inventory, not a full runtime call graph.
-                  </p>
-                </>
-              )}
-              <p className="text-xs leading-relaxed text-muted">
-                The connected context harness updates this map. Source files and
-                secrets are not uploaded; only manifest metadata and hashes are
-                recorded.
-              </p>
-              {!repository.data?.current && (
-                <code className="break-all rounded border border-border p-2 text-xs">
-                  python3 integrations/context-harness/worker.py --repo .
-                </code>
-              )}
-              {repository.error && (
-                <p role="alert" className="text-xs text-danger">
-                  {repository.error}
-                </p>
-              )}
-            </>
-          )}
-          {mode === "repository" && (
-            <section className="grid gap-2 border-t border-border pt-3">
-              <h2 className="text-xs font-semibold">Suggested improvements</h2>
-              {workspace.data?.cases
-                .filter((c) => c.title.startsWith("Architecture research:"))
-                .slice(0, 8)
-                .map((c) => (
-                  <button
-                    key={c.id}
-                    onClick={() => onWork(c.id)}
-                    className="rounded border border-border p-2 text-left text-xs hover:bg-surface-2"
-                  >
-                    {c.title}
-                    <span className="mt-1 block text-muted">
-                      Open research and review
-                    </span>
-                  </button>
-                ))}
-              {!workspace.data?.cases.some((c) =>
-                c.title.startsWith("Architecture research:"),
-              ) && (
-                <p className="text-xs text-muted">
-                  No research recorded yet. Research improvements creates a
-                  Hermes assessment with references and a test plan.
-                </p>
-              )}
-            </section>
-          )}
-          {discovery && (
-            <div className="grid gap-2 rounded-lg border border-border p-3 text-xs">
-              <h2 className="font-semibold">Workspace inspection</h2>
-              <p>{discovery.reason}</p>
-              <p className="text-muted">
-                {discovery.reports} reports · {discovery.failed_runs} failed
-                runs · {discovery.runs_missing_cost} missing cost receipts
-              </p>
-              <p className="text-muted">{discovery.source}</p>
-            </div>
-          )}
-        </aside>
+      <div className="grid min-h-0 lg:grid-cols-[minmax(0,1fr)_240px]">
         <section
           aria-label="Architecture canvas"
           className="relative min-h-[480px] min-w-0 bg-background"
