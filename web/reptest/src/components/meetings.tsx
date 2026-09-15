@@ -100,6 +100,7 @@ function MeetingRoom({ initial, onBack }: { initial: Room; onBack: () => void })
   const [due, setDue] = useState(new Date().toISOString().slice(0, 10));
   const todoRequest = useRef<{ id: string; segment_id: string; title: string; due_on: string }>();
   const ready = room.status === "ready" && room.expires_at * 1000 > Date.now();
+  const roomStatus = room.status === "ready" && !ready ? "expired" : room.status;
   async function flush() {
     if (saving.current) return false;
     saving.current = true;
@@ -193,7 +194,7 @@ function MeetingRoom({ initial, onBack }: { initial: Room; onBack: () => void })
     catch (e) { setError(errorText(e)); } finally { setBusy(false); }
   }
   return <div className="grid gap-3">
-    <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="font-medium">{room.title}</h3><p className="text-xs text-muted">{room.status} · Expires {new Date(room.expires_at * 1000).toLocaleTimeString()}</p></div><Button disabled={!!client.current || pending > 0 || busy} onClick={onBack}>All calls</Button></div>
+    <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="font-medium">{room.title}</h3><p className="text-xs text-muted">{roomStatus} · Expires {new Date(room.expires_at * 1000).toLocaleTimeString()}</p></div><Button disabled={!!client.current || pending > 0 || busy} onClick={onBack}>All calls</Button></div>
     {room.url && ready && <div className="flex flex-wrap items-center gap-2"><code className="min-w-0 flex-1 break-all rounded border border-border p-2 text-xs">{room.url}</code><Button onClick={() => { void navigator.clipboard.writeText(room.url!).then(() => setNotice("Guest link copied. Join as host to admit teammates."), () => setError("Copy failed. Select and copy the meeting link.")); }}><LinkIcon size={14} />Copy meeting link</Button></div>}
     <p className="text-xs text-muted">Guests join through Daily’s waiting room. Admit them from the call. Rooms allow up to 12 people and expire from creation time.</p>
     <div className="flex flex-wrap items-center gap-2"><Badge tone={state === "Joined" ? "ok" : "outline"}>{state}</Badge>{!client.current ? <Button variant="default" disabled={!ready || busy} onClick={() => void join()}>Join in Relay</Button> : <Button disabled={busy} onClick={() => void leave()}>Leave call</Button>}{ready && <Button disabled={busy || pending > 0 || capturing.current} onClick={() => void close()}>End room for everyone</Button>}</div>
