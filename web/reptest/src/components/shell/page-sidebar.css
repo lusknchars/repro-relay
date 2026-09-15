@@ -1,0 +1,111 @@
+.page-context {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  min-height: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.page-context-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.page-context-header h2 {
+  font-size: 14px;
+  font-weight: 600;
+}
+.page-sidebar-body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 16px 12px;
+}
+.page-sidebar-group {
+  display: grid;
+  gap: 6px;
+}
+.page-sidebar-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
+.page-sidebar-note {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+.page-sidebar-nav {
+  display: grid;
+  gap: 4px;
+}
+.page-sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  text-align: left;
+  font-size: 12px;
+}
+.page-sidebar-link:hover {
+  background: var(--surface-2);
+}
+.page-sidebar-link[aria-current],
+.page-sidebar-link[aria-pressed="true"] {
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+}
+.page-sidebar-link svg {
+  flex-shrink: 0;
+}
+.page-sidebar-count {
+  margin-left: auto;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.page-sidebar-identity {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 0 4px;
+}
+.page-sidebar-search {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: var(--background);
+  font-size: 12px;
+}
+.page-sidebar-divider {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+.page-sidebar-body :is(button, a, input):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (min-width: 1280px) {
+  .page-context {
+    width: 248px;
+    border-bottom: 0;
+    border-right: 1px solid var(--border);
+  }
+}
+@media (max-width: 1279px) {
+  .page-context {
+    max-height: 360px;
+  }
+}

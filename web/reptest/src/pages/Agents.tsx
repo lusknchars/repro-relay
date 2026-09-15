@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   ArrowUpRight,
+  Activity,
   Check,
   FlaskConical,
   Grid2X2,
@@ -17,6 +18,7 @@ import type { Route } from "@/components/shell/Shell";
 import { api, errorText, useLoad, useWorkspace, when } from "@/lib/live";
 import type { ArchitectureRecord, Focus } from "./Architecture";
 import "./agents.css";
+import { PageSidebar } from "@/components/shell/PageSidebar";
 const tabs = ["Skills", "Runtime", "Activity", "Access"] as const;
 export function AgentsPage({
   onRoute,
@@ -63,6 +65,12 @@ export function AgentsPage({
       .includes(query.toLowerCase()),
   );
   const owner = workspace.data?.account.role === "owner";
+  const activeSkill = templates.find(
+    (skill) => skill.focus === catalog?.settings.focus,
+  );
+  const recordedRuns = workspace.data?.runs.filter(
+    (run) => run.execution_kind !== "local_validation",
+  );
   function selectTab(value: (typeof tabs)[number]) {
     setTab(value);
     const url = new URL(location.href);
@@ -107,6 +115,93 @@ export function AgentsPage({
   }
   return (
     <div className="agents-library">
+      <PageSidebar>
+        <div className="page-sidebar-identity">
+          <IntegrationLogo provider="hermes" size={32} />
+          <div>
+            <strong className="text-sm">Hermes</strong>
+            <p className="page-sidebar-note">{status}</p>
+          </div>
+        </div>
+        <nav className="page-sidebar-nav" aria-label="Agent sections">
+          {tabs.map((value) => {
+            const Icon =
+              value === "Skills"
+                ? Sparkles
+                : value === "Runtime"
+                  ? Workflow
+                  : value === "Activity"
+                    ? Activity
+                    : ShieldCheck;
+            const count =
+              value === "Skills"
+                ? catalog
+                  ? templates.length
+                  : undefined
+                : value === "Activity"
+                  ? recordedRuns?.length
+                  : undefined;
+            return (
+              <button
+                key={value}
+                className="page-sidebar-link"
+                aria-label={value}
+                aria-current={tab === value ? "page" : undefined}
+                onClick={() => selectTab(value)}
+              >
+                <Icon size={16} />
+                <span>{value}</span>
+                {count !== undefined && (
+                  <span className="page-sidebar-count" aria-hidden="true">
+                    {count}
+                    {value === "Activity" && workspace.data?.moreRuns
+                      ? "+"
+                      : ""}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+        <section
+          className="page-sidebar-group page-sidebar-divider"
+          aria-label="Selected workflow"
+        >
+          <h3 className="page-sidebar-label">Active skill</h3>
+          <p className="text-xs font-medium">
+            {activeSkill?.name ||
+              (briefs.error ? "Selection unavailable" : "Loading selection…")}
+          </p>
+          <p className="page-sidebar-note">
+            Used for new investigations. Running work keeps its saved workflow.
+          </p>
+          <button
+            className="page-sidebar-link"
+            onClick={() => onRoute("architecture")}
+          >
+            <Workflow size={15} />
+            Edit team workflow
+            <ArrowUpRight size={13} />
+          </button>
+        </section>
+        <section className="page-sidebar-group page-sidebar-divider">
+          <h3 className="page-sidebar-label">Workspace access</h3>
+          <p className="page-sidebar-note">
+            {owner
+              ? "Administrator · skills and connections"
+              : workspace.data?.account.authenticated
+                ? "Teammate · inspect skills and activity"
+                : "Checking workspace access…"}
+          </p>
+          <button
+            className="page-sidebar-link"
+            onClick={() => onRoute("settings")}
+          >
+            <ShieldCheck size={15} />
+            Manage connections
+          </button>
+        </section>
+      </PageSidebar>
       <header className="agents-heading">
         <div>
           <h1>Agents</h1>
@@ -116,17 +211,6 @@ export function AgentsPage({
           Connections <ArrowUpRight size={14} />
         </Button>
       </header>
-      <nav className="agents-tabs" aria-label="Agent sections">
-        {tabs.map((value) => (
-          <button
-            key={value}
-            aria-current={tab === value ? "page" : undefined}
-            onClick={() => selectTab(value)}
-          >
-            {value}
-          </button>
-        ))}
-      </nav>
       {tab === "Skills" && (
         <>
           <div className="agents-section-heading">

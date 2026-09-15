@@ -121,6 +121,8 @@ test("observed repository, editable team workflow and real Hermes research remai
     .first()
     .getByRole("button", { name: "Architecture", exact: true })
     .click();
+  // Architecture now retains its selected view when returning from Work.
+  await page.getByRole("button", { name: "Current repository", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Suggested improvements" }),
   ).toBeVisible();
