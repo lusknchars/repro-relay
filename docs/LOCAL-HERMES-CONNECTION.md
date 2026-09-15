@@ -31,3 +31,11 @@ The worker heartbeat reports runtime reachability. A saved key or heartbeat does
 The local installation can run the gateway and worker as user LaunchAgents, with absolute program paths, the repository as working directory and logs under `.data`. No credential belongs in a plist. The gateway must launch through `runtime.py gateway`, which rechecks the current Plow grant, rather than directly through `hermes gateway`.
 
 Use labels `com.reprorelay.hermes` and `com.reprorelay.chat`. KeepAlive restarts a crashed process; throttle restarts by at least 30 seconds. Run only one gateway and one chat worker. The worker holds a process lock to prevent duplicate consumers. These are user-login services, not services that run while the Mac is powered off or logged out.
+
+On an installation with these services registered, restart the gateway after active work finishes with `launchctl kickstart -k gui/$(id -u)/com.reprorelay.hermes`. Restart just the chat worker with `launchctl kickstart -k gui/$(id -u)/com.reprorelay.chat`. Do not also start a second gateway in a terminal. Keep Plow Latch open for Mac tool access. A transient port conflict during gateway shutdown may delay the supervised restart.
+
+## Local verification, September 15
+
+The existing Alder line passed the live owner-chat grant check. The advertised MCP endpoint initialized against the installed Mac app and returned real device status and skills. Kimi completed a request through the dedicated Hermes gateway. A subsequent Hermes run called Latch's file-reading tool and returned a unique marker from a harmless file in the shared Plow folder; its persisted tool response matched the file.
+
+The Team worker delivered a real Hermes response to a previously queued local-owner message. Restarting the worker retained the original run/reply IDs and the API held one response. Both user login services were running afterward. Detailed receipts remain in the installation's private `.data` directory. No outgoing Plow phone message was sent in this verification. Accessibility and Full Disk Access were not granted; protected Mac data and interactive app automation still require the relevant user permissions.
