@@ -1,1 +1,318 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -24 573 573"><style>path{fill:#17171c}@media(prefers-color-scheme:dark){path{fill:#fff}}</style><ns0:path xmlns:ns0="http://www.w3.org/2000/svg" fill-rule="evenodd" d="M305.3,500.5C299.1,498.8 293.1,495.9 287.2,491.7C283.2,488.8 271.1,474.5 237.8,433.5C229.8,423.6 216.7,407.7 208.8,398.1L194.5,380.8L117.5,380.9C50.9,381.0 39.8,380.9 35.4,379.5C29.3,377.7 25.4,374.1 24.0,368.9C21.8,360.7 22.2,360.0 66.5,301.2C107.6,246.7 117.5,234.8 124.7,231.1C134.0,226.4 136.7,226.2 193.0,225.1C222.4,224.5 247.8,224.3 249.5,224.6C261.8,226.7 266.4,228.5 275.3,234.3C280.3,237.6 290.4,248.9 355.9,324.5C375.9,347.6 403.8,379.7 417.9,395.9C432.0,412.1 450.0,432.8 457.9,441.9C465.8,451.0 476.1,462.9 480.9,468.4C492.8,482.0 493.2,482.6 493.7,487.4C494.4,493.2 492.1,497.3 486.7,499.9C482.4,502.0 481.8,502.0 396.4,501.9C325.7,501.9 309.6,501.6 305.3,500.5ZM449.8,313.0C447.8,312.6 445.0,311.6 443.6,310.6C440.3,308.5 416.5,279.6 370.0,221.6C357.0,205.3 348.0,198.8 335.0,196.0C331.7,195.3 314.2,194.7 291.0,194.3C265.7,194.0 250.3,193.4 246.0,192.5C238.5,191.0 230.5,187.4 223.8,182.5C219.0,179.0 104.7,49.1 102.2,44.3C98.8,37.8 101.2,30.6 108.1,26.5C111.5,24.5 113.1,24.5 225.0,24.7C339.6,24.9 380.9,25.8 392.7,28.5C399.8,30.2 413.1,36.5 418.0,40.6C421.8,43.9 424.4,47.0 494.7,133.6C549.7,201.4 550.0,201.7 550.0,208.0C550.0,213.0 545.9,219.2 533.3,233.2C526.3,241.1 508.2,261.6 493.2,278.7C478.2,295.7 464.7,310.3 463.2,311.0C459.2,312.9 454.0,313.7 449.8,313.0Z" /></svg>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="1248" height="1248" viewBox="166 166 916 916" fill="none"
+     role="img" aria-labelledby="icon-title icon-desc">
+  <title id="icon-title">Repro Relay — orbital memory layers</title>
+  <desc id="icon-desc">Editable vector reconstruction of the supplied app icon: a polished purple sphere and silver orbital ring centered on a dark memory layer, above two translucent violet layers, on a white rounded-square tile. Paths, gradients and SVG filters only; no embedded raster images.</desc>
+  <defs>
+    <path id="tile-outline" d="M 423 227 H 831 C 938 227 1009 299 1009 406 V 837 C 1009 945 941 1018 834 1018 H 419 C 312 1018 244 945 244 840 V 408 C 244 301 317 227 423 227 Z"/>
+    <path id="layer-outline" d="M 587 357 C 615 341 640 341 667 355 L 909 485 C 935 499 935 521 909 537 L 672 654 C 645 668 621 669 594 656 L 357 534 C 329 520 329 496 357 480 Z"/>
+    <path id="layer-front" d="M 337 507 C 337 518 345 527 357 534 L 594 656 C 621 669 645 668 672 654 L 909 537 C 922 529 928 519 928 508"/>
+    <clipPath id="tile-clip"><use xlink:href="#tile-outline"/></clipPath>
+    <clipPath id="layer-clip"><use xlink:href="#layer-outline"/></clipPath>
+    <clipPath id="planet-clip"><ellipse cx="630.5" cy="488" rx="90.2" ry="92.3"/></clipPath>
+    <clipPath id="moon-clip"><circle cx="794" cy="493.5" r="20.3"/></clipPath>
+
+    <filter id="blur-1" x="-80%" y="-80%" width="260%" height="260%" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="1"/></filter>
+    <filter id="blur-2" x="-80%" y="-80%" width="260%" height="260%" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="2"/></filter>
+    <filter id="blur-4" x="-80%" y="-80%" width="260%" height="260%" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="4"/></filter>
+    <filter id="blur-7" x="-80%" y="-80%" width="260%" height="260%" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="7"/></filter>
+    <filter id="blur-12" x="-100%" y="-100%" width="300%" height="300%" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="12"/></filter>
+    <filter id="blur-22" x="-100%" y="-100%" width="300%" height="300%" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="22"/></filter>
+    <filter id="blur-30" x="-100%" y="-150%" width="300%" height="400%" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="30"/></filter>
+    <filter id="tile-shadow" x="-20%" y="-15%" width="140%" height="150%" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="27 24" result="shadow-blur"/>
+      <feOffset in="shadow-blur" dx="-8" dy="14" result="offset-shadow"/>
+      <feFlood flood-color="#16121a" flood-opacity="0.47"/>
+      <feComposite in2="offset-shadow" operator="in"/>
+    </filter>
+
+    <radialGradient id="tile-surface" cx="0.43" cy="0.2" r="0.9" gradientTransform="translate(0 -.02) scale(1 1.04)">
+      <stop stop-color="#fcfcfc"/>
+      <stop offset=".55" stop-color="#f3f2f3"/>
+      <stop offset=".85" stop-color="#ededed"/>
+      <stop offset="1" stop-color="#e8e8e8"/>
+    </radialGradient>
+    <linearGradient id="tile-bevel" x1="300" y1="238" x2="890" y2="1010" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffff"/>
+      <stop offset=".33" stop-color="#ffffff" stop-opacity=".85"/>
+      <stop offset=".7" stop-color="#ffffff" stop-opacity=".13"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity=".86"/>
+    </linearGradient>
+    <radialGradient id="tile-soft-light" cx=".4" cy=".24" r=".7">
+      <stop stop-color="#ffffff" stop-opacity=".52"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="bottom-surface" x1="556" y1="360" x2="652" y2="655" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#afabd9" stop-opacity=".75"/>
+      <stop offset=".40" stop-color="#d2c3e3" stop-opacity=".81"/>
+      <stop offset=".75" stop-color="#f3e9f2" stop-opacity=".90"/>
+      <stop offset="1" stop-color="#fcfbfc" stop-opacity=".96"/>
+    </linearGradient>
+    <radialGradient id="bottom-magenta" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(555 517) rotate(19) scale(213 110)">
+      <stop stop-color="#ec7de4" stop-opacity=".64"/>
+      <stop offset=".4" stop-color="#e29be4" stop-opacity=".43"/>
+      <stop offset="1" stop-color="#d291ef" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="bottom-violet" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(709 448) rotate(10) scale(193 130)">
+      <stop stop-color="#9e82e6" stop-opacity=".72"/>
+      <stop offset="1" stop-color="#aca0ee" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="bottom-white" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(819 567) rotate(-28) scale(145 123)">
+      <stop stop-color="#ffffff" stop-opacity=".75"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="middle-surface" x1="620" y1="447" x2="636" y2="666" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#565db2" stop-opacity=".97"/>
+      <stop offset=".28" stop-color="#8061ad" stop-opacity=".96"/>
+      <stop offset=".5" stop-color="#a978bb" stop-opacity=".96"/>
+      <stop offset=".75" stop-color="#d4a5d7" stop-opacity=".95"/>
+      <stop offset="1" stop-color="#f7dcf1" stop-opacity=".98"/>
+    </linearGradient>
+    <radialGradient id="middle-indigo" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(495 448) rotate(15) scale(202 139)">
+      <stop stop-color="#5d59b5" stop-opacity=".90"/>
+      <stop offset=".54" stop-color="#7565bc" stop-opacity=".48"/>
+      <stop offset="1" stop-color="#b0a2d8" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="middle-magenta" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(600 611) rotate(10) scale(193 99)">
+      <stop stop-color="#e6a4de" stop-opacity=".88"/>
+      <stop offset="1" stop-color="#e1a0e0" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="middle-sheen" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(920 528) scale(178 153)">
+      <stop stop-color="#ffffff" stop-opacity=".76"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="middle-blue-reflection" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(781 469) scale(186 104)">
+      <stop stop-color="#6675c2" stop-opacity=".87"/>
+      <stop offset=".5" stop-color="#7382c9" stop-opacity=".40"/>
+      <stop offset="1" stop-color="#7a88c7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="middle-layer-shadow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(611 534) rotate(7) scale(204 113)">
+      <stop stop-color="#32164f" stop-opacity=".66"/>
+      <stop offset=".45" stop-color="#482762" stop-opacity=".43"/>
+      <stop offset="1" stop-color="#482762" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="glass-edge" x1="590" y1="458" x2="637" y2="666" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffff" stop-opacity=".18"/>
+      <stop offset=".55" stop-color="#ffffff" stop-opacity=".76"/>
+      <stop offset="1" stop-color="#ffffff"/>
+    </linearGradient>
+
+    <linearGradient id="top-surface" x1="462" y1="427" x2="788" y2="589" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#17152b"/>
+      <stop offset=".5" stop-color="#100d21"/>
+      <stop offset="1" stop-color="#181329"/>
+    </linearGradient>
+    <radialGradient id="top-sheen" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(900 447) rotate(17) scale(403 254)">
+      <stop stop-color="#b8b6bb" stop-opacity=".68"/>
+      <stop offset=".42" stop-color="#8b8791" stop-opacity=".38"/>
+      <stop offset=".78" stop-color="#524c5e" stop-opacity=".10"/>
+      <stop offset="1" stop-color="#524c5e" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="top-upper-reflection" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(629 347) scale(138 53)">
+      <stop stop-color="#817a85" stop-opacity=".32"/>
+      <stop offset="1" stop-color="#817a85" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="top-purple-light" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(628 543) scale(155 87)">
+      <stop stop-color="#a42bf3" stop-opacity=".35"/>
+      <stop offset=".43" stop-color="#7e20d7" stop-opacity=".13"/>
+      <stop offset="1" stop-color="#4c18ac" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="top-edge" x1="339" y1="513" x2="925" y2="651" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8a829d" stop-opacity=".33"/>
+      <stop offset=".49" stop-color="#c6b7dc" stop-opacity=".87"/>
+      <stop offset=".82" stop-color="#b7adca" stop-opacity=".71"/>
+      <stop offset="1" stop-color="#c2bdce" stop-opacity=".68"/>
+    </linearGradient>
+
+    <radialGradient id="planet-surface" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(674 426) rotate(112) scale(162 151)">
+      <stop stop-color="#fbd3ff"/>
+      <stop offset=".14" stop-color="#b880cd"/>
+      <stop offset=".29" stop-color="#735487"/>
+      <stop offset=".43" stop-color="#302341"/>
+      <stop offset=".61" stop-color="#080719"/>
+      <stop offset=".84" stop-color="#070314"/>
+      <stop offset="1" stop-color="#422679"/>
+    </radialGradient>
+    <radialGradient id="planet-blue" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(589 419) rotate(49) scale(98 37)">
+      <stop stop-color="#3526fb" stop-opacity=".85"/>
+      <stop offset=".42" stop-color="#3a18d8" stop-opacity=".51"/>
+      <stop offset="1" stop-color="#251cdb" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="planet-band" x1="553" y1="428" x2="711" y2="552" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#a324ed"/>
+      <stop offset=".30" stop-color="#f143f6"/>
+      <stop offset=".67" stop-color="#f653ef"/>
+      <stop offset="1" stop-color="#f781f0"/>
+    </linearGradient>
+    <radialGradient id="planet-volume" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(629 484) scale(94 97)">
+      <stop offset=".55" stop-color="#000000" stop-opacity="0"/>
+      <stop offset=".79" stop-color="#130324" stop-opacity=".06"/>
+      <stop offset=".91" stop-color="#714180" stop-opacity=".14"/>
+      <stop offset="1" stop-color="#efb3ff" stop-opacity=".76"/>
+    </radialGradient>
+    <linearGradient id="planet-rim" x1="566" y1="412" x2="693" y2="563" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#d2b4ff"/>
+      <stop offset=".24" stop-color="#bb63ff"/>
+      <stop offset=".55" stop-color="#fbadff"/>
+      <stop offset=".8" stop-color="#d684f9"/>
+      <stop offset="1" stop-color="#f6b5ff"/>
+    </linearGradient>
+    <radialGradient id="planet-specular" cx=".5" cy=".5" r=".5">
+      <stop stop-color="#ffffff"/>
+      <stop offset=".46" stop-color="#fffaff" stop-opacity=".98"/>
+      <stop offset=".72" stop-color="#fbe5ff" stop-opacity=".70"/>
+      <stop offset="1" stop-color="#f4cdff" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="orbit-chrome" x1="441" y1="539" x2="806" y2="422" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fffbff"/>
+      <stop offset=".19" stop-color="#f7eaff"/>
+      <stop offset=".38" stop-color="#a391bf"/>
+      <stop offset=".55" stop-color="#f7f3ff"/>
+      <stop offset=".72" stop-color="#fdfcff"/>
+      <stop offset=".89" stop-color="#9e92ab"/>
+      <stop offset="1" stop-color="#fffaff"/>
+    </linearGradient>
+    <linearGradient id="orbit-inner" x1="444" y1="472" x2="729" y2="555" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#b7a4cb"/>
+      <stop offset=".25" stop-color="#ffffff"/>
+      <stop offset=".47" stop-color="#d6c9e5"/>
+      <stop offset=".77" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#faf6ff"/>
+    </linearGradient>
+    <radialGradient id="moon-surface" cx=".70" cy=".23" r=".83">
+      <stop stop-color="#ffffff"/>
+      <stop offset=".14" stop-color="#e6c4ff"/>
+      <stop offset=".29" stop-color="#8a5ae3"/>
+      <stop offset=".48" stop-color="#4723ac"/>
+      <stop offset=".70" stop-color="#14033e"/>
+      <stop offset="1" stop-color="#100a2e"/>
+    </radialGradient>
+    <linearGradient id="moon-rim" x1="776" y1="475" x2="805" y2="512" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffbeff"/>
+      <stop offset=".54" stop-color="#c379fa"/>
+      <stop offset="1" stop-color="#d6a9ff"/>
+    </linearGradient>
+    <ellipse id="orbit-path" cx="625" cy="491" rx="193" ry="58.5" transform="rotate(-10 625 491)"/>
+    <path id="orbit-front" d="M 815.068 457.486 A 193 58.5 -10 0 1 434.932 524.514"/>
+  </defs>
+
+
+
+  <g id="app-tile">
+    <use xlink:href="#tile-outline" fill="#000000" filter="url(#tile-shadow)"/>
+    <use xlink:href="#tile-outline" fill="url(#tile-surface)"/>
+    <g clip-path="url(#tile-clip)">
+      <use xlink:href="#tile-outline" fill="url(#tile-soft-light)"/>
+      <use xlink:href="#tile-outline" stroke="#aeaaad" stroke-width="38" opacity=".19" filter="url(#blur-22)"/>
+      <use xlink:href="#tile-outline" stroke="#ffffff" stroke-width="15" opacity=".56" filter="url(#blur-7)"/>
+      <path d="M 257 888 C 260 966 321 1011 417 1011 H 837 C 927 1011 985 965 999 900" stroke="#ffffff" stroke-width="10" opacity=".50" filter="url(#blur-7)"/>
+    </g>
+    <use xlink:href="#tile-outline" stroke="url(#tile-bevel)" stroke-width="2.6"/>
+  </g>
+
+  <g id="layer-ambient-shadows" clip-path="url(#tile-clip)">
+    <ellipse cx="631" cy="900" rx="235" ry="37" fill="#8181c4" opacity=".28" filter="url(#blur-30)"/>
+    <ellipse cx="529" cy="852" rx="141" ry="53" fill="#b59be2" opacity=".24" filter="url(#blur-22)"/>
+    <ellipse cx="643" cy="875" rx="158" ry="41" fill="#9a88e8" opacity=".18" filter="url(#blur-22)"/>
+  </g>
+
+  <g id="memory-layer-bottom" transform="translate(2 263)">
+    <use xlink:href="#layer-outline" fill="url(#bottom-surface)"/>
+    <g clip-path="url(#layer-clip)">
+      <use xlink:href="#layer-outline" fill="url(#bottom-magenta)"/>
+      <use xlink:href="#layer-outline" fill="url(#bottom-violet)"/>
+      <use xlink:href="#layer-outline" fill="url(#bottom-white)"/>
+      <ellipse cx="615" cy="428" rx="212" ry="46" fill="#8365ba" opacity=".13" filter="url(#blur-22)"/>
+    </g>
+    <use xlink:href="#layer-outline" stroke="#ffffff" stroke-width="1.1" opacity=".35"/>
+    <use xlink:href="#layer-front" stroke="url(#glass-edge)" stroke-width="2.7" stroke-linecap="round"/>
+  </g>
+
+  <g id="layer-reflected-magenta" clip-path="url(#tile-clip)">
+    <ellipse cx="522" cy="764" rx="107" ry="27" transform="rotate(20 522 764)" fill="#ff8de8" opacity=".20" filter="url(#blur-22)"/>
+  </g>
+
+  <g id="memory-layer-middle" transform="translate(1 131)">
+    <use xlink:href="#layer-outline" fill="url(#middle-surface)"/>
+    <g clip-path="url(#layer-clip)">
+      <use xlink:href="#layer-outline" fill="url(#middle-indigo)"/>
+      <use xlink:href="#layer-outline" fill="url(#middle-magenta)"/>
+      <use xlink:href="#layer-outline" fill="url(#middle-blue-reflection)"/>
+      <use xlink:href="#layer-outline" fill="url(#middle-layer-shadow)"/>
+      <use xlink:href="#layer-outline" fill="url(#middle-sheen)"/>
+      <path d="M 358 612 L 594 489 C 622 475 644 475 671 490 L 910 613 L 927 681 H 337 Z" fill="#bea4d7" opacity=".12"/>
+
+    </g>
+    <use xlink:href="#layer-outline" stroke="#f9f2ff" stroke-width="1" opacity=".27"/>
+    <use xlink:href="#layer-front" stroke="url(#glass-edge)" stroke-width="2.9" stroke-linecap="round"/>
+  </g>
+
+  <g id="memory-layer-top">
+    <use xlink:href="#layer-outline" fill="url(#top-surface)"/>
+    <g clip-path="url(#layer-clip)">
+      <use xlink:href="#layer-outline" fill="url(#top-sheen)"/>
+      <use xlink:href="#layer-outline" fill="url(#top-upper-reflection)"/>
+      <use xlink:href="#layer-outline" fill="url(#top-purple-light)"/>
+      <ellipse cx="630" cy="563" rx="74" ry="22" fill="#190534" opacity=".55" filter="url(#blur-12)"/>
+      <ellipse cx="626" cy="559" rx="93" ry="16" fill="#b739ff" opacity=".24" filter="url(#blur-12)"/>
+    </g>
+    <use xlink:href="#layer-front" stroke="url(#top-edge)" stroke-width="2.4" stroke-linecap="round"/>
+  </g>
+
+  <g id="relay-orbit-back">
+    <use xlink:href="#orbit-path" stroke="#c988ff" stroke-width="16" opacity=".26" filter="url(#blur-7)"/>
+    <use xlink:href="#orbit-path" stroke="#c8b6dd" stroke-width="9" opacity=".43"/>
+    <use xlink:href="#orbit-path" stroke="#82748f" stroke-width="7.1"/>
+    <use xlink:href="#orbit-path" stroke="url(#orbit-chrome)" stroke-width="5.6"/>
+    <use xlink:href="#orbit-path" stroke="url(#orbit-inner)" stroke-width="2.0"/>
+  </g>
+
+  <g id="central-purple-sphere">
+    <ellipse cx="630.5" cy="490" rx="92" ry="93" stroke="#ba4fff" stroke-width="5" opacity=".52" filter="url(#blur-7)"/>
+    <ellipse cx="630.5" cy="488" rx="90.2" ry="92.3" fill="url(#planet-surface)"/>
+    <g clip-path="url(#planet-clip)">
+      <ellipse cx="630.5" cy="488" rx="90.2" ry="92.3" fill="url(#planet-blue)"/>
+      <path d="M 541 399 C 565 448 617 457 650 484 C 679 505 706 523 719 557" stroke="#3620fc" stroke-width="42" opacity=".98" filter="url(#blur-7)"/>
+      <path d="M 544 404 C 564 449 612 465 648 490 C 678 511 700 533 711 557" stroke="#b224f1" stroke-width="24" filter="url(#blur-7)"/>
+      <path d="M 544 407 C 565 450 612 468 648 491 C 678 512 698 533 710 556" stroke="url(#planet-band)" stroke-width="14.5" filter="url(#blur-4)"/>
+      <path d="M 546 409 C 565 450 611 469 647 492 C 677 512 698 534 710 556" stroke="#ff83f6" stroke-width="4.5" opacity=".58" filter="url(#blur-4)"/>
+      <path d="M 528 466 C 547 510 582 522 617 545 C 645 562 670 580 699 595" stroke="#3625ff" stroke-width="34" opacity=".98" filter="url(#blur-7)"/>
+      <path d="M 529 477 C 546 514 582 533 615 553 C 643 569 670 585 699 598" stroke="#e842ef" stroke-width="19" filter="url(#blur-4)"/>
+      <path d="M 529 478 C 546 515 582 534 615 553 C 643 570 670 585 699 598" stroke="#ff8cf0" stroke-width="8.3" opacity=".91" filter="url(#blur-4)"/>
+      <ellipse cx="630.5" cy="488" rx="90.2" ry="92.3" fill="url(#planet-volume)"/>
+      <ellipse cx="677" cy="427" rx="26" ry="36" transform="rotate(-39 677 427)" fill="#f6c2ff" opacity=".78" filter="url(#blur-7)"/>
+      <ellipse cx="677" cy="428" rx="22" ry="30" transform="rotate(-39 677 428)" fill="url(#planet-specular)"/>
+      <ellipse cx="678.2" cy="428.5" rx="12.7" ry="20.4" transform="rotate(-39 678.2 428.5)" fill="#ffffff" opacity=".96" filter="url(#blur-2)"/>
+    </g>
+    <ellipse cx="630.5" cy="488" rx="90.2" ry="92.3" stroke="url(#planet-rim)" stroke-width="1.5" opacity=".88"/>
+    <path d="M 565.5 423.7 A 90.2 92.3 0 0 1 659.5 400.6" stroke="#efc7ff" stroke-width="1.0" opacity=".85"/>
+  </g>
+
+  <g id="relay-orbit-front">
+    <use xlink:href="#orbit-front" stroke="#deb8fa" stroke-width="12" opacity=".34" filter="url(#blur-4)"/>
+    <use xlink:href="#orbit-front" stroke="#b6a2c7" stroke-width="8.4"/>
+    <use xlink:href="#orbit-front" stroke="#6f647d" stroke-width="6.7"/>
+    <use xlink:href="#orbit-front" stroke="url(#orbit-chrome)" stroke-width="5.6"/>
+    <use xlink:href="#orbit-front" stroke="url(#orbit-inner)" stroke-width="2.8"/>
+    <g id="orbit-highlights">
+      <ellipse cx="456" cy="539" rx="19" ry="5.0" transform="rotate(18 456 539)" fill="#fff3ff" opacity=".95" filter="url(#blur-7)"/>
+      <ellipse cx="456" cy="539" rx="13" ry="2.6" transform="rotate(18 456 539)" fill="#ffffff" filter="url(#blur-1)"/>
+      <ellipse cx="799" cy="437" rx="12" ry="5.0" transform="rotate(37 799 437)" fill="#ffffff" opacity=".88" filter="url(#blur-4)"/>
+      <ellipse cx="799" cy="437" rx="6" ry="2.6" transform="rotate(37 799 437)" fill="#ffffff" filter="url(#blur-1)"/>
+    </g>
+  </g>
+
+  <g id="relay-satellite">
+    <circle cx="794" cy="493.5" r="21" stroke="#c364ff" stroke-width="3" opacity=".46" filter="url(#blur-4)"/>
+    <circle cx="794" cy="493.5" r="20.3" fill="url(#moon-surface)"/>
+    <g clip-path="url(#moon-clip)">
+      <path d="M 774 478 C 777 493 790 497 811 502" stroke="#9340ff" stroke-width="5" opacity=".61" filter="url(#blur-2)"/>
+      <ellipse cx="801.5" cy="480.5" rx="4.8" ry="5.5" transform="rotate(-38 801.5 480.5)" fill="#ffffff" opacity=".96" filter="url(#blur-1)"/>
+    </g>
+    <circle cx="794" cy="493.5" r="20.3" stroke="url(#moon-rim)" stroke-width="1.5"/>
+  </g>
+</svg>

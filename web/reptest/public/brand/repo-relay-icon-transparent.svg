@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
-     width="1248" height="1248" viewBox="166 166 916 916" fill="none"
+     width="1248" height="1248" viewBox="0 0 1248 1248" fill="none"
      role="img" aria-labelledby="icon-title icon-desc">
-  <title id="icon-title">Repro Relay — orbital memory layers</title>
+  <title id="icon-title">Repo Relay — orbital memory layers</title>
   <desc id="icon-desc">Editable vector reconstruction of the supplied app icon: a polished purple sphere and silver orbital ring centered on a dark memory layer, above two translucent violet layers, on a white rounded-square tile. Paths, gradients and SVG filters only; no embedded raster images.</desc>
   <defs>
     <path id="tile-outline" d="M 423 227 H 831 C 938 227 1009 299 1009 406 V 837 C 1009 945 941 1018 834 1018 H 419 C 312 1018 244 945 244 840 V 408 C 244 301 317 227 423 227 Z"/>
@@ -200,7 +200,7 @@
     <path id="orbit-front" d="M 815.068 457.486 A 193 58.5 -10 0 1 434.932 524.514"/>
   </defs>
 
-
+  
 
   <g id="app-tile">
     <use xlink:href="#tile-outline" fill="#000000" filter="url(#tile-shadow)"/>
@@ -245,7 +245,7 @@
       <use xlink:href="#layer-outline" fill="url(#middle-layer-shadow)"/>
       <use xlink:href="#layer-outline" fill="url(#middle-sheen)"/>
       <path d="M 358 612 L 594 489 C 622 475 644 475 671 490 L 910 613 L 927 681 H 337 Z" fill="#bea4d7" opacity=".12"/>
-
+      
     </g>
     <use xlink:href="#layer-outline" stroke="#f9f2ff" stroke-width="1" opacity=".27"/>
     <use xlink:href="#layer-front" stroke="url(#glass-edge)" stroke-width="2.9" stroke-linecap="round"/>
