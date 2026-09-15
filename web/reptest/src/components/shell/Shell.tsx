@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Bot, Activity, Radio, CalendarDays, Workflow, Bell, BookOpen, Menu, MessagesSquare, Rocket, ChevronsUpDown, Command, Gauge, HelpCircle, Inbox, Moon, PanelLeft, Search, Settings, SlidersHorizontal, Sun } from "lucide-react";
+import { Bot, Activity, Radio, CalendarDays, Workflow, BookOpen, Menu, MessagesSquare, Rocket, ChevronsUpDown, Command, Gauge, HelpCircle, Inbox, Moon, PanelLeft, Search, Settings, SlidersHorizontal, Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/theme/ThemeProvider";
 import { Avatar, Badge, Kbd } from "@/components/ui";
 import { WorkspaceContext } from "./WorkspaceContext";
 import { PageSidebarProvider } from "./PageSidebar";
+import { SentryBell } from "@/components/sentry";
 import { useWorkspace } from "@/lib/live";
 
 export type Route = "work" | "reach" | "team" | "agents" | "knowledge" | "usage" | "settings" | "setup" | "architecture" | "calendar" | "monitoring";
@@ -242,10 +243,7 @@ export function Shell({ route, onRoute, onOpenCustomizer, onOpenAccount, childre
             <button onClick={onOpenCustomizer} className="t-control grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-foreground" aria-label="Customize appearance">
               <SlidersHorizontal className="h-4 w-4" />
             </button>
-            <button className="t-control relative hidden h-8 w-8 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-foreground sm:grid" aria-label="Open work activity" onClick={() => onRoute("work")}>
-              <Bell className="h-4 w-4" />
-
-            </button>
+            <SentryBell onOpen={() => onRoute("monitoring")} />
             <button className="t-control ml-1 flex h-8 items-center gap-2 rounded-md pl-1 pr-2 hover:bg-surface-2" aria-label={`Account: ${name}`} onClick={onOpenAccount}>
               <Avatar name={name} size={24} />
               <span className="hidden text-xs sm:inline">{name}</span>

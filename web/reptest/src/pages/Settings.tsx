@@ -1,3 +1,5 @@
+import { SentryConnection } from "@/components/sentry";
+import { Bug } from "lucide-react";
 import { GoogleCalendarConnection } from "@/components/google-calendar";
 import { CalendarDays } from "lucide-react";
 import { useState } from "react";
@@ -13,6 +15,12 @@ import {
 } from "@/lib/live";
 import { cn } from "@/lib/utils";
 const connections = [
+  {
+    id: "sentry",
+    name: "Sentry",
+    role: "Reported bugs, releases and investigation alerts",
+    group: "Monitoring",
+  },
   {
     id: "calendar",
     name: "Workspace calendar",
@@ -51,6 +59,7 @@ const connections = [
   },
 ] as const;
 const groups = [
+  "Monitoring",
   "Agents",
   "Models",
   "Context and memory",
@@ -92,6 +101,7 @@ export function SettingsPage({
   const [error, setError] = useState("");
   const connection = connections.find((c) => c.id === selected)!;
   function status(id: (typeof connections)[number]["id"]) {
+    if (id === "sentry") return "Account and project monitoring";
     if (id === "calendar") return "Local plans · Google Calendar";
     if (id === "hermes")
       return workspace.error
@@ -155,7 +165,8 @@ export function SettingsPage({
           <p className="text-xs text-muted">
             {workspace.data?.account.profile?.name ||
               "Open locally or join with an invitation."}{" "}
-            Local work needs no login. The administrator manages the team's agent connections.
+            Local work needs no login. The administrator manages the team's
+            agent connections.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -197,7 +208,9 @@ export function SettingsPage({
                     )}
                   >
                     <span className="flex items-center gap-2 text-sm font-medium">
-                      {c.id === "calendar" ? (
+                      {c.id === "sentry" ? (
+                        <Bug size={22} />
+                      ) : c.id === "calendar" ? (
                         <CalendarDays size={22} />
                       ) : (
                         <IntegrationLogo
@@ -233,7 +246,9 @@ export function SettingsPage({
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="flex items-center gap-2 text-lg font-semibold">
-              {selected === "calendar" ? (
+              {selected === "sentry" ? (
+                <Bug size={28} />
+              ) : selected === "calendar" ? (
                 <CalendarDays size={28} />
               ) : (
                 <IntegrationLogo
@@ -246,6 +261,7 @@ export function SettingsPage({
             <Badge tone={ready ? "ok" : "outline"}>{status(selected)}</Badge>
           </div>
           <p className="text-sm text-muted">{connection.role}</p>
+          {selected === "sentry" && <SentryConnection />}
           {selected === "calendar" && (
             <>
               <p className="text-sm">
@@ -305,9 +321,8 @@ export function SettingsPage({
                       plow.refresh();
                       if (desktop) {
                         try {
-                          const { invoke } = await import(
-                            "@tauri-apps/api/core"
-                          );
+                          const { invoke } =
+                            await import("@tauri-apps/api/core");
                           await invoke("open_plow_latch");
                           setNotice(
                             "Plow line verified. Latch launch requested.",
