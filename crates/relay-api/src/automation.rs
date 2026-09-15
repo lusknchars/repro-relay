@@ -508,6 +508,9 @@ pub async fn tick(pool: &PgPool, runner: &Runner) -> ApiResult<()> {
 }
 pub async fn worker(pool: PgPool, runner: Runner) {
     loop {
+        if let Err(error) = crate::programs::tick(&pool, &runner).await {
+            tracing::warn!(status=%error.status,"program scheduler tick failed");
+        }
         if let Err(error) = tick(&pool, &runner).await {
             tracing::warn!(status=%error.status,"automation queue tick failed");
         }

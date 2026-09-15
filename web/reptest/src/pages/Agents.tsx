@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   ArrowUpRight,
+  CalendarClock,
   Activity,
   Check,
   FlaskConical,
@@ -19,7 +20,8 @@ import { api, errorText, useLoad, useWorkspace, when } from "@/lib/live";
 import type { ArchitectureRecord, Focus } from "./Architecture";
 import "./agents.css";
 import { PageSidebar } from "@/components/shell/PageSidebar";
-const tabs = ["Skills", "Runtime", "Activity", "Access"] as const;
+import { AgentPrograms } from "@/components/agent-programs";
+const tabs = ["Skills", "Programs", "Runtime", "Activity", "Access"] as const;
 export function AgentsPage({
   onRoute,
   onWork,
@@ -128,11 +130,13 @@ export function AgentsPage({
             const Icon =
               value === "Skills"
                 ? Sparkles
-                : value === "Runtime"
-                  ? Workflow
-                  : value === "Activity"
-                    ? Activity
-                    : ShieldCheck;
+                : value === "Programs"
+                  ? CalendarClock
+                  : value === "Runtime"
+                    ? Workflow
+                    : value === "Activity"
+                      ? Activity
+                      : ShieldCheck;
             const count =
               value === "Skills"
                 ? catalog
@@ -211,6 +215,7 @@ export function AgentsPage({
           Connections <ArrowUpRight size={14} />
         </Button>
       </header>
+      {tab === "Programs" && <AgentPrograms onWork={onWork} />}
       {tab === "Skills" && (
         <>
           <div className="agents-section-heading">

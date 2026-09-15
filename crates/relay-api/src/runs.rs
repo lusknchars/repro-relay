@@ -478,7 +478,7 @@ fn context_hash(context: &Value) -> String {
     format!("{:x}", Sha256::digest(context.to_string()))
 }
 
-async fn build_preview(
+pub(crate) async fn build_preview(
     tx: &mut Tx<'_>,
     case: &Case,
     review_id: Option<&str>,
@@ -601,6 +601,9 @@ pub async fn start(
             "Investigation context changed. Refresh the preview before starting.",
         ));
     }
+    if let Some(protocol) = crate::programs::admission(&mut tx, key, &case_id, &input).await? {
+        preview.context["scheduled_protocol"] = protocol;
+    }
     let active: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM investigation_runs WHERE workspace_id=current_setting('relay.workspace') AND active)").fetch_one(&mut *tx).await?;
     if active {
         return Err(ApiError::conflict(
@@ -656,6 +659,12 @@ pub async fn start(
     } else {
         instructions.to_owned()
     };
+    let instructions =
+        if let Some(objective) = preview.context["scheduled_protocol"]["objective"].as_str() {
+            format!("{instructions}\nScheduled routine: {objective}")
+        } else {
+            instructions
+        };
     let context = preview.context;
     let at = chrono::Utc::now();
     let mut run = Run {
@@ -692,6 +701,10 @@ pub async fn start(
     );
     sqlx::query("INSERT INTO investigation_runs(id,workspace_id,case_id,request_key,payload) VALUES($1,current_setting('relay.workspace'),$2,$3,$4)")
         .bind(&run.id).bind(&run.case_id).bind(key).bind(sqlx::types::Json(&run)).execute(&mut *tx).await?;
+    if let Some(id) = key.strip_prefix("program:") {
+        sqlx::query("UPDATE program_occurrences SET state='admitted',run_id=$1,detail='Open Work for progress and evidence.' WHERE workspace_id=current_setting('relay.workspace') AND id=$2 AND state='ready'")
+            .bind(&run.id).bind(uuid::Uuid::parse_str(id).map_err(|_|ApiError::invalid("Invalid program occurrence."))?).execute(&mut *tx).await?;
+    }
     tx.commit().await?;
     Ok((StatusCode::ACCEPTED, Json(run.public())))
 }

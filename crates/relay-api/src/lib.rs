@@ -15,6 +15,7 @@ pub mod google_calendar;
 pub mod hosting;
 pub mod intake;
 pub mod monitoring;
+pub mod programs;
 pub mod reach;
 pub mod repairs;
 pub mod runs;
@@ -230,6 +231,7 @@ pub fn app_with_runner(pool: PgPool, hosting: Hosting, runner: runs::Runner) -> 
         .merge(case_environment::routes())
         .merge(contributions::routes())
         .merge(calendar::routes())
+        .merge(programs::routes())
         .merge(reach::routes())
         .merge(chat::routes())
         .merge(google_calendar::routes())
