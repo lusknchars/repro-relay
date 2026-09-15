@@ -17,6 +17,7 @@ pub mod evidence;
 pub mod exa;
 mod competitors;
 pub mod google_calendar;
+pub mod hermes_console;
 pub mod hosting;
 pub mod intake;
 pub mod meetings;
@@ -263,6 +264,7 @@ pub fn app_with_discord(
         .merge(google_calendar::routes())
         .merge(model_setup::routes())
         .merge(runtime_usage::routes())
+        .merge(hermes_console::routes())
         .merge(sentry::routes(sentry))
         .merge(exa::routes(exa::Connector::default()))
         .merge(competitors::routes())

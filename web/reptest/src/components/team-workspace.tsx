@@ -9,6 +9,7 @@ import {
   Search,
 } from "lucide-react";
 import { HermesChat } from "./hermes-chat";
+import { HermesConsole } from "./hermes-console";
 import {
   api,
   useLoad,
@@ -226,6 +227,7 @@ export function TeamWorkspace({
               </p>
             )}
             <HermesChat account={account} desk work={item || undefined} />
+            {account.role === "owner" && <HermesConsole />}
           </>
         )}
       </div>

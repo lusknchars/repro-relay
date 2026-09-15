@@ -71,7 +71,7 @@ impl Runner {
 }
 
 impl Hermes {
-    async fn call(
+    pub(crate) async fn call(
         &self,
         method: Method,
         path: &str,
@@ -115,6 +115,18 @@ impl Hermes {
         // the operator's runtime redaction policy and must not be auto-forwarded.
         scrub(&mut value, &self.key);
         Ok(value)
+    }
+
+    /// Live run events. The stream stays open for the whole run, beyond the client timeout.
+    pub(crate) fn events(&self, remote: &str) -> reqwest::RequestBuilder {
+        self.client
+            .get(format!("{}/v1/runs/{remote}/events", self.url))
+            .bearer_auth(&self.key)
+            .timeout(Duration::from_secs(150))
+    }
+
+    pub(crate) fn redact(&self, value: &mut Value) {
+        scrub(value, &self.key);
     }
 
     async fn ready(&self) -> Result<(), String> {
@@ -285,7 +297,7 @@ pub(crate) async fn context_changed(tx: &mut Tx<'_>, run: &Run) -> ApiResult<boo
     Ok(true)
 }
 
-fn remote_id(value: &Value) -> Option<String> {
+pub(crate) fn remote_id(value: &Value) -> Option<String> {
     value["run_id"]
         .as_str()
         .filter(|s| {
