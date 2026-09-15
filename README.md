@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="web/src-tauri/icons/icon.png" alt="Repro Relay app icon" width="112" height="112" />
+  <img src="docs/assets/saturn-readme.gif" alt="Repro Relay's glowing purple Saturn animation" width="480" height="270" />
 </p>
 
 <h1 align="center">Repro Relay</h1>
