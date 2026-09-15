@@ -59,11 +59,11 @@ const connections = [
   },
 ] as const;
 const groups = [
-  "Monitoring",
+  "Communication",
   "Agents",
   "Models",
   "Context and memory",
-  "Communication",
+  "Monitoring",
   "Planning",
 ] as const;
 type Plow = {
