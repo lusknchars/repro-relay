@@ -11,27 +11,38 @@ and verified repository fixes are not included in this edition.
 
 ## Install
 
-Requires Git, Python 3 and Docker with Compose. The pinned upstream image is
-Linux amd64; Docker Desktop emulates it on Apple Silicon.
+From a copy of this repository, in its top folder:
 
 ```sh
-git clone https://github.com/plow-pbc/plow-agents.git
-git clone https://github.com/lusknchars/repro-relay.git
-cd repro-relay/agent
-python3 ../../plow-agents/bin/plow-agents login
-python3 ../../plow-agents/bin/plow-agents lines
+./relay agent
 ```
 
-Text the activation phrase from your own phone if login asks. Select a **free**
-line from the list and replace `ln_xxx` below. An existing occupied line already
-has an agent: keep it running and use a different free line. If you have none,
-run `login --new-line`, complete its phone confirmation, then run `lines` again.
+It checks Docker, signs you in to Plow, selects a free assistant line, starts this agent, waits until Plow reports it configured, prints a first Hermes reply, and shows the number to text. Repeating it continues an interrupted install. It never takes a line that already answers as an agent, and never overwrites an existing credential.
+
+Needs Docker Desktop running, Python 3, and the phone that owns the Plow account. The pinned upstream image is Linux amd64; Docker Desktop emulates it on Apple Silicon, so the first start downloads several GB.
 
 ```sh
+./relay agent status              # agent, line, Plow setup and reported usage
+./relay agent test "prompt"       # one prompt, printed with its token usage
+./relay agent stop                # stop it, keeping memory and identity
+```
+
+### The same steps by hand
+
+The command wraps the official Plow client. To run the steps yourself, clone
+[plow-agents](https://github.com/plow-pbc/plow-agents), then from `repro-relay/agent`:
+
+```sh
+python3 ../../plow-agents/bin/plow-agents login
+python3 ../../plow-agents/bin/plow-agents lines
 python3 ../../plow-agents/bin/plow-agents mint ln_xxx
 docker compose up --build -d
 docker compose logs -f agent
 ```
+
+Select a **free** line from the list and replace `ln_xxx`. An occupied line already has an
+agent: keep it running and use a different free line. With none, run `login --new-line`,
+complete its phone confirmation, then run `lines` again.
 
 Wait for `plow-init: configured` in the logs. Text the selected line:
 

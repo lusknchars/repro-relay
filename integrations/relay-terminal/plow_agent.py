@@ -1,0 +1,265 @@
+"""One-command install for the Plow chat agent on the owner's own line.
+
+Wraps the pinned official plow-agents client. It never selects an occupied line,
+never overwrites a credential, and never deletes the agent's data volume.
+"""
+import contextlib
+import hashlib
+import json
+import os
+from pathlib import Path
+import runpy
+import shutil
+import subprocess
+import sys
+import time
+from types import SimpleNamespace
+import urllib.request
+
+ROOT = Path(__file__).resolve().parents[2]
+AGENT = ROOT / 'agent'
+CREDENTIAL = AGENT / 'plow-credentials'
+CLIENT = ROOT / '.data/tools/plow-agents'
+CLIENT_COMMIT = '8ce907e220ab67018d6857e8054a41eed4ecd279'
+CLIENT_SHA256 = 'f69dd0eae74d82f6d9b56b66389c942df35de2665f6d8c92a62ed7b26af223aa'
+CLIENT_URL = f'https://raw.githubusercontent.com/plow-pbc/plow-agents/{CLIENT_COMMIT}/bin/plow-agents'
+ORIGIN = 'https://api.plow.co'
+READY = 'plow-init: configured'
+PARKED = 'parking; no gateway will start'
+CONTAINER_PATH = '/command:/usr/local/bin:/usr/bin:/bin'
+FIRST_PROMPT = 'Reply in one short sentence: say who you are and what you can do with meeting notes.'
+
+
+class AgentError(Exception):
+    """A stop with an explanation the owner can act on."""
+
+
+def preflight(run=None):
+    """Return the missing prerequisites, each with the action that fixes it."""
+    run = run or (lambda command: subprocess.run(command, capture_output=True, timeout=20).returncode)
+    if not shutil.which('docker'):
+        return ['Install Docker Desktop and open it, then run this again.']
+    for command in (['docker', 'compose', 'version'], ['docker', 'info']):
+        if run(command):
+            return ['Start Docker Desktop and wait until it reports running, then run this again.']
+    return []
+
+
+def choose_line(lines, ask):
+    """Select a free line. Occupied lines are never taken from their agent."""
+    free = [line for line in lines if not line.get('agent_uid')]
+    if not free:
+        held = len(lines) - len(free)
+        detail = f'{held} line(s) already answer as an agent. ' if held else 'This account holds no assistant line. '
+        raise AgentError(detail + 'Run `./relay agent --new-line` to have Plow provision one, '
+                         'or retire an existing agent with `plow-agents revoke <line>` first.')
+    if len(free) == 1:
+        return free[0]
+    return ask(free)
+
+
+def ensure_credential(path, line, identity, mint):
+    """Reuse a credential that belongs to this line; never overwrite another one."""
+    if path.exists():
+        current = (identity(path) or {}).get('line', {}).get('uid')
+        if current != line['uid']:
+            raise AgentError(
+                f'{path} already holds a credential for line {current}, not {line["uid"]}. '
+                'Nothing was changed. Remove or rotate that credential deliberately before installing here.')
+        return 'reused'
+    mint(path, line['uid'])
+    return 'minted'
+
+
+def wait_ready(read_logs, sleep=time.sleep, timeout=600, step=2):
+    """Watch container logs until Plow configures the agent, parks it, or time runs out."""
+    waited = 0
+    while True:
+        logs = read_logs() or ''
+        for text in logs.splitlines():
+            if READY in text:
+                return 'ready', text.strip()
+            if PARKED in text:
+                return 'parked', text.strip()
+        if waited >= timeout:
+            return 'timeout', 'The agent did not report readiness. Inspect `docker compose logs agent` in agent/.'
+        sleep(step)
+        waited += step
+
+
+@contextlib.contextmanager
+def installation_lock(path):
+    """One install at a time. The lock clears on failure and interruption."""
+    try:
+        descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        raise AgentError(f'An install is already running. If it was interrupted, delete {path} and retry.') from None
+    try:
+        os.close(descriptor)
+        yield
+    finally:
+        Path(path).unlink(missing_ok=True)
+
+
+def status_report(running, line, configured, reporter, usage):
+    """Human status. The reporter's key is never included."""
+    rows = ['Agent container: ' + ('running' if running else 'not running')]
+    rows.append('Line: ' + (f'{line.get("display_name") or "assistant"} {line.get("provider_key") or ""}'.strip()
+                            if line else 'no line selected yet'))
+    rows.append('Plow setup: ' + ('configured' if configured else 'not configured'))
+    rows.append('Index reporter: ' + (f'registered (install {reporter["install_id"]})'
+                                      if reporter.get('install_id') else 'not registered yet'))
+    if usage.get('tokens') is not None:
+        rows.append(f'Reported usage: {int(usage["tokens"]):,} tokens over {usage.get("days", 0)} day(s) '
+                    f'as {usage.get("agent", "this agent")}')
+    else:
+        rows.append('Reported usage: none yet; the reporter publishes every five minutes')
+    return '\n'.join(rows)
+
+
+def official():
+    """The pinned official client, verified before use."""
+    if not CLIENT.is_file():
+        CLIENT.parent.mkdir(parents=True, exist_ok=True)
+        with urllib.request.urlopen(CLIENT_URL, timeout=60) as response:
+            data = response.read(2_000_001)
+        if hashlib.sha256(data).hexdigest() != CLIENT_SHA256:
+            raise AgentError('The official Plow client did not match its pinned checksum. Nothing was installed.')
+        CLIENT.write_bytes(data)
+        CLIENT.chmod(0o700)
+    elif hashlib.sha256(CLIENT.read_bytes()).hexdigest() != CLIENT_SHA256:
+        raise AgentError(f'{CLIENT} differs from the pinned official client. Inspect it before continuing.')
+    return runpy.run_path(str(CLIENT))
+
+
+def compose(*arguments, capture=False):
+    return subprocess.run(['docker', 'compose', *arguments], cwd=AGENT,
+                          capture_output=capture, text=True, timeout=1800)
+
+
+def identity(path):
+    sys.path.insert(0, str(ROOT / 'integrations/plow'))
+    import bridge
+    return bridge.JsonHTTP(ORIGIN, bridge.private_credentials(path)).call('GET', '/v1/agents/cloud/me')[1]
+
+
+def reporter_state():
+    result = compose('exec', '-T', 'agent', 'cat', '/var/lib/hermes/.agent-index.json', capture=True)
+    try:
+        return json.loads(result.stdout) if result.returncode == 0 else {}
+    except ValueError:
+        return {}
+
+
+def parse_usage(logs):
+    """The reporter's last published total. Totals it refused to publish are never shown."""
+    usage, refused = {}, False
+    for text in (logs or '').splitlines():
+        if 'agent=' in text and 'tokens=' in text:
+            fields = dict(part.split('=', 1) for part in text.split() if '=' in part)
+            try:
+                # The reporter prints separated numbers, for example tokens=3,191,866.
+                usage = {'agent': fields['agent'],
+                         'days': int(fields.get('days', '0').replace(',', '')),
+                         'tokens': int(fields['tokens'].replace(',', '').replace('_', ''))}
+                refused = False
+            except (KeyError, ValueError):
+                continue
+        elif 'COLLECTOR FAILED' in text or 'NOT reporting a partial total' in text:
+            refused = True
+    return {} if refused or not usage else usage
+
+
+def reported_usage():
+    return parse_usage(compose('logs', '--no-color', 'agent', capture=True).stdout)
+
+
+def ask_for_line(options):
+    print('\nSeveral free lines are available:', flush=True)
+    for number, line in enumerate(options, 1):
+        print(f'  {number}. {line.get("display_name") or "assistant"} {line.get("provider_key") or ""}', flush=True)
+    while True:
+        answer = input('Choose a line number: ').strip()
+        if answer.isdigit() and 1 <= int(answer) <= len(options):
+            return options[int(answer) - 1]
+        print('Enter one of the listed numbers.', flush=True)
+
+
+def speak(prompt):
+    """One prompt through the container's own environment, as the agent user."""
+    result = compose('exec', '-T', '-e', 'PATH=' + CONTAINER_PATH, 'agent', 'with-contenv', 'sh', '-c',
+                     'export HOME=/var/lib/hermes; cd /opt/hermes; exec s6-setuidgid hermes '
+                     "/opt/hermes/.venv/bin/hermes chat -q " + json.dumps(prompt) + ' --oneshot -Q', capture=True)
+    if result.returncode:
+        raise AgentError('The agent is running but did not answer. Check `docker compose logs agent` in agent/.')
+    return '\n'.join(text for text in result.stdout.splitlines() if not text.startswith('session_id:')).strip()
+
+
+def install(args):
+    missing = preflight()
+    if missing:
+        for item in missing:
+            print('Needed: ' + item, file=sys.stderr, flush=True)
+        return 1
+    print('Docker ............ ready', flush=True)
+    client = official()
+    try:
+        token = client['account_token'](SimpleNamespace(token_file=None))
+    except SystemExit:
+        token = None
+    if token is None or args.new_line:
+        print('Plow sign-in ...... follow the activation text below', flush=True)
+        client['login'](SimpleNamespace(api_base=ORIGIN, token_file=None, new_line=args.new_line))
+        token = client['account_token'](SimpleNamespace(token_file=None))
+    line = choose_line(client['account_lines'](ORIGIN, token), ask_for_line)
+    print(f'Line .............. {line.get("display_name") or line["uid"]} {line.get("provider_key") or ""}', flush=True)
+
+    def mint(path, uid):
+        client['mint'](SimpleNamespace(line=uid, credential_file=str(path), token_file=None,
+                                       api_base=ORIGIN, agent_api_base=None))
+
+    outcome = ensure_credential(CREDENTIAL, line, identity, mint)
+    print(f'Credential ........ {outcome}', flush=True)
+    print('Starting the agent (the first start downloads several GB) ...', flush=True)
+    if compose('up', '-d', '--build').returncode:
+        raise AgentError('Docker could not start the agent. The output above shows why.')
+    state, detail = wait_ready(lambda: compose('logs', '--no-color', '--since', '15m', 'agent', capture=True).stdout)
+    if state != 'ready':
+        raise AgentError(detail)
+    print('Agent ready ....... ' + detail.split(READY)[-1].strip(), flush=True)
+    print('Testing Hermes .... ' + speak(FIRST_PROMPT), flush=True)
+    print(f'\nDone. Text {line.get("provider_key") or "your line"} to talk to your agent.', flush=True)
+    print('Next: ./relay agent status, ./relay agent test "prompt", ./relay agent stop', flush=True)
+    return 0
+
+
+def run_agent(args):
+    action = getattr(args, 'agent_action', None)
+    try:
+        if action == 'status':
+            running = compose('ps', '--status', 'running', '--quiet', capture=True).stdout.strip() != ''
+            configured = READY in (compose('logs', '--no-color', 'agent', capture=True).stdout or '')
+            line = None
+            if CREDENTIAL.exists():
+                with contextlib.suppress(Exception):
+                    line = (identity(CREDENTIAL) or {}).get('line')
+            print(status_report(running, line, configured, reporter_state(), reported_usage()), flush=True)
+            return 0
+        if action == 'test':
+            print(speak(args.prompt), flush=True)
+            return 0
+        if action == 'stop':
+            compose('stop')
+            print('Stopped. Memory, install identity and reporting state are kept.', flush=True)
+            return 0
+        state = ROOT / '.data/agent'
+        state.mkdir(parents=True, exist_ok=True)
+        with installation_lock(state / 'install.lock'):
+            return install(args)
+    except AgentError as error:
+        print(str(error), file=sys.stderr, flush=True)
+        return 1
+    except KeyboardInterrupt:
+        print('Stopped before finishing. Nothing was left half-created; run it again to continue.',
+              file=sys.stderr, flush=True)
+        return 1

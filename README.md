@@ -23,36 +23,46 @@ Repro Relay brings agent investigations, code review, and team follow-ups into o
 
 ## Quick start
 
-Install and open Docker Desktop, then run:
+Two ways to run Repro Relay. Both need Docker Desktop installed and open. Copy this repository with GitHub's **Code** button, then run the commands from its folder.
+
+### A text agent on your own Plow line
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/lusknchars/repro-relay/main/install.sh | sh
+./relay agent
 ```
 
-Open **http://127.0.0.1:8178**. The connected installer starts Repro, PostgreSQL and a dedicated Hermes service. Local access creates or resumes your administrator profile automatically. Select a provider and save its API key in **Settings → Models** to activate Hermes. No manual runtime URL or shared-key configuration is needed.
+One command: it checks Docker, signs you in to Plow (you send one activation text from the phone that owns the account), selects a free assistant line, starts the agent, waits until it is ready, prints a first Hermes reply, and shows the number to text. Run it again at any time; it continues from wherever it stopped and never takes a line that already has an agent.
+
+```sh
+./relay agent status              # agent, line, Plow setup and reported usage
+./relay agent test "Summarise my open work"
+./relay agent stop                # stop it, keeping memory and identity
+```
+
+Needs Docker Desktop running, Python 3, and the phone that owns your Plow account. The agent's model access comes from Plow, so no provider key is required.
+
+### The workspace on this Mac
+
+```sh
+sh connect.sh
+```
+
+Open **127.0.0.1:8178**. This starts Repro, PostgreSQL and a dedicated Hermes service. Local access creates or resumes your administrator profile automatically. Select a provider and save its API key in **Settings → Models** to activate Hermes.
 
 - No signup, phone number, or provider key is needed to open Relay.
 - No Node, Rust, Python, or Git installation is needed on your Mac.
 - Your records and private settings survive restarts.
 - Installation makes no model calls and does not authorize external accounts.
 
-Docker builds this connected version from source and installs a pinned Hermes release. The first start can take several minutes. The command above uses the published main branch; from this checkout, use the command below.
-
-Already downloaded the repository? Double-click **[Start Relay.command](Start%20Relay.command)** on macOS, or run:
+Docker builds this version from source and installs a pinned Hermes release, so the first start can take several minutes. On macOS you can also double-click **[Start Relay.command](Start%20Relay.command)**.
 
 ```sh
-sh connect.sh
+./start.sh status   # check services
+./start.sh logs     # inspect startup problems
+./start.sh stop     # stop services and keep your data
 ```
 
-```sh
-cd ~/.local/share/repro-relay
-sh connect.sh      # Start the connected workspace
-./start.sh status   # Check services
-./start.sh logs     # Inspect startup problems
-./start.sh stop     # Stop services and keep your data
-```
-
-This opens the local browser app. It does not provision a hosted Plow installation or connect every third-party account. Native macOS builds are available below. See [connected setup](docs/CONNECTED-SETUP.md) for credentials, restarts and boundaries.
+This opens the local browser app. It does not provision a hosted Plow installation or connect every third-party account. Native macOS builds are described below. See [connected setup](docs/CONNECTED-SETUP.md) for credentials, restarts and boundaries.
 
 ### Link a Discord call
 
