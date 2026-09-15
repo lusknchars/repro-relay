@@ -7,6 +7,12 @@
 <p align="center">Investigate together. Keep the evidence. Decide what happens next.</p>
 
 <p align="center">
+  <img src="docs/assets/plow-hackathon.png" alt="Plow hackathon artwork featuring the Plow logo and a Mac Studio" width="120" height="120" />
+  <br />
+  Built for the Plow hackathon.
+</p>
+
+<p align="center">
   <a href="#quick-start">Quick start</a> ·
   <a href="#connect-your-tools">Connections</a> ·
   <a href="#macos-and-development">macOS & development</a> ·
