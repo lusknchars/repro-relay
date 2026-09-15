@@ -244,6 +244,7 @@ export function HermesChat({
         <label className="min-w-0 flex-1 text-sm">
           <span className="sr-only">Message Hermes</span>
           <textarea
+            id="team-message"
             className="block min-h-10 max-h-40 w-full resize-y rounded-xl border border-transparent bg-transparent px-2 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             rows={1}
             value={message}

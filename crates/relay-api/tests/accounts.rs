@@ -84,6 +84,35 @@ async fn invitation_link_joins_without_password_and_preserves_viewer_boundaries(
         .0,
         403
     );
+    let (status, directory, _) = call(
+        &shared,
+        true,
+        "GET",
+        "/team/directory",
+        &session,
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(directory["members"].as_array().unwrap().len(), 2);
+    assert!(directory.get("invites").is_none());
+    for member in directory["members"].as_array().unwrap() {
+        assert_eq!(member.as_object().unwrap().len(), 3);
+        assert!(member.get("name").is_some());
+        assert!(member.get("role").is_some());
+    }
+    assert_eq!(
+        call(&shared, true, "GET", "/team/directory", "", Value::Null)
+            .await
+            .0,
+        401
+    );
+    assert_eq!(
+        call(&shared, true, "GET", "/team", &session, Value::Null)
+            .await
+            .0,
+        403
+    );
     // A local browser with an invited identity is not silently promoted.
     let local_viewer = session.replace("__Host-relay_account", "relay_account");
     assert_eq!(

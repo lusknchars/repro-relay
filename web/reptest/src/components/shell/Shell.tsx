@@ -1,18 +1,19 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Activity, Radio, CalendarDays, Workflow, Bell, BookOpen, Menu, MessagesSquare, Rocket, ChevronsUpDown, Command, Gauge, HelpCircle, Inbox, Moon, PanelLeft, Search, Settings, SlidersHorizontal, Sun } from "lucide-react";
+import { Bot, Activity, Radio, CalendarDays, Workflow, Bell, BookOpen, Menu, MessagesSquare, Rocket, ChevronsUpDown, Command, Gauge, HelpCircle, Inbox, Moon, PanelLeft, Search, Settings, SlidersHorizontal, Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/theme/ThemeProvider";
 import { Avatar, Badge, Kbd } from "@/components/ui";
 import { WorkspaceContext } from "./WorkspaceContext";
 import { useWorkspace } from "@/lib/live";
 
-export type Route = "work" | "reach" | "team" | "knowledge" | "usage" | "settings" | "setup" | "architecture" | "calendar" | "monitoring";
+export type Route = "work" | "reach" | "team" | "agents" | "knowledge" | "usage" | "settings" | "setup" | "architecture" | "calendar" | "monitoring";
 
 const NAV: { id: Route; label: string; icon: typeof Inbox; hint: string }[] = [
   { id: "work", label: "Work", icon: Inbox, hint: "Decisions, active and blocked work, history" },
   { id: "reach", label: "Reach", icon: Radio, hint: "Call action items, daily todos and follow-ups" },
   { id: "architecture", label: "Architecture", icon: Workflow, hint: "Repository structure, research and team workflows" },
   { id: "calendar", label: "Calendar", icon: CalendarDays, hint: "Planned reviews and recorded agent activity" },
+  { id: "agents", label: "Agents", icon: Bot, hint: "Inspect Hermes capabilities and recorded work" },
   { id: "team", label: "Team", icon: MessagesSquare, hint: "Invite teammates and talk to your workspace Hermes" },
   { id: "knowledge", label: "Knowledge", icon: BookOpen, hint: "Reviewed observations and private notes" },
   { id: "monitoring", label: "Monitoring", icon: Activity, hint: "API requests, database health and investigation evidence" },

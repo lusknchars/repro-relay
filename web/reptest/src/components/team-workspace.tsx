@@ -1,3 +1,4 @@
+import { TeamDirectory, initials, type Teammate } from "./team-directory";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
@@ -6,8 +7,6 @@ import {
   MessageSquare,
   PanelRight,
   Search,
-  Settings,
-  Users,
 } from "lucide-react";
 import { HermesChat } from "./hermes-chat";
 import {
@@ -22,7 +21,6 @@ import { Badge, Button } from "@/components/ui";
 import { IntegrationLogo } from "./integration-logo";
 import "./team-workspace.css";
 
-type Member = { id: string; name: string; role: string };
 export function TeamWorkspace({
   account,
   renderManagement,
@@ -31,6 +29,7 @@ export function TeamWorkspace({
   renderManagement: () => ReactNode;
 }) {
   const workspace = useWorkspace();
+  const [teammate, setTeammate] = useState<Teammate | null>(null);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(
     () => new URLSearchParams(location.search).get("team_work") || "",
@@ -57,11 +56,8 @@ export function TeamWorkspace({
     15000,
   );
   const members = useLoad(
-    () =>
-      account.role === "owner"
-        ? api<{ members: Member[] }>("/team")
-        : Promise.resolve(null),
-    [account.role],
+    () => api<{ members: Teammate[]; has_more: boolean }>("/team/directory"),
+    [account.profile?.id],
     15000,
   );
   useEffect(() => {
@@ -98,18 +94,30 @@ export function TeamWorkspace({
       data-list-open={list}
       data-context-open={context}
     >
-      <aside className="team-directory" aria-label="Team conversations">
-        <header className="team-panel-heading">
-          <h1>Team</h1>
-          <button
-            className="team-list-close"
-            aria-label="Close team conversations"
-            onClick={() => setList(false)}
-          >
-            ×
-          </button>
-          <Users size={15} aria-hidden />
-        </header>
+      <TeamDirectory
+        account={account}
+        members={members.data?.members || []}
+        loading={members.loading}
+        error={members.error}
+        refresh={members.refresh}
+        selectedMember={teammate?.id || ""}
+        hasMore={members.data?.has_more || false}
+        onMember={(member) => {
+          setTeammate(member);
+          setContext(true);
+          setList(false);
+        }}
+        onConversation={() => {
+          choose("");
+          setTeammate(null);
+        }}
+        onSettings={() => {
+          setManagement(true);
+          setList(false);
+        }}
+        onClose={() => setList(false)}
+        workSelected={!!selected}
+      >
         <label className="team-search">
           <Search size={14} aria-hidden />
           <input
@@ -119,17 +127,6 @@ export function TeamWorkspace({
             placeholder="Search work context…"
           />
         </label>
-        <button
-          className="team-room"
-          aria-current={!selected && !management ? "page" : undefined}
-          onClick={() => choose("")}
-        >
-          <MessageSquare size={15} />
-          <span>
-            <strong>Team conversation</strong>
-            <small>Everyone · one Hermes agent</small>
-          </span>
-        </button>
         <div className="team-directory-label">
           Work context{" "}
           <span>
@@ -169,25 +166,7 @@ export function TeamWorkspace({
             </p>
           )}
         </div>
-        <div className="team-directory-actions">
-          <button
-            onClick={() => {
-              setManagement(true);
-              setList(false);
-            }}
-            aria-current={management ? "page" : undefined}
-          >
-            <Settings size={14} /> Team settings
-          </button>
-          <a href="/?view=reach">
-            Open Reach <ArrowUpRight size={13} />
-          </a>
-        </div>
-        <footer>
-          One shared conversation. Selecting work changes the context you can
-          attach.
-        </footer>
-      </aside>
+      </TeamDirectory>
       <div className="team-discussion">
         <header className="team-discussion-heading">
           <button
@@ -326,39 +305,21 @@ export function TeamWorkspace({
             </section>
           </>
         )}
-        <section>
-          <h3>
-            {account.role === "owner" ? "Workspace members" : "Your access"}
-          </h3>
-          {members.error && (
-            <p role="alert">
-              Member list unavailable.{" "}
-              <button onClick={members.refresh}>Retry</button>
-            </p>
-          )}
-          {account.role === "owner" && members.loading && !members.data && (
-            <p role="status">Loading members…</p>
-          )}
-          {(account.role === "owner"
-            ? members.data?.members || []
-            : [
-                {
-                  id: account.profile?.id || "self",
-                  name: account.profile?.name || "You",
-                  role: account.role || "member",
-                },
-              ]
-          ).map((m) => (
-            <div className="team-person" key={m.id}>
-              <span className="team-person-avatar">
-                {m.name.slice(0, 2).toUpperCase()}
+        <section aria-label="Teammate profile">
+          <h3>{teammate ? "Teammate profile" : "Shared team agent"}</h3>
+          {teammate && (
+            <div className="team-selected-profile">
+              <span className="team-profile-avatar">
+                {initials(teammate.name)}
               </span>
-              <div>
-                <strong>{m.name}</strong>
-                <small>{m.role}</small>
-              </div>
+              <strong>{teammate.name}</strong>
+              <p>
+                {teammate.role === "owner"
+                  ? "Administrator · manages connections and approvals"
+                  : "Teammate · shared conversation access"}
+              </p>
             </div>
-          ))}
+          )}
           <div className="team-person">
             <IntegrationLogo provider="hermes" />
             <div>
@@ -367,9 +328,22 @@ export function TeamWorkspace({
             </div>
           </div>
           <p>
-            Teammates can ask and follow work. The administrator controls
-            execution.
+            {teammate
+              ? `${teammate.name} participates in the shared Hermes conversation.`
+              : "Select a teammate from People to view their workspace role."}
           </p>
+          <button
+            className="team-inline-link"
+            onClick={() => {
+              setManagement(false);
+              setContext(false);
+              requestAnimationFrame(() =>
+                document.getElementById("team-message")?.focus(),
+              );
+            }}
+          >
+            Open shared conversation <ArrowUpRight size={12} />
+          </button>
         </section>
         <section>
           <p>

@@ -67,6 +67,7 @@ test("Team keeps one shared conversation beside selected work and real evidence"
   await expect(
     page.getByRole("complementary", { name: "Workspace context", exact: true }),
   ).toHaveCount(0);
+  await desk.getByRole("button", { name: "Work context", exact: true }).click();
   await desk.getByLabel("Search team work").fill(title);
   await desk.getByRole("button", { name: new RegExp(title) }).click();
   const context = page.getByRole("complementary", {

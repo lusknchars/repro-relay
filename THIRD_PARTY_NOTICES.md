@@ -127,3 +127,7 @@ The supplied Hermes WebP and previously supplied Plow PNG are also copied unchan
 The user-supplied `pi-logo-on-dark.svg` and `moonshot.png` are copied unchanged as `pi-logo.svg` and `moonshot-logo.png` in the same brand directory. Their display tiles supply contrast without recoloring the original artwork.
 
 The supplied `light.svg` is the Mem0 wordmark, stored unchanged as `mem0-logo.svg`. It is displayed on a light tile with a text alternative where it replaces the visible name.
+
+## PaceUI Education 1
+
+`web/reptest/src/components/work-record-checklist.tsx` adapts the header, progress indicator, collapsible numbered modules and status icons from PaceUI `app-education-1`, retrieved with its official MCP `add-block` tool and installed from https://paceui.com/r/app-education-1.json on September 14, 2026. Course fixtures were replaced with Relay case data. Record coverage describes available records, not verification or fix completion. PaceUI's product terms remain applicable; this adaptation is not relicensed by the repository's MIT notice. The frontend remains outside the clean Agent Index package.

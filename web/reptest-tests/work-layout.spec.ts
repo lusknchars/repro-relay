@@ -20,6 +20,12 @@ test("work uses three proportional panes and keeps warnings scoped to the select
   }] }));
   await page.route("**/api/v1/runs/layout-run/*", route => route.fulfill({ json: { items: [], next_cursor: null } }));
   await page.goto(`/?case=${blocked.id}`);
+  const checklist = page.getByRole("region", {name:"Investigation record checklist"});
+  await expect(checklist.getByRole("progressbar", {name:"Record coverage"})).toHaveAttribute("value", "3");
+  await checklist.getByRole("button", {name:/Reported behavior/}).click();
+  await expect(checklist.getByText("Fixture report for layout validation.")).toBeVisible();
+  await checklist.getByRole("button", {name:"Inspect evidence"}).click();
+  await expect(page.getByRole("tab", {name:"findings",exact:true})).toBeFocused();
   const warning = page.getByRole("status", { name: "Investigation warning" });
   await expect(warning).toContainText("provider credit balance");
   await expect(page.getByRole("complementary", { name: "Workspace context", exact: true })).toHaveCount(0);

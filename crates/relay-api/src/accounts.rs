@@ -113,6 +113,7 @@ pub fn routes() -> Router<PgPool> {
         .route("/account/logout", post(logout))
         .route("/account/password", post(password))
         .route("/team", get(team))
+        .route("/team/directory", get(directory))
         .route("/team/invites", post(invite))
         .route("/team/join", post(join))
         .route("/team/invites/{id}/revoke", post(revoke_invite))
@@ -440,6 +441,23 @@ async fn password(
         Json(json!({"authenticated":false})),
     )
         .into_response())
+}
+// Display identities shared within this installation; invitations and contact details stay owner-only.
+async fn directory(
+    State(pool): State<PgPool>,
+    Extension(c): Extension<Hosting>,
+    h: HeaderMap,
+) -> ApiResult<Json<Value>> {
+    let viewer = require(&pool, &h, &c).await?;
+    if !matches!(viewer.role.as_deref(), Some("owner" | "viewer")) {
+        return Err(denied("Join this workspace to view its teammates."));
+    }
+    let rows = sqlx::query("SELECT a.id,a.name,m.role FROM team_members m JOIN relay_accounts a ON a.id=m.account_id ORDER BY m.joined_at,a.id LIMIT 101")
+        .fetch_all(&pool).await?;
+    let members = rows.iter().take(100).map(|r| json!({
+        "id": r.get::<String,_>("id"), "name": r.get::<String,_>("name"), "role": r.get::<String,_>("role")
+    })).collect::<Vec<_>>();
+    Ok(Json(json!({"members":members,"has_more":rows.len() > 100})))
 }
 async fn team(
     State(pool): State<PgPool>,

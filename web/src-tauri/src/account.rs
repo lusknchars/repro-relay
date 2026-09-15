@@ -67,7 +67,7 @@ fn valid_token(value: &str) -> bool {
 }
 fn allowed(path: &str, method: &str) -> bool {
     if method == "GET" {
-        return matches!(path, "/account" | "/team" | "/chat");
+        return matches!(path, "/account" | "/team" | "/team/directory" | "/chat");
     }
     if method == "DELETE" {
         return path == "/chat/bridge";
@@ -263,6 +263,8 @@ mod tests {
         assert!(!allowed("/account", "DELETE"));
         assert!(allowed("/account/local", "POST"));
         assert!(allowed("/team/join-link", "POST"));
+        assert!(allowed("/team/directory", "GET"));
+        assert!(!allowed("/team/directory", "POST"));
         assert!(allowed("/chat", "GET"));
         assert!(allowed("/chat", "POST"));
         assert!(allowed("/chat/bridge", "DELETE"));

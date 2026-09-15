@@ -7,6 +7,15 @@ const CONTEXT: Record<
   Route,
   { title: string; description: string; links: [Route, string][] }
 > = {
+  agents: {
+    title: "Workspace agents",
+    description: "Inspect Hermes capabilities and recorded execution.",
+    links: [
+      ["architecture", "Configure team workflow"],
+      ["settings", "Connect runtimes and Plow"],
+      ["knowledge", "Review shared knowledge"],
+    ],
+  },
   work: {
     title: "Investigation workspace",
     description: "Follow the evidence, then review the proposed change.",

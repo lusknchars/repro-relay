@@ -9,6 +9,7 @@ import { CalendarPage } from "@/pages/Calendar";
 import { WorkPage } from "@/pages/Work";
 import { KnowledgePage } from "@/pages/Knowledge";
 import { ReachPage } from "@/pages/Reach";
+import { AgentsPage } from "@/pages/Agents";
 import { TeamPage } from "@/pages/Team";
 import { UsagePage } from "@/pages/Usage";
 import { SettingsPage } from "@/pages/Settings";
@@ -28,6 +29,7 @@ function Root() {
       : [
             "reach",
             "team",
+            "agents",
             "knowledge",
             "usage",
             "settings",
@@ -44,6 +46,10 @@ function Root() {
     url.searchParams.set("view", route);
     if (route !== "settings") url.searchParams.delete("connection");
     if (route !== "reach") url.searchParams.delete("reach");
+    if (route !== "agents") {
+      url.searchParams.delete("agent");
+      url.searchParams.delete("agent-section");
+    }
     history.replaceState(null, "", url);
   }, [route]);
   const [customizer, setCustomizer] = useState(false);
@@ -101,6 +107,9 @@ function Root() {
             onWork={openWork}
             onSettings={() => openConnection("calendar")}
           />
+        )}
+        {route === "agents" && (
+          <AgentsPage onRoute={navigate} onWork={openWork} />
         )}
         {route === "team" && (
           <TeamPage

@@ -1,3 +1,4 @@
+import { WorkRecordChecklist } from "@/components/work-record-checklist";
 import "./Work.css";
 import { CaseEnvironment } from "@/components/case-environment";
 import { useEffect, useRef, useState } from "react";
@@ -173,7 +174,12 @@ function Detail({ item, onBack }: { item: Case; onBack: () => void }) {
         </Button>
         <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
           <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-2">
-            <span title={item.id} className="mono max-w-28 shrink-0 truncate text-xs text-muted">{item.id}</span>
+            <span
+              title={item.id}
+              className="mono max-w-28 shrink-0 truncate text-xs text-muted"
+            >
+              {item.id}
+            </span>
             <h2 className="min-w-0 break-words text-base font-semibold">
               {item.title}
             </h2>
@@ -310,16 +316,25 @@ function Detail({ item, onBack }: { item: Case; onBack: () => void }) {
           className="work-conversation flex min-w-0 flex-col gap-5 [overflow-wrap:anywhere] border-b border-border p-4"
         >
           <h3 className="text-sm font-semibold">Conversation and decisions</h3>
-          <article className="work-message">
-            <Badge tone="outline">Reported behavior</Badge>
-            <p className="mt-2 whitespace-pre-wrap text-sm">
-              {item.description}
-            </p>
-            <p className="mt-2 text-xs text-muted">Expected: {item.expected}</p>
-            <p className="mt-2 break-all text-xs text-muted">
-              Target: {item.url}
-            </p>
-          </article>
+          <WorkRecordChecklist
+            key={`${item.id}:${run?.id || "none"}`}
+            item={item}
+            run={run}
+            reviews={
+              reviews.data?.filter((review) => review.run_id === run?.id)
+                .length || 0
+            }
+            pending={runs.loading || reviews.loading}
+            unavailable={!!runs.error || !!reviews.error}
+            onInspect={() => {
+              setPane("findings");
+              requestAnimationFrame(() =>
+                document
+                  .querySelector<HTMLElement>('[role="tab"][id$="findings"]')
+                  ?.focus(),
+              );
+            }}
+          />
           {item.observations.map((o) => (
             <article key={o.id} className="work-message">
               <div className="text-xs text-muted">
