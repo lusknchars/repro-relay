@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import shlex
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -22,7 +23,7 @@ def setup():
     os.chmod(STATE, 0o700)
     if not (STATE / ".env").exists():
         private_write(STATE / ".env", "API_SERVER_KEY=" + secrets.token_hex(32)
-                      + "\nAPI_SERVER_HOST=127.0.0.1\nAPI_SERVER_PORT=8642\n")
+                      + "\nAPI_SERVER_ENABLED=true\nAPI_SERVER_HOST=127.0.0.1\nAPI_SERVER_PORT=8642\n")
     if not (STATE / "config.yaml").exists():
         config = {
             "model": {"provider": "openai-codex", "default": "gpt-5.4"},
@@ -70,7 +71,27 @@ def enable_memory():
 
 
 def has_auth():
-    # This check establishes presence only. The provider still validates the login.
+    """Check only the selected provider's saved credential presence, never validity."""
+    config_path = STATE / "config.yaml"
+    config = json.loads(config_path.read_text()) if config_path.exists() else {}
+    provider = config.get("model", {}).get("provider", "openai-codex")
+    key_names = {
+        "kimi-coding": ("KIMI_API_KEY", "KIMI_CODING_API_KEY"),
+        "kimi-coding-cn": ("KIMI_CN_API_KEY",),
+    }
+    if provider in key_names:
+        values = {}
+        path = STATE / ".env"
+        if path.exists():
+            for line in path.read_text().splitlines():
+                if "=" not in line or line.lstrip().startswith("#"):
+                    continue
+                name, value = line.split("=", 1)
+                parts = shlex.split(value, comments=True)
+                values[name.strip()] = parts[0] if len(parts) == 1 else ""
+        return any(os.environ.get(name, values.get(name, "")).strip() for name in key_names[provider])
+    if provider != "openai-codex":
+        return False
     path = STATE / "auth.json"
     if not path.exists():
         return False
@@ -94,9 +115,12 @@ def main():
         raise SystemExit("Install the pinned Hermes release and run runtime.py setup. See README.md.")
     env = environment()
     if args.action == "login":
+        provider = json.loads((STATE / "config.yaml").read_text()).get("model", {}).get("provider")
+        if provider != "openai-codex":
+            raise SystemExit("This profile uses an API-key provider. Configure its private key in the profile .env; no Codex login is required.")
         os.execve(executable, [str(executable), "auth", "add", "openai-codex", "--type", "oauth", "--no-browser"], env)
     if not has_auth():
-        raise SystemExit("Hermes needs its own sign-in. Run: python3 integrations/hermes-assessment/runtime.py login")
+        raise SystemExit("The selected Hermes provider has no saved credential. For Codex run runtime.py login; for Kimi set KIMI_API_KEY in the private profile .env.")
     if not (STATE / "packet.json").is_file():
         raise SystemExit("Capture the assessment evidence first. See README.md.")
     if args.action == "gateway":

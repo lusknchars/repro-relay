@@ -14,6 +14,7 @@ class RuntimeSetupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, patch.object(runtime, "STATE", Path(directory)), contextlib.redirect_stdout(io.StringIO()):
             runtime.setup()
             key = (Path(directory) / ".env").read_text()
+            self.assertIn("API_SERVER_ENABLED=true\n", key)
             config_path = Path(directory) / "config.yaml"
             config = json.loads(config_path.read_text())
             self.assertEqual(config["platform_toolsets"]["api_server"], ["relay_assessment"])
@@ -35,6 +36,19 @@ class RuntimeSetupTests(unittest.TestCase):
             auth.write_text(json.dumps({"credential_pool": {"openai-codex": [{"fixture": True}]}}))
             self.assertTrue(runtime.has_auth())
             self.assertEqual(runtime.environment()["HERMES_HOME"], directory)
+
+    def test_kimi_presence_uses_selected_profile_and_does_not_accept_codex_auth(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(runtime, "STATE", Path(directory)), patch.dict(runtime.os.environ, {}, clear=True):
+            root = Path(directory)
+            (root / "config.yaml").write_text(json.dumps({"model": {"provider": "kimi-coding", "default": "kimi-k3"}}))
+            (root / "auth.json").write_text(json.dumps({"providers": {"openai-codex": {"fixture": True}}}))
+            self.assertFalse(runtime.has_auth())
+            (root / ".env").write_text('KIMI_API_KEY="fixture-key" # private\n')
+            self.assertTrue(runtime.has_auth())
+            (root / ".env").write_text('KIMI_API_KEY=""\n')
+            self.assertFalse(runtime.has_auth())
+            (root / "config.yaml").write_text(json.dumps({"model": {"provider": "unconfigured"}}))
+            self.assertFalse(runtime.has_auth())
 
     def test_optional_memory_preserves_provider_and_is_bound_to_hermes(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(runtime, 'STATE', Path(directory)), contextlib.redirect_stdout(io.StringIO()):

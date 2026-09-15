@@ -6,21 +6,34 @@ The application shows local checks separately from the later Hermes run. Test tr
 
 ## Install and sign in
 
-Prerequisites: Python 3.11–3.13 for Hermes, `uv`, the Relay development environment, and a ChatGPT account that can authorize Codex. The launcher itself uses Python's standard library. This setup chooses Hermes's official `openai-codex` provider, with a separate login from the existing Codex CLI.
+Prerequisites: Python 3.11–3.13 for Hermes, `uv`, the Relay development environment, and either a Moonshot API key or a ChatGPT account that can authorize Codex. The launcher itself uses Python's standard library. Setup defaults to Hermes's `openai-codex` provider; an existing Moonshot account can be used instead, as described below.
 
 ```sh
 mkdir -p ~/.local/share/repro-relay
 git clone --depth 1 --branch v2026.9.11 https://github.com/NousResearch/hermes-agent.git ~/.local/share/repro-relay/hermes-agent
 uv sync --directory ~/.local/share/repro-relay/hermes-agent --frozen --python 3.12 --extra sms --extra mcp
 python3 integrations/hermes-assessment/runtime.py setup
-python3 integrations/hermes-assessment/runtime.py login
 ```
 
 The pinned release is Hermes 0.21.2, commit `939e45c91d751fadd94dcd1b873ac3cb44846213`. The `sms` extra supplies the pinned HTTP-server dependency; no SMS account or message channel is configured. The `mcp` extra supplies the MCP client.
 
-Complete the device sign-in in your own browser. Do not paste credentials into chat. Setup creates a private `.data/hermes-assessment` directory, preserves its key/config on repeat, and leaves `~/.hermes` untouched. `runtime.py login` uses Hermes's official OAuth flow. Presence of saved auth is only a prerequisite; the provider still validates it when called.
+For Codex, run `python3 integrations/hermes-assessment/runtime.py login` and complete the device sign-in in your own browser. Do not paste credentials into chat. Setup creates a private `.data/hermes-assessment` directory, preserves its key/config on repeat, and leaves `~/.hermes` untouched. `runtime.py login` uses Hermes's official OAuth flow. Presence of saved auth is only a prerequisite; the provider still validates it when called.
 
-The generated profile uses `gpt-5.4`, 20 maximum tool turns, memory disabled, and only this assessment MCP server. Model turns are not a dollar budget. Account/model availability is checked by the provider. Other providers are not configured by this launcher.
+The generated profile uses `gpt-5.4`, 20 maximum tool turns, memory disabled, and only this assessment MCP server. Model turns are not a dollar budget. Account/model availability is checked by the provider.
+
+### Use an existing Moonshot / Kimi account
+
+In `.data/hermes-assessment/config.yaml`, change only the `model` object, preserving the MCP servers and tool allowlists:
+
+```json
+{"provider":"kimi-coding","default":"kimi-k3","base_url":"https://api.moonshot.ai/v1"}
+```
+
+Use a model available to your Moonshot account. Store `KIMI_API_KEY` in the profile's private `.env`, together with `KIMI_BASE_URL=https://api.moonshot.ai/v1` and `API_SERVER_ENABLED=true`. Keep the existing `API_SERVER_KEY`, host and port. File permissions should remain `0600`.
+
+If Pi already uses Moonshot, its API key can also authenticate this Hermes profile. Pi's login does not automatically configure Hermes. Copy the credential locally without pasting it into chat, terminal history, frontend settings, or Git. This path uses the Moonshot API endpoint; a Kimi Code subscription can require a different endpoint. No Codex login is needed for this profile.
+
+Restart the gateway after changing providers. A reachable gateway proves that Relay can submit and inspect runs; a successful model response is a separate check. Provider credit, authentication and rate-limit errors can still occur after the gateway connects.
 
 ## Capture and review
 
@@ -49,6 +62,8 @@ Stop the ordinary `make dev` process, then start Relay with the dedicated backen
 python3 integrations/hermes-assessment/runtime.py dev
 ./relay doctor
 ```
+
+For the local desktop/backend launcher, persist `REPRO_HERMES_URL=http://127.0.0.1:8642` and `REPRO_HERMES_KEY` in the repository's private `.env`. The latter must match the profile's `API_SERVER_KEY`. Restart the Relay backend with that environment after all active runs have finished. These are backend secrets, never `VITE_` settings. Keep the gateway running separately; saving credentials does not install a service that starts after a reboot.
 
 Open the case URL printed by `publish.py` and start its investigation, or run `./relay investigate CASE_ID --seconds 300 --watch`. The report already contains the assessment objective and evidence instructions; no new diagnosis form is required. One active/uncertain run occupies the workspace slot. A new assessment is a separate run with its own retained history, not simultaneous access to a second unrestricted worker.
 
