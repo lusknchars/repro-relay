@@ -1,0 +1,24 @@
+name: Plow agent
+on:
+  push:
+    paths: ['agent/**', '.github/workflows/agent.yml']
+  pull_request:
+    paths: ['agent/**', '.github/workflows/agent.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -m unittest discover -s agent/tests -v
+      - run: docker compose -f agent/compose.yml build
+      - name: Check official reporter without credentials or network
+        run: >-
+          docker run --rm --platform linux/amd64 --network none
+          --entrypoint /opt/hermes/.venv/bin/python3 repro-relay-agent:local
+          /opt/plow/agent-index-client.py --self-check

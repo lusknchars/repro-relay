@@ -82,7 +82,9 @@ test('pause persists and old notes are archived without a direction composer', a
   await page.getByText('Earlier direction', { exact: true }).first().click()
   await expect(page.getByText('This saved note predates autonomous discovery.').first()).toBeVisible()
   await expect(page.locator('textarea')).toHaveCount(0)
+  const paused = page.waitForResponse(response => response.url().endsWith('/api/v1/autonomy/control') && response.request().method() === 'POST')
   await page.getByRole('button', { name: 'Pause monitoring' }).click()
+  expect((await paused).ok()).toBe(true)
   await page.reload()
   await expect(page.getByRole('button', { name: 'Resume monitoring' })).toBeVisible()
   harness() // Paused worker exits without scanning or claiming.
