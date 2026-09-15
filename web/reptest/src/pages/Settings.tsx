@@ -1,8 +1,9 @@
+import { ModelProviderConnection } from "@/components/model-provider";
 import { ExaConnection } from "@/components/exa";
 import { SentryConnection } from "@/components/sentry";
 import { DiscordConnection } from "@/components/discord";
 import { DailyConnection } from "@/components/meetings";
-import { Bug, Search, Video, MessageSquare } from "lucide-react";
+import { Bug, Search, Video, MessageSquare, Cpu } from "lucide-react";
 import { GoogleCalendarConnection } from "@/components/google-calendar";
 import { CalendarDays } from "lucide-react";
 import { useState } from "react";
@@ -56,6 +57,7 @@ const connections = [
     role: "Reviews Relay evidence in your terminal",
     group: "Agents",
   },
+  { id: "models", name: "Model providers", role: "Choose the provider and model for Hermes", group: "Models" },
   {
     id: "moonshot",
     name: "Moonshot / Kimi",
@@ -113,6 +115,7 @@ export function SettingsPage({
   const [error, setError] = useState("");
   const connection = connections.find((c) => c.id === selected)!;
   function status(id: (typeof connections)[number]["id"]) {
+    if (id === "models") return "OpenAI · Anthropic · Kimi · OpenRouter";
     if (id === "discord") return "Selected channel · read-only collection";
     if (id === "daily") return "Private rooms · optional transcription";
     if (id === "exa") return "Web search and page text";
@@ -223,7 +226,7 @@ export function SettingsPage({
                     )}
                   >
                     <span className="flex items-center gap-2 text-sm font-medium">
-                      {c.id === "discord" ? <MessageSquare size={22} /> : c.id === "daily" ? <Video size={22} /> : c.id === "exa" ? (
+                      {c.id === "models" ? <Cpu size={22} /> : c.id === "discord" ? <MessageSquare size={22} /> : c.id === "daily" ? <Video size={22} /> : c.id === "exa" ? (
                         <Search size={22} />
                       ) : c.id === "sentry" ? (
                         <Bug size={22} />
@@ -263,7 +266,7 @@ export function SettingsPage({
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="flex items-center gap-2 text-lg font-semibold">
-              {selected === "discord" ? <MessageSquare size={28} /> : selected === "daily" ? <Video size={28} /> : selected === "exa" ? (
+              {selected === "models" ? <Cpu size={28} /> : selected === "discord" ? <MessageSquare size={28} /> : selected === "daily" ? <Video size={28} /> : selected === "exa" ? (
                 <Search size={28} />
               ) : selected === "sentry" ? (
                 <Bug size={28} />
@@ -280,6 +283,7 @@ export function SettingsPage({
             <Badge tone={ready ? "ok" : "outline"}>{status(selected)}</Badge>
           </div>
           <p className="text-sm text-muted">{connection.role}</p>
+          {selected === "models" && <ModelProviderConnection />}
           {selected === "sentry" && <SentryConnection />}
           {selected === "exa" && <ExaConnection />}
           {selected === "daily" && <DailyConnection />}
@@ -315,11 +319,19 @@ export function SettingsPage({
                 requires its own provider configuration; Pi login does not
                 configure Hermes.
               </p>
+              <a className="text-sm text-accent-text underline" href="/?view=settings&connection=models">Configure Hermes model provider</a>
               <Button onClick={workspace.refresh}>Check runtime</Button>
             </>
           )}
           {selected === "plow" && (
             <>
+              <div className="grid gap-2 rounded-md border border-border-strong p-3">
+                <h3 className="text-sm font-medium">Start with your agent and model</h3>
+                <p className="text-sm text-muted">Plow Latch works with Claude, Codex, Hermes and other MCP-compatible agents. The agent uses your chosen model provider; Latch supplies approved Mac tools. MCP is the tool connection, not a model login.</p>
+                <a className="text-sm text-accent-text underline" href="/?view=settings&connection=models">Configure Hermes model provider</a>
+                <p className="text-xs text-muted">Using Claude or Codex directly? Sign in through that client and follow Plow's MCP connection setup. A verified phone line does not mean its agent or Mac tools are connected.</p>
+                <a className="text-xs text-accent-text underline" href="https://plow.co/latch" target="_blank" rel="noreferrer">Connect an MCP-compatible agent to Latch</a>
+              </div>
               <p className="text-sm">
                 Authorize one assistant line and its owner chat. Relay checks
                 that grant before importing reports or delivering an approved

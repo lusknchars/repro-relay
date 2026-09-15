@@ -33,7 +33,7 @@ test("settings explains independent layers and routes account and knowledge in p
   ).toContainText("Configured · check required");
   await page
     .getByRole("region", { name: "Models", exact: true })
-    .getByRole("button")
+    .getByRole("button", { name: /Moonshot \/ Kimi/ })
     .click();
   await expect(
     page.getByRole("region", { name: "Connection details" }),
