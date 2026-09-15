@@ -1,0 +1,65 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build and publish
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            web/reptest/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - run: npm ci --prefix web
+      - run: npm ci --prefix web/reptest
+      - name: Build the macOS application for both processors
+        run: npm run tauri --prefix web -- build --target universal-apple-darwin
+      - name: Package the starter for the Docker workspace
+        run: |
+          set -eu
+          starter="$RUNNER_TEMP/Repro Relay starter"
+          mkdir -p "$starter/integrations/connected"
+          cp 'Start Relay.command' connect.sh start.sh "$starter/"
+          cp compose.local.yaml compose.connected.yaml "$starter/"
+          cp integrations/connected/launch.py integrations/connected/prepare_notes.py "$starter/integrations/connected/"
+          cp docs/releases/starter-readme.txt "$starter/README.txt"
+          cd "$RUNNER_TEMP" && zip -r ReproRelay-starter.zip "Repro Relay starter" > /dev/null
+      - name: Collect what the release publishes
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/release"
+          cp target/universal-apple-darwin/release/bundle/dmg/*.dmg "$RUNNER_TEMP/release/"
+          cp "$RUNNER_TEMP/ReproRelay-starter.zip" "$RUNNER_TEMP/release/"
+          ls -lh "$RUNNER_TEMP/release"
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -eu
+          gh release create "$TAG" "$RUNNER_TEMP"/release/* \
+            --verify-tag \
+            --title "Repro Relay $TAG" \
+            --notes-file docs/releases/notes.md

@@ -25,9 +25,12 @@
   },
   "bundle": {
     "active": true,
-    "resources": { "../../docs/licenses/daily-js.txt": "licenses/daily-js.txt" },
+    "resources": {
+      "../../docs/licenses/daily-js.txt": "licenses/daily-js.txt"
+    },
     "targets": [
-      "app"
+      "app",
+      "dmg"
     ],
     "icon": [
       "icons/icon.icns",
