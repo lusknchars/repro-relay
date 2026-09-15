@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { RuntimeUsagePanel } from "@/components/runtime-usage";
 import {
   Bar,
   BarChart,
@@ -12,6 +13,7 @@ import { Badge, Button } from "@/components/ui";
 import { useWorkspace, when } from "@/lib/live";
 export function UsagePage() {
   const { data, error, loading, refresh } = useWorkspace();
+  const [runtimeRevision, setRuntimeRevision] = useState(0);
   const [selected, setSelected] = useState("all");
   const runs = (data?.runs || []).filter(
     (r) =>
@@ -43,8 +45,9 @@ export function UsagePage() {
             Recorded Hermes tokens and provider-reported cost, by attempt.
           </p>
         </div>
-        <Button onClick={refresh}>Refresh usage</Button>
+        <Button onClick={() => { refresh(); setRuntimeRevision(n => n + 1); }}>Refresh usage</Button>
       </header>
+      <RuntimeUsagePanel revision={runtimeRevision} />
       {error && (
         <p role="alert" className="text-danger">
           {error}

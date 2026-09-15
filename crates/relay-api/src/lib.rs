@@ -23,6 +23,7 @@ pub mod programs;
 pub mod reach;
 pub mod repairs;
 pub mod runs;
+pub mod runtime_usage;
 pub mod sentry;
 pub mod sessions;
 pub mod tool_profile;
@@ -258,6 +259,7 @@ pub fn app_with_discord(
         .merge(chat::routes())
         .merge(google_calendar::routes())
         .merge(model_setup::routes())
+        .merge(runtime_usage::routes())
         .merge(sentry::routes(sentry))
         .merge(exa::routes(exa::Connector::default()))
         .merge(discord::routes(discord))
