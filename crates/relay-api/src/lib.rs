@@ -11,6 +11,7 @@ pub mod communication;
 pub mod contributions;
 pub mod domain;
 pub mod evidence;
+pub mod exa;
 pub mod google_calendar;
 pub mod hosting;
 pub mod intake;
@@ -245,6 +246,7 @@ pub fn app_with_connectors(
         .merge(chat::routes())
         .merge(google_calendar::routes())
         .merge(sentry::routes(sentry))
+        .merge(exa::routes(exa::Connector::default()))
         .merge(monitoring::routes())
         .merge(automation::routes())
         .merge(channels::routes())
