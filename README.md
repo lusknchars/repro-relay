@@ -70,6 +70,7 @@ Start in **Settings**. Each connection has its own purpose and setup; signing in
 | --- | --- | --- |
 | Hermes | Submit, monitor, stop, and review investigations through a configured gateway. | [Runner configuration](docs/HERMES-RUNNER.md) |
 | Pi | Use Relay evidence from a local terminal agent. Model authentication belongs to that agent's provider configuration. | [Pi setup](integrations/pi-harness/README.md) |
+| Discord | Collect a selected channel’s discussion and save source-linked Reach todos. | [Discord setup](docs/DISCORD.md) |
 | Daily video | Host a private call in Reach, capture consented transcription and create transcript-backed todos. | [Video setup](docs/REACH-VIDEO.md) |
 | Plow + Latch | Connect an authorized phone line and owner chat for report intake and approved updates. Host app control requires its own working connection. | [Plow setup](integrations/plow/README.md) |
 | Mem0 | Add optional private working notes, separate from reviewed project evidence. | [Memory setup](integrations/mem0-memory/README.md) |
@@ -82,6 +83,7 @@ Reach also has terminal commands and MCP tools for recorded work:
 ```sh
 ./relay reach today
 ./relay reach listen
+./relay reach discord   # Read captured Discord discussion
 ```
 
 See [Reach](docs/REACH.md) for setup, event listeners, and current limits. Optional [Daily video calls](docs/REACH-VIDEO.md) add embedded meetings and host-captured transcription. Background agent attendance and automatic team message delivery are not included.

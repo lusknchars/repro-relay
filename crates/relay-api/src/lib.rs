@@ -9,6 +9,7 @@ pub mod channels;
 pub mod chat;
 pub mod communication;
 pub mod contributions;
+pub mod discord;
 pub mod domain;
 pub mod evidence;
 pub mod exa;
@@ -234,6 +235,15 @@ pub fn app_with_connectors(
     runner: runs::Runner,
     sentry: sentry::Connector,
 ) -> Router {
+    app_with_discord(pool, hosting, runner, sentry, discord::Connector::default())
+}
+pub fn app_with_discord(
+    pool: PgPool,
+    hosting: Hosting,
+    runner: runs::Runner,
+    sentry: sentry::Connector,
+    discord: discord::Connector,
+) -> Router {
     let monitor = monitoring::Monitor::default();
     let routes = Router::new()
         .merge(accounts::routes())
@@ -248,6 +258,7 @@ pub fn app_with_connectors(
         .merge(google_calendar::routes())
         .merge(sentry::routes(sentry))
         .merge(exa::routes(exa::Connector::default()))
+        .merge(discord::routes(discord))
         .merge(meetings::routes(meetings::Connector::default()))
         .merge(monitoring::routes())
         .merge(automation::routes())

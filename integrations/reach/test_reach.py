@@ -26,7 +26,17 @@ class ReachTests(unittest.TestCase):
         for bad in ({**args, 'status': 'planned'}, {**args, 'id': '../decision'}):
             with self.assertRaises(ValueError):
                 reach.execute(api, 'reach_propose_action', bad)
-        self.assertEqual({tool['name'] for tool in reach.MANIFEST}, {'reach_events', 'reach_daily_brief', 'reach_propose_action'})
+        self.assertEqual({tool['name'] for tool in reach.MANIFEST}, {'reach_events', 'reach_daily_brief', 'reach_propose_action', 'reach_discord_messages'})
+
+    def test_discord_read_is_local_only_and_rejects_injected_paths(self):
+        api = Mock()
+        for args in ({'before': '../token'}, {'before': '18446744073709551616'}, {'before': None}, {'before': '1234567890123456&x=1'}, {'token': 'secret'}):
+            with self.assertRaises(ValueError):
+                reach.execute(api, 'reach_discord_messages', args)
+        api.request.assert_not_called()
+        reach.execute(api, 'reach_discord_messages', {})
+        reach.execute(api, 'reach_discord_messages', {'before': '1234567890123456'})
+        self.assertEqual([c.args for c in api.request.call_args_list], [('GET', '/discord/messages'), ('GET', '/discord/messages?before=1234567890123456')])
 
     def test_events_reject_invalid_cursors(self):
         api = Mock()

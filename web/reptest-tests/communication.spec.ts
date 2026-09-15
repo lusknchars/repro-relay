@@ -36,6 +36,8 @@ test("communication preferences, role routing and call requests persist without 
     page.getByText("Preferences saved.", { exact: false }),
   ).toBeVisible();
   await page.reload();
+  // Wait for the persisted directory before opening its uncontrolled disclosure.
+  await expect(page.getByText(personName, { exact: true })).toBeVisible();
   await page.getByText("Preview role-based updates", { exact: true }).click();
   await page.getByLabel("Case", { exact: true }).selectOption(item.id);
   await page

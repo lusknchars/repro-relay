@@ -41,6 +41,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if hosted && !hosting.team && runner.0.is_some() {
         return Err("The guest beta cannot use a maintainer's Hermes runtime. Configure it on a local Relay server.".into());
     }
+    let discord = relay_api::discord::Connector::default();
+    let discord_worker = if !hosted {
+        Some(tokio::spawn(discord.clone().worker(pool.clone())))
+    } else {
+        None
+    };
     let sentry = relay_api::sentry::Connector::default();
     let sentry_worker = if !hosted {
         Some(tokio::spawn(sentry.clone().worker(pool.clone())))
@@ -86,11 +92,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!(port, mode = hosting.mode(), "Repro Relay API ready");
     axum::serve(
         listener,
-        relay_api::app_with_connectors(pool, hosting, runner, sentry),
+        relay_api::app_with_discord(pool, hosting, runner, sentry, discord),
     )
     .with_graceful_shutdown(shutdown())
     .await?;
     worker.abort();
+    if let Some(worker) = discord_worker {
+        worker.abort();
+    }
     if let Some(worker) = sentry_worker {
         worker.abort();
     }
