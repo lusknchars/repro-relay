@@ -1,5 +1,5 @@
+import { TeamWorkspace } from "@/components/team-workspace";
 import { PhoneSignIn } from "@/components/phone-sign-in";
-import { HermesChat } from "@/components/hermes-chat";
 import { Contributions } from "@/components/contributions";
 import { TeamCommunication } from "@/components/team-communication";
 import type { ArchitectureRecord } from "./Architecture";
@@ -22,7 +22,7 @@ type Team = {
     expires_at: string;
   }[];
 };
-export function TeamPage({
+function TeamAccountPanel({
   accountOnly = false,
   onRegistered,
   onArchitecture,
@@ -432,7 +432,12 @@ export function TeamPage({
               >
                 Invite teammate by link
               </Button>
-              {account.local_access && <p className="text-xs text-muted">These invitation links open this local installation. Remote teammates need a shared HTTPS workspace.</p>}
+              {account.local_access && (
+                <p className="text-xs text-muted">
+                  These invitation links open this local installation. Remote
+                  teammates need a shared HTTPS workspace.
+                </p>
+              )}
               {link && (
                 <label className="grid gap-1 text-sm">
                   Invitation link
@@ -471,9 +476,21 @@ export function TeamPage({
           )}
         </section>
       )}
-      {!accountOnly && account?.authenticated && (
-        <HermesChat account={account} />
-      )}
     </div>
+  );
+}
+
+export function TeamPage(props: Parameters<typeof TeamAccountPanel>[0]) {
+  const workspace = useWorkspace();
+  const invitation = new URLSearchParams(location.hash.slice(1)).has("invite");
+  const identity = useLoad(() => api<Account>("/account"), []);
+  const account = workspace.data?.account || identity.data;
+  if (props.accountOnly || invitation || !account?.authenticated)
+    return <TeamAccountPanel {...props} />;
+  return (
+    <TeamWorkspace
+      account={account}
+      renderManagement={() => <TeamAccountPanel {...props} />}
+    />
   );
 }

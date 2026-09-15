@@ -18,6 +18,7 @@ test("communication preferences, role routing and call requests persist without 
   expect(created.ok()).toBeTruthy();
   const item = await created.json();
   await page.goto("/?view=team");
+  await page.getByRole("button", { name: "Team settings", exact: true }).click();
   await page.getByRole("button", { name: "Add communication profile" }).click();
   const form = page
     .locator("form")
@@ -253,6 +254,7 @@ test("Git contribution activity shows real captured attribution and searchable h
   });
   expect(saved.ok()).toBeTruthy();
   await page.goto("/?view=team");
+  await page.getByRole("button", { name: "Team settings", exact: true }).click();
   const activity = page.getByRole("region", {
     name: "Recent code contributions",
   });

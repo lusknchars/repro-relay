@@ -14,6 +14,7 @@ test("local workspace opens without login and an invited teammate talks to the s
   await expect(
     page.getByRole("heading", { name: "Sign in with your phone" }),
   ).toHaveCount(0);
+  await page.getByRole("button", { name: "Team settings", exact: true }).click();
   await page
     .getByRole("button", { name: "Invite teammate by link", exact: true })
     .click();

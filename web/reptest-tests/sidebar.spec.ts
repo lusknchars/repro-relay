@@ -13,12 +13,11 @@ test("workspace context follows navigation and remains usable when collapsed or 
     context.getByRole("heading", { name: "Daily coordination" }),
   ).toBeVisible();
   await context.getByRole("button", { name: "Open team conversation" }).click();
-  await expect(
-    context.getByRole("heading", { name: "Your team", exact: true }),
-  ).toBeVisible();
+  await expect(context).toHaveCount(0);
   await expect(
     page.getByRole("region", { name: "Hermes team conversation" }),
   ).toBeVisible();
+  await page.goto("/?view=reach");
   await page
     .getByRole("button", { name: "Hide workspace context", exact: true })
     .click();
@@ -38,11 +37,15 @@ test("workspace context follows navigation and remains usable when collapsed or 
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
-  await context.getByRole("button", { name: "Close workspace sidebar" }).focus();
+  await context
+    .getByRole("button", { name: "Close workspace sidebar" })
+    .focus();
   await page.keyboard.press("Enter");
   await expect(context).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Show workspace context", exact: true })).toBeFocused();
   await expect(
-    page.getByRole("region", { name: "Hermes team conversation" }),
+    page.getByRole("button", { name: "Show workspace context", exact: true }),
+  ).toBeFocused();
+  await expect(
+    page.getByRole("heading", { name: "Reach", exact: true }),
   ).toBeVisible();
 });

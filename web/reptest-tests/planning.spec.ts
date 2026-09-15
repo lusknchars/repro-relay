@@ -96,6 +96,7 @@ test("observed repository, editable team workflow and real Hermes research remai
     .first()
     .getByRole("button", { name: /^Team$/ })
     .click();
+  await page.getByRole("button", { name: "Team settings", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Team investigation workflow" }),
   ).toBeVisible();

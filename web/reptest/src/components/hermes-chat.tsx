@@ -1,6 +1,13 @@
 import { useRef, useState } from "react";
-import { ArrowUp } from "lucide-react";
-import { api, useLoad, errorText, when, type Account } from "@/lib/live";
+import { ArrowUp, Paperclip, ArrowUpRight } from "lucide-react";
+import {
+  api,
+  useLoad,
+  errorText,
+  when,
+  type Case,
+  type Account,
+} from "@/lib/live";
 import { Button, Badge } from "@/components/ui";
 import { IntegrationLogo } from "@/components/integration-logo";
 
@@ -16,7 +23,15 @@ type Conversation = {
   configured: boolean;
   connection: { connected: boolean | null; last_seen: string | null } | null;
 };
-export function HermesChat({ account }: { account: Account }) {
+export function HermesChat({
+  account,
+  desk = false,
+  work,
+}: {
+  account: Account;
+  desk?: boolean;
+  work?: Case;
+}) {
   const feed = useLoad(
     async () => {
       const result = await api<Conversation>("/chat");
@@ -55,7 +70,11 @@ export function HermesChat({ account }: { account: Account }) {
     <section
       aria-label="Hermes team conversation"
       data-glass-panel=""
-      className="team-chat grid gap-4 overflow-hidden rounded-[28px] border border-border"
+      className={
+        desk
+          ? "team-chat team-chat--desk"
+          : "team-chat grid gap-4 overflow-hidden rounded-[28px] border border-border"
+      }
     >
       <header className="flex flex-wrap items-center justify-between gap-3 px-5 pt-5">
         <div className="flex items-center gap-2">
@@ -88,8 +107,36 @@ export function HermesChat({ account }: { account: Account }) {
           {notice}
         </p>
       )}
+      {work && (
+        <div className="team-linked-work">
+          <div>
+            <Paperclip size={12} /> Linked work record <code>{work.id}</code>
+          </div>
+          <strong>{work.title}</strong>
+          <p>{work.description}</p>
+          <footer>
+            <Badge>{work.status.replace(/_/g, " ")}</Badge>
+            <span>
+              {work.build || "Build not recorded"} · revision {work.revision}
+            </span>
+            <a href={`/?case=${encodeURIComponent(work.id)}`}>
+              Open in Work <ArrowUpRight size={12} />
+            </a>
+          </footer>
+        </div>
+      )}
+      {feed.loading && !feed.data && (
+        <p role="status" className="px-5 text-xs text-muted">
+          Loading conversation…
+        </p>
+      )}
+      {feed.error && (
+        <Button className="self-start mx-4" onClick={feed.refresh}>
+          Retry conversation
+        </Button>
+      )}
       <div
-        className="min-h-[240px] max-h-[480px] space-y-5 overflow-y-auto px-4 pb-2 sm:px-5"
+        className="team-message-history min-h-[240px] max-h-[480px] space-y-5 overflow-y-auto px-4 pb-2 sm:px-5"
         aria-label="Conversation history"
       >
         {!!feed.data?.items.length && (
@@ -105,29 +152,79 @@ export function HermesChat({ account }: { account: Account }) {
         {feed.data?.items.map((item) => (
           <article
             key={item.id}
-            className="flex min-w-0 flex-col gap-4"
+            className="team-message-pair flex min-w-0 flex-col gap-4"
           >
-            <div className="ml-auto grid max-w-[90%] justify-items-end gap-1 sm:max-w-[80%]">
-              <strong className="text-xs text-muted">{item.author}</strong>
+            <div className="team-human-message ml-auto grid max-w-[90%] justify-items-end gap-1 sm:max-w-[80%]">
+              <strong className="text-xs text-muted">
+                <span className="team-message-avatar" aria-hidden>
+                  {item.author.slice(0, 2).toUpperCase()}
+                </span>
+                {item.author}
+              </strong>
               <p className="rounded-[20px] rounded-br-md bg-accent px-4 py-2.5 text-sm text-accent-foreground whitespace-pre-wrap [overflow-wrap:anywhere]">
                 {item.body}
               </p>
-              <time dateTime={item.created_at} className="text-[11px] text-muted">{when(item.created_at)}</time>
+              <time
+                dateTime={item.created_at}
+                className="text-[11px] text-muted"
+              >
+                {when(item.created_at)}
+              </time>
             </div>
             {item.reply ? (
-              <div className="mr-auto grid max-w-[90%] justify-items-start gap-1 sm:max-w-[80%]">
-                <strong className="text-xs text-muted">Hermes</strong>
+              <div className="team-agent-message mr-auto grid max-w-[90%] justify-items-start gap-1 sm:max-w-[80%]">
+                <strong className="text-xs text-muted">
+                  <span className="team-message-avatar" aria-hidden>
+                    <IntegrationLogo provider="hermes" />
+                  </span>
+                  Hermes <Badge>Agent</Badge>
+                </strong>
                 <p className="rounded-[20px] rounded-bl-md bg-surface-2 px-4 py-2.5 text-sm whitespace-pre-wrap [overflow-wrap:anywhere]">
                   {item.reply}
                 </p>
-                {item.replied_at && <time dateTime={item.replied_at} className="text-[11px] text-muted">{when(item.replied_at)}</time>}
+                {item.replied_at && (
+                  <time
+                    dateTime={item.replied_at}
+                    className="text-[11px] text-muted"
+                  >
+                    {when(item.replied_at)}
+                  </time>
+                )}
               </div>
             ) : (
-              <p className="text-right text-xs text-muted">Saved · waiting for Hermes</p>
+              <p className="text-right text-xs text-muted">
+                Saved · waiting for Hermes
+              </p>
             )}
           </article>
         ))}
       </div>
+      {desk && (
+        <div className="team-composer-tools">
+          <button
+            disabled={!work || busy}
+            onClick={() => {
+              if (!work) return;
+              const draft = `${message}${message ? "\n\n" : ""}Work: ${work.title} (${work.id})\n/?case=${encodeURIComponent(work.id)}`;
+              if (draft.length > 4000) {
+                setError(
+                  "Shorten your message before attaching this work reference (4,000 characters maximum).",
+                );
+                return;
+              }
+              setError("");
+              setMessage(draft);
+            }}
+          >
+            <Paperclip size={12} /> Attach work
+          </button>
+          <span>
+            {work
+              ? "Adds a work reference to your draft"
+              : "Select work to attach its reference"}
+          </span>
+        </div>
+      )}
       <form
         className="team-chat-composer flex items-end gap-3 border-t border-border px-4 py-3"
         onSubmit={(e) => {
@@ -152,6 +249,18 @@ export function HermesChat({ account }: { account: Account }) {
             value={message}
             maxLength={4000}
             onChange={(e) => setMessage(e.target.value)}
+            onKeyDown={(e) => {
+              if (
+                (e.metaKey || e.ctrlKey) &&
+                e.key === "Enter" &&
+                !e.nativeEvent.isComposing &&
+                message.trim() &&
+                !busy
+              ) {
+                e.preventDefault();
+                e.currentTarget.form?.requestSubmit();
+              }
+            }}
             placeholder="What would you like Hermes to help with?"
           />
         </label>
@@ -168,6 +277,13 @@ export function HermesChat({ account }: { account: Account }) {
           {!busy && <ArrowUp className="h-4 w-4" aria-hidden />}
         </Button>
       </form>
+      {desk && (
+        <p className="team-composer-note">
+          Messages go to the shared Hermes conversation. Sending does not
+          approve a change or contact anyone outside this workspace. Ctrl/⌘ +
+          Enter to send.
+        </p>
+      )}
       {account.role === "owner" && (
         <details className="mx-4 mb-4 rounded-xl border border-border p-3">
           <summary className="cursor-pointer text-sm font-medium">
