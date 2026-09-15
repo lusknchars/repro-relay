@@ -60,6 +60,7 @@ function Root() {
     setRoute(guideSteps[step].route);
   }
   function navigate(next: Route) {
+    if (next !== route && !window.dispatchEvent(new Event("relay:before-navigate", { cancelable: true }))) return;
     setGuide(null);
     setRoute(next);
   }

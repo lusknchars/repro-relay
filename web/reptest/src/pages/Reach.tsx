@@ -1,3 +1,4 @@
+import { ReachMeetings } from "@/components/meetings";
 import { Reach } from "@/components/reach";
 
 export function ReachPage() {
@@ -25,6 +26,7 @@ export function ReachPage() {
           </a>
         </div>
       </header>
+      <ReachMeetings />
       <Reach />
     </div>
   );

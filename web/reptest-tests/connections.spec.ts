@@ -72,7 +72,7 @@ test("settings explains independent layers and routes account and knowledge in p
   ).toBe(true);
   await page
     .getByRole("region", { name: "Communication", exact: true })
-    .getByRole("button")
+    .getByRole("button", { name: /Plow \+ Latch/ })
     .click();
   await expect(
     page.getByRole("button", { name: "Connect Plow + Latch", exact: true }),
