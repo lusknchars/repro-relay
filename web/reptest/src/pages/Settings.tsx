@@ -1,5 +1,6 @@
+import { ExaConnection } from "@/components/exa";
 import { SentryConnection } from "@/components/sentry";
-import { Bug } from "lucide-react";
+import { Bug, Search } from "lucide-react";
 import { GoogleCalendarConnection } from "@/components/google-calendar";
 import { CalendarDays } from "lucide-react";
 import { useState } from "react";
@@ -15,6 +16,12 @@ import {
 } from "@/lib/live";
 import { cn } from "@/lib/utils";
 const connections = [
+  {
+    id: "exa",
+    name: "Exa",
+    role: "Architecture research and developer tool discovery",
+    group: "Research",
+  },
   {
     id: "sentry",
     name: "Sentry",
@@ -64,6 +71,7 @@ const groups = [
   "Models",
   "Context and memory",
   "Monitoring",
+  "Research",
   "Planning",
 ] as const;
 type Plow = {
@@ -101,6 +109,7 @@ export function SettingsPage({
   const [error, setError] = useState("");
   const connection = connections.find((c) => c.id === selected)!;
   function status(id: (typeof connections)[number]["id"]) {
+    if (id === "exa") return "Web search and page text";
     if (id === "sentry") return "Account and project monitoring";
     if (id === "calendar") return "Local plans · Google Calendar";
     if (id === "hermes")
@@ -208,7 +217,9 @@ export function SettingsPage({
                     )}
                   >
                     <span className="flex items-center gap-2 text-sm font-medium">
-                      {c.id === "sentry" ? (
+                      {c.id === "exa" ? (
+                        <Search size={22} />
+                      ) : c.id === "sentry" ? (
                         <Bug size={22} />
                       ) : c.id === "calendar" ? (
                         <CalendarDays size={22} />
@@ -246,7 +257,9 @@ export function SettingsPage({
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="flex items-center gap-2 text-lg font-semibold">
-              {selected === "sentry" ? (
+              {selected === "exa" ? (
+                <Search size={28} />
+              ) : selected === "sentry" ? (
                 <Bug size={28} />
               ) : selected === "calendar" ? (
                 <CalendarDays size={28} />
@@ -262,6 +275,7 @@ export function SettingsPage({
           </div>
           <p className="text-sm text-muted">{connection.role}</p>
           {selected === "sentry" && <SentryConnection />}
+          {selected === "exa" && <ExaConnection />}
           {selected === "calendar" && (
             <>
               <p className="text-sm">
