@@ -10,7 +10,7 @@ import {
   errorText,
   type Memory,
 } from "@/lib/live";
-export function KnowledgePage() {
+export function KnowledgePage({ embedded = false }: { embedded?: boolean }) {
   const { data: workspace } = useWorkspace();
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
@@ -60,7 +60,7 @@ export function KnowledgePage() {
     history.replaceState(null, "", url);
   }
   return (
-    <div className="grid gap-4 p-4 md:p-6">
+    <div className={embedded ? "grid gap-4" : "grid gap-4 p-4 md:p-6"}>
       <PageSidebar>
         <nav className="page-sidebar-nav" aria-label="Knowledge collections">
           <button
@@ -146,7 +146,11 @@ export function KnowledgePage() {
       </PageSidebar>
       <header className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Knowledge</h1>
+          {embedded ? (
+            <h2 className="text-lg font-semibold">Memory</h2>
+          ) : (
+            <h1 className="text-xl font-semibold">Knowledge</h1>
+          )}
           <p className="text-sm text-muted">
             Current reviewed observations, linked to their source revision.
           </p>

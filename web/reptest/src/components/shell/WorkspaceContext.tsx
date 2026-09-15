@@ -8,14 +8,25 @@ const CONTEXT: Record<
   Route,
   { title: string; description: string; links: [Route, string][] }
 > = {
+  competitors: {
+    title: "Competitor research",
+    description: "Saved sources are reference material, not verified market coverage.",
+    links: [["settings", "Manage research sources"], ["team", "Read Hermes replies"]],
+  },
   agents: {
     title: "Workspace agents",
-    description: "Inspect Hermes capabilities and recorded execution.",
-    links: [
-      ["architecture", "Configure team workflow"],
-      ["settings", "Connect runtimes and Plow"],
-      ["knowledge", "Review shared knowledge"],
-    ],
+    description: "Inspect supported capabilities and recorded execution. Briefs do not grant permissions.",
+    links: [["architecture", "Configure team workflow"], ["settings", "Connect runtimes and Plow"], ["knowledge", "Review shared knowledge"]],
+  },
+  users: {
+    title: "Workspace users",
+    description: "Review joined teammates and create an invitation for someone new.",
+    links: [["users-create", "Create user invitation"], ["team", "Open team conversation"]],
+  },
+  "users-create": {
+    title: "Invite a teammate",
+    description: "Preview a new member invitation. The recipient confirms their own profile when joining.",
+    links: [["users", "View user list"], ["team", "Manage team invitations"]],
   },
   work: {
     title: "Investigation workspace",
@@ -132,7 +143,7 @@ export function WorkspaceContext({
     return (
       <aside id="workspace-context" aria-label="Workspace context" className="page-context">
         <header className="page-context-header">
-          <h2>{route === "architecture" ? "Architecture explorer" : route === "agents" ? "Agent workspace" : "Knowledge library"}</h2>
+          <h2>{route === "architecture" ? "Architecture explorer" : route === "agents" ? "Agent workspace" : "Harness workspace"}</h2>
           <button type="button" aria-label="Close workspace sidebar" onClick={onClose} className="t-control grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-2">
             <X size={16} />
           </button>

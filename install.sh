@@ -16,7 +16,7 @@ main() {
       return 1
     fi
     printf '%s\n' "Reusing your installation: $install_dir"
-    sh "$install_dir/start.sh"
+    if [ -f "$install_dir/connect.sh" ]; then sh "$install_dir/connect.sh"; else sh "$install_dir/start.sh"; fi
     return
   fi
   umask 077
@@ -41,6 +41,6 @@ main() {
   test ! -e "$install_dir"
   mv "$stage/app" "$install_dir"
   printf '%s\n' "Installed in $install_dir"
-  sh "$install_dir/start.sh"
+  if [ -f "$install_dir/connect.sh" ]; then sh "$install_dir/connect.sh"; else sh "$install_dir/start.sh"; fi
 }
 main "$@"

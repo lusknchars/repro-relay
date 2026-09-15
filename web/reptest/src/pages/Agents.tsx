@@ -21,6 +21,7 @@ import type { ArchitectureRecord, Focus } from "./Architecture";
 import "./agents.css";
 import { PageSidebar } from "@/components/shell/PageSidebar";
 import { AgentPrograms } from "@/components/agent-programs";
+import { AddSkills } from "@/components/add-skills";
 const tabs = ["Skills", "Programs", "Runtime", "Activity", "Access"] as const;
 export function AgentsPage({
   onRoute,
@@ -226,7 +227,10 @@ export function AgentsPage({
                 active at a time.
               </p>
             </div>
-            <span>{templates.length} available</span>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-sm text-muted">{templates.length} available</span>
+              <AddSkills />
+            </div>
           </div>
           <div className="agents-toolbar">
             <label>

@@ -1,5 +1,17 @@
 # Third-party notices
 
+## Relay transparent logo
+
+The sidebar separately uses `web/reptest/public/brand/relay-sidebar-planet.png`, the user's supplied orbital-planet PNG, preserved without modification. Sign-in and the favicon retain the transparent SVG. No rights to the supplied artwork are granted by this project's MIT license.
+
+The desktop bundle icons in `web/src-tauri/icons/icon.icns`, `icon.ico` and `icon.png` derive from the same orbital-planet PNG. The full artwork is fitted onto a square black canvas without cropping or stretching, then converted with Tauri's icon generator. The earlier `brand-source.svg` is retained as a legacy asset, not the source of these icons.
+
+`web/reptest/public/brand/relay-logo-transparent.svg` is the user-supplied Relay logo. The supplied SVG artwork is preserved and used in phone sign-in and the browser favicon. This project's MIT license does not grant rights to the supplied artwork.
+
+## Inter typeface
+
+The current frontend bundles Inter regular, medium, semibold and bold through `@fontsource/inter`. Copyright 2016 The Inter Project Authors. Distributed under the SIL Open Font License 1.1; the full license ships in `web/reptest/public/fonts/Inter-LICENSE.txt`. Font files are served locally, without a font CDN request.
+
 ## Hermes image
 
 `web/src/assets/hermes-logo.webp` was supplied by the user on September 12, 2026 for the Hermes investigator connection card. The image is preserved without modification. This project's MIT license does not grant rights to the supplied artwork.
@@ -54,6 +66,8 @@ Source revision: `19371302b95d218af43299bce79ddbddd0bc364d`.
 `motion` 13.2.0 is used for the approval button's presence transitions under the MIT license. Copyright (c) 2024 Motion B.V. The complete dependency license remains in the installed package. `web/src/components/ui/approval-button.tsx` and `dot-expand-button.tsx` adapt the examples supplied by the user, replacing simulated request outcomes with application state and using the existing Lucide icons.
 
 ## GSAP interface transitions
+
+The current frontend's `web/reptest/src/components/ui/gsap/fillable-button.tsx` adapts PaceUI's `@paceui/gsap-fillable-button`, retrieved through its MCP and registry on September 14, 2026: https://paceui.com/r/gsap-fillable-button.json. It retains the pointer-origin circular fill, with Relay theme tokens, forwarded refs, disabled/pending handling, reduced-motion support and lifecycle cleanup. PaceUI's applicable product terms remain in effect; retrieval without authentication does not relicense the component under this project's MIT notice. This frontend is excluded from the clean Agent Index package described in `docs/AGENT-INDEX-RELEASE.md`.
 
 `gsap` 3.15.0 and `@gsap/react` 2.1.2 are package dependencies under the [GSAP Standard No Charge License](https://gsap.com/community/standard-license/). Their upstream license and copyright notices remain applicable; they are not relicensed under this project's MIT license. The app uses GSAP for interface transitions. It does not expose a visual animation editor.
 
@@ -135,3 +149,7 @@ The supplied `light.svg` is the Mem0 wordmark, stored unchanged as `mem0-logo.sv
 ## PaceUI Education 1
 
 `web/reptest/src/components/work-record-checklist.tsx` adapts the header, progress indicator, collapsible numbered modules and status icons from PaceUI `app-education-1`, retrieved with its official MCP `add-block` tool and installed from https://paceui.com/r/app-education-1.json on September 14, 2026. Course fixtures were replaced with Relay case data. Record coverage describes available records, not verification or fix completion. PaceUI's product terms remain applicable; this adaptation is not relicensed by the repository's MIT notice. The frontend remains outside the clean Agent Index package.
+
+## Optional private Glowing Ridges
+
+Locally opted-in desktop builds use `@reactbits-starter/glowing-ridges-tw` from the authenticated React Bits Pro registry. Its source is stored only in Git-ignored `web/reptest/src/private/` and is not licensed under Repro Relay's MIT license. See https://pro.reactbits.dev/license. Normal builds exclude this component. React Three Fiber, Three.js and Motion retain their own package licenses.

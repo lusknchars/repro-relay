@@ -47,7 +47,7 @@ test("skills open first and one click applies a real workflow without starting a
     card.getByRole("button", { name: "Active skill" }),
   ).toBeDisabled();
   await page.screenshot({ path: "test-results/agents-skills.png" });
-  await page.getByRole("button", { name: "List", exact: true }).click();
+  await page.locator('[aria-label="Skill layout"]').getByRole("button", { name: "List", exact: true }).click();
   await page.getByRole("button", { name: "Runtime", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Hermes runtime" }),

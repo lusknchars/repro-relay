@@ -10,9 +10,12 @@ pub mod chat;
 pub mod communication;
 pub mod contributions;
 pub mod discord;
+pub mod discord_notes;
+pub mod discord_voice;
 pub mod domain;
 pub mod evidence;
 pub mod exa;
+mod competitors;
 pub mod google_calendar;
 pub mod hosting;
 pub mod intake;
@@ -262,7 +265,10 @@ pub fn app_with_discord(
         .merge(runtime_usage::routes())
         .merge(sentry::routes(sentry))
         .merge(exa::routes(exa::Connector::default()))
+        .merge(competitors::routes())
         .merge(discord::routes(discord))
+        .merge(discord_voice::routes())
+        .merge(discord_notes::routes())
         .merge(meetings::routes(meetings::Connector::default()))
         .merge(monitoring::routes())
         .merge(automation::routes())

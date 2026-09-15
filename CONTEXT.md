@@ -45,3 +45,19 @@ _Avoid_: Replay.
 
 **Useful investigation**: An investigation whose evidence or actionable blocker lets its intended recipient proceed without another avoidable clarification round.
 _Avoid_: Completed run as a synonym.
+
+## Team delegation vocabulary
+
+The following terms describe the proposed [team-request workflow](docs/TEAM-REQUESTS-SPEC.md).
+
+**Team request**: A request for one teammate to produce a stated outcome for a case, with approved context and an attributable result for review.
+_Avoid_: Chat message, investigation run, delivered update as interchangeable names.
+
+**Request skill**: A reusable set of instructions and expected outputs selected for a team request. It describes the task, not permission to execute tools.
+_Avoid_: Agent identity, access grant.
+
+**Approved request context**: The specific source material and instructions a sender has approved for a team request, preserving their stated versions and attribution.
+_Avoid_: Entire workspace, latest context when the sources have changed.
+
+**Request result**: A recipient's or authorized agent's submitted response to a team request, including its supporting evidence and limitations. Acceptance completes the request, not independent verification of its claims.
+_Avoid_: Verified fix, delivered message.

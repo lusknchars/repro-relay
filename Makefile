@@ -19,6 +19,9 @@ api:
 	$(CARGO) run -p relay-api
 
 check:
+	node --test integrations/discord-notes/session.test.mjs
+	python3 -m unittest discover -s integrations/connected -p 'test_*.py' -v
+	python3 -m unittest discover -s integrations/discord-voice -p 'test_*.py' -v
 	python3 -m unittest discover -s scripts -p 'test_easy_start.py' -v
 	python3 -m unittest discover -s integrations/reach -p 'test_*.py' -v
 	python3 -m unittest discover -s integrations/google-calendar -p 'test_*.py' -v

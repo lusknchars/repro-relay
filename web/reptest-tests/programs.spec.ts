@@ -16,6 +16,7 @@ test("administrator schedules an automatic routine and opens its recorded run", 
   });
   expect(response.ok()).toBeTruthy();
   const record = await response.json();
+  const programName = `Automatic triage fixture ${record.id}`;
   await page.reload();
   await expect(
     page.getByRole("heading", { name: "Test programs", exact: true }),
@@ -24,7 +25,7 @@ test("administrator schedules an automatic routine and opens its recorded run", 
   await page.getByRole("button", { name: /Test triage Sort/ }).click();
   await page
     .getByLabel("Program name", { exact: true })
-    .fill("Automatic triage fixture");
+    .fill(programName);
   await page
     .getByRole("combobox", { name: "Repository work", exact: true })
     .selectOption(record.id);
@@ -45,7 +46,7 @@ test("administrator schedules an automatic routine and opens its recorded run", 
   ).toBeVisible();
   const row = page
     .locator(".program-history .program-row")
-    .filter({ hasText: "Automatic triage fixture" });
+    .filter({ hasText: programName });
   await expect(row.getByRole("button", { name: "View result" })).toBeVisible({
     timeout: 20000,
   });
@@ -53,7 +54,7 @@ test("administrator schedules an automatic routine and opens its recorded run", 
   await expect(
     page
       .locator(".program-list .program-row")
-      .filter({ hasText: "Automatic triage fixture" }),
+      .filter({ hasText: programName }),
   ).toContainText("No further scheduled runs");
   await row.getByRole("button", { name: "View result" }).click();
   await expect(page).toHaveURL(new RegExp(record.id));

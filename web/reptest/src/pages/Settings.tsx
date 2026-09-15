@@ -3,7 +3,7 @@ import { ExaConnection } from "@/components/exa";
 import { SentryConnection } from "@/components/sentry";
 import { DiscordConnection } from "@/components/discord";
 import { DailyConnection } from "@/components/meetings";
-import { Bug, Search, Video, MessageSquare, Cpu } from "lucide-react";
+import { Bug, Video, Cpu } from "lucide-react";
 import { GoogleCalendarConnection } from "@/components/google-calendar";
 import { CalendarDays } from "lucide-react";
 import { useState } from "react";
@@ -19,6 +19,7 @@ import {
 } from "@/lib/live";
 import { cn } from "@/lib/utils";
 const connections = [
+  { id: "reddit", name: "Reddit", role: "Competitor discussions and source references", group: "Research" },
   {
     id: "exa",
     name: "Exa",
@@ -115,6 +116,7 @@ export function SettingsPage({
   const [error, setError] = useState("");
   const connection = connections.find((c) => c.id === selected)!;
   function status(id: (typeof connections)[number]["id"]) {
+    if (id === "reddit") return "Discovery via Exa · direct API not connected";
     if (id === "models") return "OpenAI · Anthropic · Kimi · OpenRouter";
     if (id === "discord") return "Selected channel · read-only collection";
     if (id === "daily") return "Private rooms · optional transcription";
@@ -226,9 +228,7 @@ export function SettingsPage({
                     )}
                   >
                     <span className="flex items-center gap-2 text-sm font-medium">
-                      {c.id === "models" ? <Cpu size={22} /> : c.id === "discord" ? <MessageSquare size={22} /> : c.id === "daily" ? <Video size={22} /> : c.id === "exa" ? (
-                        <Search size={22} />
-                      ) : c.id === "sentry" ? (
+                      {c.id === "models" ? <Cpu size={22} /> : c.id === "daily" ? <Video size={22} /> : c.id === "sentry" ? (
                         <Bug size={22} />
                       ) : c.id === "calendar" ? (
                         <CalendarDays size={22} />
@@ -266,9 +266,7 @@ export function SettingsPage({
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="flex items-center gap-2 text-lg font-semibold">
-              {selected === "models" ? <Cpu size={28} /> : selected === "discord" ? <MessageSquare size={28} /> : selected === "daily" ? <Video size={28} /> : selected === "exa" ? (
-                <Search size={28} />
-              ) : selected === "sentry" ? (
+              {selected === "models" ? <Cpu size={28} /> : selected === "daily" ? <Video size={28} /> : selected === "sentry" ? (
                 <Bug size={28} />
               ) : selected === "calendar" ? (
                 <CalendarDays size={28} />
@@ -286,6 +284,14 @@ export function SettingsPage({
           {selected === "models" && <ModelProviderConnection />}
           {selected === "sentry" && <SentryConnection />}
           {selected === "exa" && <ExaConnection />}
+          {selected === "reddit" && <div className="grid gap-3 text-sm">
+            <h3 className="font-medium">Discover what people are discussing</h3>
+            <p className="text-muted">Competitors can search Exa's index for Reddit references. This is not a direct Reddit connection, a complete comment archive, or permission to scrape Reddit.</p>
+            <a href="/?view=competitors" className="text-accent-text underline">Open Competitors</a>
+            <Button onClick={() => setSelected("exa")}>Configure optional Exa search</Button>
+            <p className="text-xs text-muted">Direct collection requires approved Reddit access. Automated Latch browser research is not connected to Competitors yet. No Reddit password is collected here.</p>
+            <a href="https://support.reddithelp.com/hc/en-us/articles/42728983564564-Responsible-Builder-Policy" target="_blank" rel="noreferrer" className="text-xs text-accent-text underline">Reddit access requirements</a>
+          </div>}
           {selected === "daily" && <DailyConnection />}
           {selected === "discord" && <DiscordConnection />}
           {selected === "calendar" && (
@@ -421,6 +427,7 @@ export function SettingsPage({
                 Pi. Relay evidence tools load with the session; provider access
                 remains separate.
               </p>
+              <p className="text-sm text-muted">In Pi, use <code>/relay-context</code> to inspect approved instructions without a model call. <code>/relay-context-review</code> sends those contents to your selected provider for review and incurs its usage. Approve the current snapshot in Harness first.</p>
             </>
           )}
           {selected === "moonshot" && (

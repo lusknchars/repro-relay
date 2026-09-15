@@ -9,6 +9,8 @@
 **/*credentials*
 .relay-image
 .relay-install
+.relay-connected
+.relay-discord-mode
 .venv
 **/node_modules
 **/target
@@ -18,3 +20,4 @@
 **/playwright-report
 web/src-tauri/gen
 backend
+web/reptest/src/private

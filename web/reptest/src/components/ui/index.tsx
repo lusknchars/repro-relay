@@ -2,6 +2,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { forwardRef, type ButtonHTMLAttributes, type HTMLAttributes, type InputHTMLAttributes, type ReactNode } from "react";
 import { Check, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { FillableButton } from "./gsap/fillable-button";
 
 /* ---------------- Button ---------------- */
 const buttonVariants = cva(
@@ -33,11 +34,16 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>, Va
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, pending, outcome, children, disabled, ...props }, ref) => (
-    <button
+  ({ className, variant = "secondary", size, pending, outcome, children, disabled, ...props }, ref) => {
+    const fillable = variant !== "ghost" && variant !== "link";
+    const Component = fillable ? FillableButton : "button";
+    return (
+    <Component
       ref={ref}
+      {...(fillable ? { variant: variant as "default" | "outline" | "secondary" | "danger" } : {})}
       className={cn(
         buttonVariants({ variant, size }),
+        fillable && "rounded-full",
         pending && "pending-sweep",
         outcome === "success" && "bg-ok text-white border-transparent",
         outcome === "failure" && "bg-danger text-white border-transparent",
@@ -51,8 +57,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       {outcome === "success" ? <Check className="h-3.5 w-3.5" aria-hidden /> : null}
       {outcome === "failure" ? <X className="h-3.5 w-3.5" aria-hidden /> : null}
       {children}
-    </button>
-  )
+    </Component>
+  );
+  }
 );
 Button.displayName = "Button";
 
@@ -85,6 +92,7 @@ export function Badge({ className, tone, dot, children, ...props }: HTMLAttribut
 export function Card({ className, interactive, ...props }: HTMLAttributes<HTMLDivElement> & { interactive?: boolean }) {
   return (
     <div
+      data-glass-panel=""
       className={cn(
         "rounded-lg border border-border bg-surface",
         interactive && "t-control hover:border-border-strong cursor-pointer",

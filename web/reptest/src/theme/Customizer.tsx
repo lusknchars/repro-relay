@@ -3,6 +3,7 @@ import { Check, Monitor, Moon, RotateCcw, Sun, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme, type Accent, type SidebarVariant } from "./ThemeProvider";
 import { Button, Segmented, Switch } from "@/components/ui";
+
 import { INTERFACE_FONTS, normalizeFont } from "./fonts";
 
 const ACCENTS: { id: Accent; label: string; swatch: string }[] = [
@@ -88,6 +89,18 @@ export function Customizer({ open, onClose }: { open: boolean; onClose: () => vo
           </select>
           <p className="rounded-md border border-border p-3 text-sm" aria-label="Font preview">Team context, clear decisions. Ação, revisão. 0123456789</p>
           <p className="text-xs text-muted">Saved on this device. All fonts are bundled for offline use.</p>
+        </Section>
+
+        <Section title="Surface style" hint="Glass adds frosted panels and a soft gradient backdrop.">
+          <Segmented
+            ariaLabel="Surface style"
+            value={theme.material}
+            onChange={(v) => set("material", v)}
+            options={[
+              { value: "standard", label: "Standard" },
+              { value: "glassmorphism", label: "Glassmorphism" },
+            ]}
+          />
         </Section>
 
         <Section title="Accent" hint="Blue matches the sidebar effect and grid. Other presets are yours to choose.">

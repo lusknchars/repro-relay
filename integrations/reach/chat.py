@@ -39,8 +39,8 @@ class API:
             headers={'Content-Type': 'application/json', 'Origin': self.origin, 'X-Relay-Chat-Key': self.key},
             data=json.dumps(body).encode() if body is not None else None)
         with self.opener.open(req, timeout=10) as response:
-            raw = response.read(1_000_001)
-        if len(raw) > 1_000_000:
+            raw = response.read(3_000_001)
+        if len(raw) > 3_000_000:
             raise ValueError('Chat response exceeded its limit.')
         return json.loads(raw)
 

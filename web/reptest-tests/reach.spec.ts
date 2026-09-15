@@ -130,7 +130,7 @@ test("Reach rejects review after the source changed", async ({ page }) => {
     ).ok(),
   ).toBeTruthy();
   await reach.getByRole("button", { name: "Save action", exact: true }).click();
-  await expect(reach.getByRole("alert")).toContainText(
+  await expect(reach.getByRole("alert").filter({ hasText: "source or team preferences changed" })).toContainText(
     "source or team preferences changed",
   );
 });

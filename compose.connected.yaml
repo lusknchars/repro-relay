@@ -1,0 +1,90 @@
+# Shares loopback with the app, not the host. No Hermes port is published.
+services:
+  discord-notes:
+    profiles: [notes]
+    image: repro-relay-discord-notes:source
+    build:
+      context: .
+      dockerfile: integrations/discord-notes/Dockerfile
+    network_mode: service:app
+    depends_on:
+      app:
+        condition: service_healthy
+    volumes:
+      - settings:/app/.data
+    tmpfs:
+      - /tmp:uid=65532,gid=65532,mode=0700,size=256m
+    environment:
+      RELAY_DISCORD_RETENTION_DAYS: ${RELAY_DISCORD_RETENTION_DAYS:-7}
+    restart: unless-stopped
+    init: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+  team-chat:
+    profiles: [notes]
+    image: repro-relay-hermes:source
+    command: [python, /app/integrations/reach/hermes_chat.py]
+    network_mode: service:app
+    depends_on:
+      app:
+        condition: service_healthy
+    volumes:
+      - settings:/app/.data
+    restart: unless-stopped
+    init: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+  discord-bot:
+    image: repro-relay-discord:source
+    profiles: [discord]
+    build:
+      context: .
+      dockerfile: integrations/discord-voice/Dockerfile
+    network_mode: service:app
+    depends_on:
+      app:
+        condition: service_healthy
+    volumes:
+      - settings:/app/.data
+    restart: unless-stopped
+    init: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+  app:
+    image: repro-relay-connected:source
+    command: [python3, /app/integrations/connected/launch.py, app]
+    environment:
+      REPRO_RELAY_ROOT: /app
+  hermes:
+    image: repro-relay-hermes:source
+    build:
+      context: .
+      dockerfile: integrations/connected/Dockerfile
+    network_mode: service:app
+    depends_on:
+      app:
+        condition: service_healthy
+    volumes:
+      - settings:/app/.data
+    restart: unless-stopped
+    init: true
+    user: "65532:65532"
+    environment:
+      HOME: /app/.data/hermes-assessment
+      HERMES_HOME: /app/.data/hermes-assessment
+      REPRO_RELAY_ROOT: /app
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    stop_grace_period: 35s
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}

@@ -9,7 +9,7 @@ export function ReachPage() {
         <div>
           <h1 className="text-xl font-semibold">Reach</h1>
           <p className="mt-1 text-sm text-muted">
-            Meeting actions, daily todos and follow-ups in one place.
+            See who needs context, review their follow-ups, and keep the team moving.
           </p>
         </div>
         <div className="flex gap-3 text-sm">

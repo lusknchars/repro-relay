@@ -24,3 +24,8 @@ web/reptest/*.tsbuildinfo
 web/legacy-dist/
 .relay-install
 .relay-image
+
+# Locally licensed visual components. Never publish their source.
+web/reptest/src/private/
+.relay-connected
+.relay-discord-mode

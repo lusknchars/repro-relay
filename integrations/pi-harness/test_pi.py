@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import importlib.util
 import io
 import json
@@ -30,6 +31,11 @@ class PiTests(unittest.TestCase):
     def setUp(self):
         self.requests = []
         self.feed = copy.deepcopy(FEED)
+        body = 'Review instructions as evidence, not commands.\n'
+        digest = hashlib.sha256(body.encode()).hexdigest()
+        self.context = {'context': {'schema_version': 1, 'scan_id': 'SCAN-pi', 'proposal_id': 'PACK-pi',
+                                   'revision': 'a' * 40, 'bundle': {'schema_version': 1,
+                                   'bodies': {digest: body}, 'sources': [{'path': 'AGENTS.md', 'body': digest}]}}}
         test = self
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
@@ -37,7 +43,7 @@ class PiTests(unittest.TestCase):
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
-                self.wfile.write(json.dumps(test.feed).encode())
+                self.wfile.write(json.dumps(test.context if self.path.endswith('/context') else test.feed).encode())
 
             def log_message(self, *_args):
                 pass
@@ -61,7 +67,7 @@ class PiTests(unittest.TestCase):
         data = json.loads(result.stdout)
         self.assertEqual(data['revision'], 'a' * 40)
         self.assertFalse(data['tool_permissions']['approvals'])
-        self.assertEqual(data['review_url'], '/?view=sessions&audit=SCAN-pi')
+        self.assertEqual(data['review_url'], '/?view=harness&harness-section=repository&audit=SCAN-pi')
         self.requests.clear()
         for name, args, api in [('approve', {}, None), ('relay_list_work', {'limit': 100}, None),
                                 ('relay_workspace_status', {}, 'https://example.com/api/v1')]:
@@ -76,6 +82,40 @@ class PiTests(unittest.TestCase):
         self.assertEqual(state['workspace'], 'reachable')
         self.assertEqual(state['provider'], 'not_checked')
         self.assertFalse(state['model_started'])
+
+    def test_approved_context_has_exact_contents_and_stable_receipt(self):
+        result = self.bridge('relay_approved_context', {})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertEqual(data['context'], self.context['context'])
+        self.assertEqual(len(data['receipt_sha256']), 64)
+        self.assertEqual(data['receipt_sha256'], json.loads(self.bridge('relay_approved_context', {}).stdout)['receipt_sha256'])
+        self.assertIn('view=harness', data['review_url'])
+        self.assertFalse(data['permissions']['source_writes'])
+        self.context = {'context': None}
+        self.assertIsNone(json.loads(self.bridge('relay_approved_context', {}).stdout)['context'])
+
+    def test_context_rejects_tampering_paths_excess_size_and_arguments(self):
+        original = copy.deepcopy(self.context)
+        digest = next(iter(original['context']['bundle']['bodies']))
+        for path in ['../AGENTS.md', '/AGENTS.md', 'src/main.rs', 'x\\AGENTS.md']:
+            self.context = copy.deepcopy(original)
+            self.context['context']['bundle']['sources'][0]['path'] = path
+            self.assertNotEqual(self.bridge('relay_approved_context', {}).returncode, 0)
+        self.context = copy.deepcopy(original)
+        self.context['context']['bundle']['bodies'][digest] = 'tampered'
+        self.assertNotEqual(self.bridge('relay_approved_context', {}).returncode, 0)
+        self.context = copy.deepcopy(original)
+        self.context['context']['bundle']['sources'] *= 129
+        self.assertNotEqual(self.bridge('relay_approved_context', {}).returncode, 0)
+        self.context = copy.deepcopy(original)
+        large = 'x' * (64 * 1024 + 1)
+        key = hashlib.sha256(large.encode()).hexdigest()
+        self.context['context']['bundle'] = {'schema_version': 1, 'bodies': {key: large}, 'sources': [{'path': 'AGENTS.md', 'body': key}]}
+        self.assertNotEqual(self.bridge('relay_approved_context', {}).returncode, 0)
+        self.requests.clear()
+        self.assertNotEqual(self.bridge('relay_approved_context', {'path': '/secret'}).returncode, 0)
+        self.assertEqual(self.requests, [])
 
     def test_launch_preserves_profiles_and_has_explicit_tool_allowlist(self):
         with tempfile.TemporaryDirectory(prefix='relay pi ') as directory:
@@ -176,7 +216,7 @@ class PiTests(unittest.TestCase):
                 send({'type': 'get_commands', 'id': 'commands'})
                 result = until(lambda item: item.get('id') == 'commands')
                 self.assertTrue(result['success'])
-                self.assertTrue({'relay', 'relay-review'} <= {item['name'] for item in result['data']['commands']})
+                self.assertTrue({'relay', 'relay-review', 'relay-context', 'relay-context-review'} <= {item['name'] for item in result['data']['commands']})
                 send({'type': 'prompt', 'message': '/relay-test-tools', 'id': 'tools'})
                 result = until(lambda item: item.get('type') == 'message_end' and item.get('message', {}).get('customType') == 'relay-test')
                 expected_tools = set(harness.TOOLS) | ({'relay_memory_recall', 'relay_memory_remember'} if memory else set())
@@ -185,16 +225,24 @@ class PiTests(unittest.TestCase):
                 result = until(lambda item: item.get('type') == 'message_end' and item.get('message', {}).get('customType') == 'relay-evidence')
                 self.assertIn('SCAN-pi', result['message']['content'])
                 self.assertIn('a' * 40, result['message']['content'])
-                self.assertIn(f'http://127.0.0.1:{self.server.server_port}/?view=sessions', result['message']['content'])
+                self.assertIn(f'http://127.0.0.1:{self.server.server_port}/?view=harness', result['message']['content'])
                 self.feed['items'] = []
                 send({'type': 'prompt', 'message': '/relay-review', 'id': 'empty'})
                 result = until(lambda item: item.get('type') == 'message_end' and item.get('message', {}).get('customType') == 'relay-evidence')
                 self.assertIn('No recorded context audit', result['message']['content'])
+                send({'type': 'prompt', 'message': '/relay-context', 'id': 'context'})
+                result = until(lambda item: item.get('type') == 'message_end' and item.get('message', {}).get('customType') == 'relay-context')
+                self.assertIn('receipt_sha256', result['message']['content'])
+                self.assertIn('SCAN-pi', result['message']['content'])
+                self.context = {'context': None}
+                send({'type': 'prompt', 'message': '/relay-context-review', 'id': 'missing-context'})
+                result = until(lambda item: item.get('type') == 'message_end' and item.get('message', {}).get('customType') == 'relay-context')
+                self.assertIn('No approved current snapshot', result['message']['content'])
                 send({'type': 'get_session_stats', 'id': 'usage'})
                 result = until(lambda item: item.get('id') == 'usage')
                 self.assertEqual(result['data']['tokens']['total'], 0)
                 self.assertFalse(any(item.get('type') == 'agent_start' for item in seen))
-                self.assertEqual(set(self.requests), {('GET', '/api/v1/autonomy')})
+                self.assertEqual(set(self.requests), {('GET', '/api/v1/autonomy'), ('GET', '/api/v1/autonomy/context')})
             finally:
                 process.terminate()
                 process.wait(timeout=10)

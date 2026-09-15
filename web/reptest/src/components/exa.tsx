@@ -24,7 +24,7 @@ export function ExaConnection() {
   }
   return <section aria-label="Exa connection" className="grid gap-3 rounded-lg border border-border-strong p-4">
     <div className="flex items-center justify-between gap-2"><h3 className="font-medium">Exa web research</h3><Badge tone="outline">{connection.data?.configured ? "Key saved" : "Not configured"}</Badge></div>
-    <p className="text-sm text-muted">Find architecture patterns, documentation and developer tools. Search and extract page text from Architecture, then select references for Hermes.</p>
+    <p className="text-sm text-muted">Find architecture patterns, developer tools and competitor discussions. Search from Architecture or Competitors, then choose which references to share with Hermes.</p>
     {connection.error && <p role="alert" className="text-sm text-danger">{connection.error}</p>}
     {admin ? <form className="grid gap-3" onSubmit={e => { e.preventDefault(); void change(); }}>
       <label className="grid gap-1 text-xs">Exa API key<Input type="password" autoComplete="off" value={key} maxLength={4096} required onChange={e => setKey(e.target.value)} /></label>

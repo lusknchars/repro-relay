@@ -7,12 +7,14 @@ import { ArchitecturePage } from "@/pages/Architecture";
 import { MonitoringPage } from "@/pages/Monitoring";
 import { CalendarPage } from "@/pages/Calendar";
 import { WorkPage } from "@/pages/Work";
-import { KnowledgePage } from "@/pages/Knowledge";
+import { HarnessPage } from "@/pages/Harness";
 import { ReachPage } from "@/pages/Reach";
-import { AgentsPage } from "@/pages/Agents";
 import { TeamPage } from "@/pages/Team";
+import { UsersPage } from "@/pages/Users";
+import { AgentsPage } from "@/pages/Agents";
 import { UsagePage } from "@/pages/Usage";
 import { SettingsPage } from "@/pages/Settings";
+import { CompetitorsPage } from "@/pages/Competitors";
 import { SetupPage } from "@/pages/Setup";
 import { WorkspaceProvider } from "@/lib/live";
 import { WorkspaceGuide, guideSteps } from "@/components/workspace-guide";
@@ -23,13 +25,16 @@ function Root() {
     const view =
       params.get("reach") && params.get("view") === "team"
         ? "reach"
-        : params.get("view");
+        : params.get("view") === "harness" ? "knowledge" : params.get("view");
     return location.hash.startsWith("#invite=")
       ? "team"
       : [
             "reach",
+            "competitors",
             "team",
+            "users",
             "agents",
+            "users-create",
             "knowledge",
             "usage",
             "settings",
@@ -43,7 +48,7 @@ function Root() {
   });
   useEffect(() => {
     const url = new URL(location.href);
-    url.searchParams.set("view", route);
+    url.searchParams.set("view", route === "knowledge" ? "harness" : route);
     if (route !== "settings") url.searchParams.delete("connection");
     if (route !== "reach") url.searchParams.delete("reach");
     if (route !== "agents") {
@@ -96,6 +101,9 @@ function Root() {
       >
         {route === "work" && <WorkPage />}
         {route === "reach" && <ReachPage />}
+        {route === "competitors" && <CompetitorsPage onSettings={openConnection} onTeam={() => navigate("team")} />}
+        {(route === "users" || route === "users-create") && <UsersPage create={route === "users-create"} onRoute={navigate} />}
+        {route === "agents" && <AgentsPage onRoute={navigate} onWork={openWork} />}
         {route === "monitoring" && <MonitoringPage onWork={openWork} />}
         {route === "architecture" && (
           <ArchitecturePage
@@ -109,17 +117,14 @@ function Root() {
             onSettings={() => openConnection("calendar")}
           />
         )}
-        {route === "agents" && (
-          <AgentsPage onRoute={navigate} onWork={openWork} />
-        )}
         {route === "team" && (
           <TeamPage
             onRegistered={startGuide}
             onArchitecture={() => navigate("architecture")}
           />
         )}
-        {route === "knowledge" && <KnowledgePage />}
-        {route === "usage" && <UsagePage />}
+        {route === "knowledge" && <HarnessPage />}
+        {route === "usage" && <UsagePage onWork={openWork} onSettings={() => navigate("settings")} />}
         {route === "settings" && (
           <SettingsPage
             onAccount={() => setAccountOpen(true)}

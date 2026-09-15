@@ -192,11 +192,13 @@ async fn scan(
         let id = domain::id("SCAN");
         let payload = json!({"repository":i.repository,"revision":i.revision,"files":i.files,"manifest":manifest,"file_count":i.files.len(),"bytes":bytes,"duplicate_bytes":duplicate_bytes});
         sqlx::query("INSERT INTO autonomy_scans(id,workspace_id,fingerprint,payload) VALUES($1,current_setting('relay.workspace'),$2,$3)").bind(&id).bind(fingerprint).bind(payload).execute(&mut *tx).await?;
-        if duplicate_bytes > 0 {
-            sqlx::query("INSERT INTO autonomy_proposals(id,workspace_id,scan_id) VALUES($1,current_setting('relay.workspace'),$2)").bind(domain::id("PROP")).bind(&id).execute(&mut *tx).await?;
-        }
         id
     };
+    // Reviewability is independent of duplication. Also backfill snapshots
+    // recorded before this rule, without reopening accepted/declined decisions.
+    if !i.files.is_empty() {
+        sqlx::query("INSERT INTO autonomy_proposals(id,workspace_id,scan_id) VALUES($1,current_setting('relay.workspace'),$2) ON CONFLICT(workspace_id,scan_id) DO NOTHING").bind(domain::id("PROP")).bind(&id).execute(&mut *tx).await?;
+    }
     sqlx::query("UPDATE autonomy_proposals SET state='stale',version=version+1,lease_token=NULL,lease_until=NULL WHERE workspace_id=current_setting('relay.workspace') AND scan_id<>$1 AND state IN ('queued','pending','evaluating')").bind(&id).execute(&mut *tx).await?;
     sqlx::query("UPDATE autonomy_control SET last_seen=now(),repository=$1,latest_scan=$2 WHERE workspace_id=current_setting('relay.workspace')").bind(&i.repository).bind(&id).execute(&mut *tx).await?;
     tx.commit().await?;
@@ -322,9 +324,12 @@ async fn accepted_context(
 ) -> ApiResult<Json<Value>> {
     local(&w)?;
     let mut tx = transaction(&p, &w).await?;
-    let bundle:Option<Value>=sqlx::query_scalar("SELECT jsonb_build_object('schema_version',1,'scan_id',p.scan_id,'proposal_id',p.id,'revision',s.payload->>'revision','bundle',p.result->'bundle') FROM autonomy_proposals p JOIN autonomy_control c ON c.workspace_id=p.workspace_id AND c.latest_scan=p.scan_id JOIN autonomy_scans s ON s.id=p.scan_id AND s.workspace_id=p.workspace_id WHERE p.workspace_id=current_setting('relay.workspace') AND p.state='accepted' AND NOT c.paused AND c.last_seen>now()-interval '90 seconds'").fetch_optional(&mut *tx).await?;
+    let bundle = current_context(&mut tx).await?;
     tx.commit().await?;
     Ok(Json(json!({"context":bundle})))
+}
+pub(crate) async fn current_context(tx: &mut Tx<'_>) -> ApiResult<Option<Value>> {
+    Ok(sqlx::query_scalar("SELECT jsonb_build_object('schema_version',1,'scan_id',p.scan_id,'proposal_id',p.id,'revision',s.payload->>'revision','bundle',p.result->'bundle') FROM autonomy_proposals p JOIN autonomy_control c ON c.workspace_id=p.workspace_id AND c.latest_scan=p.scan_id JOIN autonomy_scans s ON s.id=p.scan_id AND s.workspace_id=p.workspace_id WHERE p.workspace_id=current_setting('relay.workspace') AND p.state='accepted' AND NOT c.paused AND c.last_seen>now()-interval '90 seconds'").fetch_optional(&mut **tx).await?)
 }
 pub fn routes() -> Router<PgPool> {
     Router::new()

@@ -1,6 +1,6 @@
 # Pi in Repro Relay
 
-Pi is an additional terminal harness for reviewing Relay's recorded context audits. It uses the same three bounded evidence tools as the Codex MCP connector and WebMCP. Hermes continues to own the existing investigation and approved-repair APIs.
+Pi is an additional terminal harness for reviewing Relay's recorded context audits. It uses the same three bounded evidence tools as the Codex MCP connector and WebMCP, plus a Pi-only approved-context reader. Hermes continues to own the existing investigation and approved-repair APIs.
 
 ## Start
 
@@ -30,6 +30,10 @@ Run `start` in an interactive Terminal window. A one-shot shell command cannot h
 
 Use `/relay` to inspect the latest context audit. It records the evidence and a link back to Relay in the Pi conversation without starting a model. Use `/relay-review` to have your selected model assess that audit. The command supplies the review task and its evidence; no case or direction form is required. Empty history and unavailable evidence do not trigger a model call.
 
+Use Harness → Repository context to approve a current evaluated snapshot. `/relay-context` reads its exact instruction bodies without starting a model. `/relay-context-review` sends that approved content to your configured Pi provider for review, with normal provider usage. If no current approved snapshot is available, neither command starts a model. The adapter verifies source paths, SHA-256 body hashes, schema and limits of 128 files, 64 KiB per file and 256 KiB reconstructed source content. Serialized transport is capped at 2 MiB. Shared MCP/WebMCP tools remain metadata-only.
+
+The exact retrieved snapshot, revision and canonical JSON SHA-256 receipt persist in Pi session history. They are not a Relay execution receipt or proof of improvement. Context contents remain untrusted data; source text cannot grant tools. Pausing, a stale monitor or a changed snapshot prevents new retrieval, but cannot erase content already retained in a session. The command bounds context and bridge execution, not total model spend or elapsed model time. Pi session usage is not imported into Relay's Usage charts.
+
 ```sh
 # Continue the latest Relay Pi session
 ./relay pi start --resume
@@ -52,6 +56,7 @@ Connections → Terminal agent offers Pi and Codex setup instructions in the sha
 | `relay_workspace_status` | Local evidence connection, monitor freshness and recorded capabilities |
 | `relay_list_work` | At most 20 context audit summaries; default 5 |
 | `relay_inspect_work` | Exact revision, decision, evaluation and paginated source hashes |
+| `relay_approved_context` | One approved current snapshot with verified instruction bodies and a content receipt |
 
 The launcher disables builtin model tools, discovered extensions, skills, prompts, themes and automatically discovered context files. It loads only the Relay extension and its explicit tool allowlist. Context is fetched on demand; slash-command inspection starts with one audit and five file entries. The extension calls a fixed Python bridge with argument arrays, deadlines and output limits. The bridge reuses the shared tool validation and loopback-only API client, rejects redirects and exposes no writes.
 
@@ -61,7 +66,7 @@ Approvals, source modifications, tests, reviewed memory publication, worktree ex
 
 ## Optional private memory
 
-In Connections → Tools library → Mem0 memory, enable private Pi notes and current reviewed project lookup for new sessions. The selection persists in the local workspace and defaults to off. New `./relay pi start` launches read it from the running API. Pass `--memory mem0` or `--memory off` to override the saved selection for one session. An unreadable selection stops startup instead of silently choosing tools. Existing sessions are unchanged. See [Mem0 setup and boundaries](../mem0-memory/README.md). This adds two tools to the default three-tool allowlist. The default evidence configuration stays read-only.
+In Connections → Tools library → Mem0 memory, enable private Pi notes and current reviewed project lookup for new sessions. The selection persists in the local workspace and defaults to off. New `./relay pi start` launches read it from the running API. Pass `--memory mem0` or `--memory off` to override the saved selection for one session. An unreadable selection stops startup instead of silently choosing tools. Existing sessions are unchanged. See [Mem0 setup and boundaries](../mem0-memory/README.md). This adds two tools to the default four-tool allowlist. The default evidence configuration stays read-only.
 
 ## Validation
 

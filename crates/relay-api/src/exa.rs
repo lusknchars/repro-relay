@@ -84,7 +84,7 @@ impl Connector {
         file.sync_all().map_err(|_| storage())?;
         std::fs::rename(temp, self.root.join("connection.json")).map_err(|_| storage())
     }
-    async fn search(&self, key: &Key, query: &str) -> ApiResult<Value> {
+    async fn search(&self, key: &Key, query: &str, source_filter: &str) -> ApiResult<Value> {
         let endpoint = "https://api.exa.ai/search";
         #[cfg(test)]
         let endpoint = self.endpoint.as_deref().unwrap_or(endpoint);
@@ -93,7 +93,9 @@ impl Connector {
             .timeout(Duration::from_secs(25))
             .build()
             .map_err(|_| provider("Exa client unavailable."))?;
-        let mut response=client.post(endpoint).header("x-api-key",&key.token).json(&json!({"query":query,"type":"auto","numResults":5,"contents":{"text":{"maxCharacters":1500}}})).send().await.map_err(|_|provider("Exa response unavailable. The search may have been charged; inspect history before starting another search."))?;
+        let mut request=json!({"query":query,"type":"auto","numResults":5,"contents":{"text":{"maxCharacters":1500}}});
+        if source_filter=="reddit" { request["includeDomains"]=json!(["reddit.com"]); }
+        let mut response=client.post(endpoint).header("x-api-key",&key.token).json(&request).send().await.map_err(|_|provider("Exa response unavailable. The search may have been charged; inspect history before starting another search."))?;
         if !response.status().is_success() {
             return Err(provider(match response.status().as_u16() {
                 401 | 403 => "Exa rejected the key. Update it in Connections.",
@@ -115,10 +117,16 @@ impl Connector {
             }
             bytes.extend_from_slice(&chunk);
         }
-        project(
+        let mut result = project(
             &serde_json::from_slice(&bytes)
                 .map_err(|_| provider("Exa returned invalid data; billing is unknown."))?,
-        )
+        )?;
+        if source_filter=="reddit" {
+            result["sources"].as_array_mut().unwrap().retain(|s| {
+                url::Url::parse(s["url"].as_str().unwrap_or("")).ok().is_some_and(|u| u.host_str().is_some_and(|h| h=="reddit.com" || h.ends_with(".reddit.com")))
+            });
+        }
+        Ok(result)
     }
 }
 fn storage() -> ApiError {
@@ -161,7 +169,7 @@ fn project(v: &Value) -> ApiResult<Value> {
         json!({"sources":sources,"provider_request_id":text(v,"requestId",160),"estimated_cost_usd":cost,"cost_source":if cost.is_some(){"provider_estimate"}else{"not_reported"},"captured_at":domain::now(),"provenance":"Exa web retrieval; untrusted reference text, not verified repository behavior"}),
     )
 }
-async fn local(
+pub(crate) async fn local(
     p: &PgPool,
     w: &Workspace,
     h: &Hosting,
@@ -191,6 +199,7 @@ pub fn routes(c: Connector) -> Router<PgPool> {
         .route("/connections/exa", get(status).post(save))
         .route("/connections/exa/disconnect", post(disconnect))
         .route("/architectures/research", get(history).post(search))
+        .route("/competitors/research", post(competitor_search))
         .layer(Extension(c))
 }
 async fn status(
@@ -243,6 +252,17 @@ async fn disconnect(
 struct Search {
     id: uuid::Uuid,
     query: String,
+    #[serde(default)]
+    competitor_id: Option<uuid::Uuid>,
+    #[serde(default = "web_filter")]
+    source_filter: String,
+}
+fn web_filter() -> String { "web".into() }
+async fn competitor_search(
+    State(p): State<PgPool>, Extension(w): Extension<Workspace>, Extension(h): Extension<Hosting>, Extension(c): Extension<Connector>, headers: HeaderMap, Json(input): Json<Search>,
+) -> ApiResult<Json<Value>> {
+    if input.competitor_id.is_none() {return Err(ApiError::invalid("Select a competitor before researching."));}
+    search(State(p),Extension(w),Extension(h),Extension(c),headers,Json(input)).await
 }
 async fn history(
     State(p): State<PgPool>,
@@ -251,7 +271,7 @@ async fn history(
     headers: HeaderMap,
 ) -> ApiResult<Json<Value>> {
     local(&p, &w, &h, &headers, false).await?;
-    let rows:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',id,'query',query,'status',status,'result',payload,'error',error,'created_at',created_at) FROM exa_searches WHERE workspace_id=$1 ORDER BY created_at DESC LIMIT 10").bind(w.id).fetch_all(&p).await?;
+    let rows:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',id,'query',query,'status',status,'result',payload,'error',error,'created_at',created_at) FROM exa_searches WHERE workspace_id=$1 AND competitor_id IS NULL ORDER BY created_at DESC LIMIT 10").bind(w.id).fetch_all(&p).await?;
     Ok(Json(json!({"items":rows})))
 }
 async fn search(
@@ -264,6 +284,11 @@ async fn search(
 ) -> ApiResult<Json<Value>> {
     local(&p, &w, &h, &headers, true).await?;
     domain::text(&input.query, "Search query", 3, 500)?;
+    if !["web","reddit"].contains(&input.source_filter.as_str()) {return Err(ApiError::invalid("Choose web or Reddit search."));}
+    if let Some(id)=input.competitor_id {
+        let active: bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM competitors WHERE workspace_id=$1 AND id=$2 AND archived_at IS NULL)").bind(&w.id).bind(id).fetch_one(&p).await?;
+        if !active {return Err(ApiError::invalid("Select an active competitor in this workspace."));}
+    }
     let _guard = c
         .gate
         .try_lock()
@@ -271,10 +296,10 @@ async fn search(
     let key = c
         .load()?
         .ok_or_else(|| ApiError::conflict("Save your Exa key in Connections first."))?;
-    let inserted=sqlx::query("INSERT INTO exa_searches(workspace_id,id,query,status) VALUES($1,$2,$3,'pending') ON CONFLICT DO NOTHING").bind(&w.id).bind(input.id).bind(&input.query).execute(&p).await?.rows_affected();
+    let inserted=sqlx::query("INSERT INTO exa_searches(workspace_id,id,query,status,competitor_id,source_filter) VALUES($1,$2,$3,'pending',$4,$5) ON CONFLICT DO NOTHING").bind(&w.id).bind(input.id).bind(&input.query).bind(input.competitor_id).bind(&input.source_filter).execute(&p).await?.rows_affected();
     if inserted == 0 {
-        let (query,status,payload,error):(String,String,Option<Value>,Option<String>)=sqlx::query_as("SELECT query,status,payload,error FROM exa_searches WHERE workspace_id=$1 AND id=$2").bind(&w.id).bind(input.id).fetch_one(&p).await?;
-        if query != input.query {
+        let (query,status,payload,error,competitor_id,source_filter):(String,String,Option<Value>,Option<String>,Option<uuid::Uuid>,String)=sqlx::query_as("SELECT query,status,payload,error,competitor_id,source_filter FROM exa_searches WHERE workspace_id=$1 AND id=$2").bind(&w.id).bind(input.id).fetch_one(&p).await?;
+        if query != input.query || competitor_id != input.competitor_id || source_filter != input.source_filter {
             return Err(ApiError::conflict(
                 "Search identity belongs to a different query.",
             ));
@@ -286,7 +311,7 @@ async fn search(
         }
         return Err(ApiError::conflict(error.unwrap_or("Search outcome is pending or unknown. No duplicate request was sent. Check history before starting a new search.".into())));
     }
-    let result = c.search(&key, &input.query).await;
+    let result = c.search(&key, &input.query, &input.source_filter).await;
     match result {
         Ok(payload) => {
             sqlx::query("UPDATE exa_searches SET status='completed',payload=$3 WHERE workspace_id=$1 AND id=$2").bind(&w.id).bind(input.id).bind(&payload).execute(&p).await?;

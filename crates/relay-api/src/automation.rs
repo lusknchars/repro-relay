@@ -481,6 +481,7 @@ pub async fn tick(pool: &PgPool, runner: &Runner) -> ApiResult<()> {
             max_seconds: job.config.settings.max_seconds,
             follow_up_review_id: None,
             context_hash: None,
+            harness_scan_id: None,
         }),
     )
     .await;

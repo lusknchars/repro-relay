@@ -234,6 +234,7 @@ async fn admission_cannot_expand_saved_time_or_bypass_manual_approval(pool: PgPo
         max_seconds: seconds,
         follow_up_review_id: None,
         context_hash: snapshot["context_hash"].as_str().map(str::to_owned),
+        harness_scan_id: None,
     };
     let mut headers = HeaderMap::new();
     headers.insert(

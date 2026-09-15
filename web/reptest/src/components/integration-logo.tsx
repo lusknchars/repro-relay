@@ -1,4 +1,7 @@
 const artwork = {
+  reddit: { file: "reddit-wordmark.webp", background: "transparent", aspect: 1280 / 371 },
+  exa: { file: "exa-logo.png", background: "transparent", aspect: 1 },
+  discord: { file: "discord-logo.webp", background: "transparent", aspect: 1 },
   mem0: { file: "mem0-logo.svg", background: "#fff", aspect: 3760 / 1050 },
   hermes: { file: "hermes-logo.webp", background: "#fff", aspect: 1 },
   plow: { file: "plow-logo.png", background: "#171715", aspect: 121 / 63 },

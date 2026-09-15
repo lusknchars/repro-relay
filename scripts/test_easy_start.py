@@ -83,6 +83,24 @@ exit 0
         self.assertIn(' stop', self.calls())
         self.assertNotIn('--volumes', self.calls())
 
+    def test_connected_profile_is_saved_and_reused(self):
+        for name in ('connect.sh', 'compose.connected.yaml'):
+            shutil.copy(ROOT / name, self.app / name)
+        result = self.run_script('connect.sh')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.app / '.relay-connected').exists())
+        self.assertIn('compose.connected.yaml', self.calls())
+        self.assertIn('launch.py status', self.calls())
+        self.assertEqual(self.run_script('start.sh', 'stop').returncode, 0)
+        self.assertIn('--profile discord --profile notes stop', self.calls())
+
+    def test_normal_start_resumes_explicitly_saved_notes_mode(self):
+        (self.app / '.relay-connected').write_text('1')
+        (self.app / '.relay-discord-mode').write_text('notes')
+        self.assertEqual(self.run_script().returncode, 0)
+        self.assertIn('--profile notes up -d', self.calls())
+        self.assertNotIn('prepare_notes.py', self.calls())
+
     def test_bad_saved_image_is_not_executed(self):
         self.env['RELAY_BUILD'] = '0'
         (self.app / '.relay-image').write_text('$(touch SHOULD_NOT_EXIST)')

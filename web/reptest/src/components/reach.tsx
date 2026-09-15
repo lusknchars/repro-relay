@@ -3,6 +3,7 @@ import { ArrowUpRight, Check, Copy, Plus, RefreshCw } from "lucide-react";
 import { Button, Input, Badge } from "@/components/ui";
 import { api, errorText, useLoad, useWorkspace } from "@/lib/live";
 import { useReachEvents } from "@/lib/reach-events";
+import { ReachMap } from "./reach-map";
 type Person = { id: string; name: string; role: string };
 type Action = {
   title: string;
@@ -11,7 +12,7 @@ type Action = {
   status: string;
   message_draft: string;
 };
-type Item = {
+export type ReachItem = {
   id: string;
   kind: string;
   title: string;
@@ -25,6 +26,7 @@ type Item = {
   stale: boolean;
   action: Action | null;
 };
+type Item = ReachItem;
 type Brief = { items: Item[]; truncated: boolean };
 const today = () => new Date().toISOString().slice(0, 10);
 export function Reach() {
@@ -154,6 +156,10 @@ export function Reach() {
       aria-label="Reach"
       className="overflow-hidden rounded-lg border border-border bg-surface"
     >
+      <ReachMap items={feed.data?.items || []} loading={!feed.data && !feed.error} error={feed.error} truncated={feed.data?.truncated} onReview={(i) => {
+        select(i);
+        requestAnimationFrame(() => document.getElementById("reach-review")?.focus());
+      }} onNew={() => document.querySelector<HTMLInputElement>('[aria-label="New Reach todo"]')?.focus()} />
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-surface-2/40 p-4">
         <div>
           <div className="flex items-center gap-2">
@@ -289,7 +295,7 @@ export function Reach() {
               </p>
             )}
           </div>
-          <div className="min-w-0 rounded-lg border border-border p-4">
+          <div id="reach-review" tabIndex={-1} className="min-w-0 rounded-lg border border-border p-4 focus-visible:outline-2 focus-visible:outline-accent">
             {item ? (
               <div className="space-y-3" key={item.id}>
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted">

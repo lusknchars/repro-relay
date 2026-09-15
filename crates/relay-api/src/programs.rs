@@ -289,6 +289,7 @@ pub async fn tick(pool: &PgPool, runner: &Runner) -> ApiResult<()> {
             max_seconds: settings.max_seconds,
             follow_up_review_id: None,
             context_hash: payload["context_hash"].as_str().map(str::to_owned),
+            harness_scan_id: None,
         }),
     )
     .await;

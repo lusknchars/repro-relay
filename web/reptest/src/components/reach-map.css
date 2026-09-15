@@ -1,0 +1,29 @@
+.reach-map-section { border-bottom: 1px solid var(--border); }
+.reach-map-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; }
+.reach-orbit { position: relative; height: 450px; isolation: isolate; background: radial-gradient(ellipse at center, var(--accent-soft), transparent 65%); }
+.reach-wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.reach-wires path { fill: none; stroke: var(--border-strong); stroke-width: 2px; vector-effect: non-scaling-stroke; stroke-dasharray: 5 6; pointer-events: stroke; cursor: pointer; }
+.reach-wires path:focus-visible, .reach-wires path:hover { stroke: var(--accent); stroke-width: 4px; outline: none; }
+.reach-wires path.is-selected { stroke: var(--accent); stroke-width: 2px; }
+.reach-plow { position: absolute; left: 50%; top: 48%; transform: translate(-50%, -50%); display: grid; justify-items: center; gap: 6px; }
+.reach-plow-circle { display: grid; place-items: center; width: 78px; height: 78px; border-radius: 50%; border: 1px solid var(--accent); background: var(--surface); color: var(--accent-text); box-shadow: 0 0 0 9px var(--accent-soft); }
+.reach-person { position: absolute; transform: translate(-50%, -50%); display: grid; justify-items: center; gap: 4px; width: 150px; text-align: center; }
+.reach-person-button { display: grid; width: 100%; justify-items: center; gap: 5px; font-size: 13px; }
+.reach-person-circle { display: grid; place-items: center; width: 44px; height: 44px; flex-shrink: 0; border-radius: 50%; background: var(--surface); border: 1px solid var(--border-strong); color: var(--foreground); font-size: 13px; font-weight: 600; }
+.reach-person-button[aria-pressed="true"] .reach-person-circle { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+.reach-connection-label { border: 1px dashed var(--border-strong); border-radius: 20px; background: var(--surface); padding: 5px 8px; font-size: 10px; color: var(--muted-foreground); }
+.reach-map-inspector { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; min-width: 0; max-height: 540px; overflow: auto; padding: 20px; border-left: 1px solid var(--border); }
+.reach-map-inspector > * { max-width: 100%; }
+.reach-map-empty { position: absolute; bottom: 36px; left: 10%; right: 10%; text-align: center; }
+.reach-map-section button:focus-visible, .reach-map-section a:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+@media (max-width: 1200px) { .reach-map-layout { grid-template-columns: minmax(0, 1fr); } .reach-map-inspector { border-left: 0; border-top: 1px solid var(--border); max-height: none; } }
+@media (max-width: 640px) {
+  .reach-orbit { height: auto; min-height: 230px; display: grid; gap: 12px; padding: 24px 16px; }
+  .reach-wires { display: none; }
+  .reach-plow, .reach-person { position: static; transform: none; width: 100%; }
+  .reach-plow { margin-bottom: 16px; }
+  .reach-person { padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+  .reach-person-button { display: flex; text-align: left; gap: 12px; }
+  .reach-connection-label { min-height: 44px; }
+  .reach-map-empty { position: static; }
+}

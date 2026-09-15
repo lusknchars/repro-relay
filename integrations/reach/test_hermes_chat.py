@@ -83,5 +83,24 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(self.worker.tick(), 'blocked')
         self.assertNotIn('reply', self.saved())
 
+    def test_call_notes_pass_whole_bounded_transcript_and_clear_worker_copy_after_reply(self):
+        message={'id':self.identity,'body':'Call transcript ' + 'x'*8000,'call_notes':True,'expires_at':1000}
+        self.api.request.return_value={'items':[message]}
+        self.hermes.request.side_effect=[{}, {'run_id':self.run}]
+        self.assertEqual(self.worker.tick(),'started')
+        self.assertEqual(self.saved()['request']['input'],message['body'])
+        self.assertNotIn('conversation_history',self.saved()['request'])
+        self.hermes.request.side_effect=[{}, {'status':'completed','output':'A summary, not an executed action.'}]
+        self.assertEqual(self.worker.tick(),'replied')
+        self.assertNotIn('request',self.saved())
+        self.assertNotIn('reply',self.saved())
+
+    def test_expired_call_notes_are_removed_from_private_worker_state(self):
+        hermes_chat.provider_setup.private_write(self.state/(self.identity+'.json'),{'call_notes':True,'expires_at':99,'request':{'input':'private transcript'}})
+        self.api.request.return_value={'items':[]}
+        self.hermes.request.return_value={}
+        self.assertEqual(self.worker.tick(),'idle')
+        self.assertFalse((self.state/(self.identity+'.json')).exists())
+
 
 if __name__ == '__main__': unittest.main()

@@ -60,7 +60,7 @@ test("settings explains independent layers and routes account and knowledge in p
     .getByRole("button", { name: "Reviewed project knowledge", exact: false })
     .click();
   await expect(
-    page.getByRole("heading", { name: "Knowledge", exact: true }),
+    page.getByRole("heading", { name: "Harness", exact: true }),
   ).toBeVisible();
   expect(writes).toEqual([]);
   await page.goto("/?view=settings");
@@ -214,7 +214,7 @@ test("new account opens a skippable team guide and Settings can replay it withou
   await expect(guide.getByRole("heading")).toHaveText("Your account and team");
   for (const [route, title] of [
     ["settings", "Connect the parts your agent needs"],
-    ["knowledge", "Inspect your team's knowledge"],
+    ["harness", "Inspect memory and agent context"],
     ["work", "Follow the evidence and review changes"],
     ["usage", "Understand usage and limits"],
   ]) {
@@ -243,7 +243,7 @@ test("new account opens a skippable team guide and Settings can replay it withou
   await page
     .getByRole("button", { name: "Reviewed project knowledge", exact: false })
     .click();
-  await expect(page).toHaveURL(/view=knowledge/);
+  await expect(page).toHaveURL(/view=harness/);
   await expect(guide).not.toBeVisible();
   expect(writes).toBe(1);
 });

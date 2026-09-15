@@ -15,8 +15,8 @@ export const guideSteps: { route: Route; title: string; body: string }[] = [
   },
   {
     route: "knowledge",
-    title: "Inspect your team's knowledge",
-    body: "Reviewed observations stay linked to their case, build and reviewer. Mem0 working notes are separate and do not count as verified evidence. An empty list means this team has not published reviewed knowledge yet.",
+    title: "Inspect memory and agent context",
+    body: "Harness opens with reviewed Memory linked to its source and reviewer. Repository context shows tracked instruction snapshots and approvals. Private Mem0 notes stay separate. Reading context does not authorize execution.",
   },
   {
     route: "work",

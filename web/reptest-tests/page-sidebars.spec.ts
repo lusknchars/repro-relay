@@ -74,8 +74,8 @@ test("Agents sections stay in the inner sidebar and remain usable on a narrow sc
     page.getByRole("heading", { name: "Recorded Hermes runs" }),
   ).toBeVisible();
   const primary = page.getByRole("complementary", { name: "Primary navigation", exact: true });
-  await primary.getByRole("button", { name: "Knowledge", exact: true }).click();
-  await expect(sidebar.getByRole("heading", { name: "Knowledge library" })).toBeVisible();
+  await primary.getByRole("button", { name: "Harness", exact: true }).click();
+  await expect(sidebar.getByRole("heading", { name: "Harness workspace" })).toBeVisible();
   await expect(sidebar.getByRole("navigation", { name: "Agent sections" })).toHaveCount(0);
   await primary.getByRole("button", { name: "Agents", exact: true }).click();
   await expect(sidebar.getByRole("button", { name: "Skills", exact: true })).toHaveAttribute("aria-current", "page");

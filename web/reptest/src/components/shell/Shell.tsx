@@ -1,23 +1,26 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Bot, Activity, Radio, CalendarDays, Workflow, BookOpen, Menu, MessagesSquare, Rocket, ChevronsUpDown, Command, Gauge, HelpCircle, Inbox, Moon, PanelLeft, Search, Settings, SlidersHorizontal, Sun } from "lucide-react";
+import { Bot, Users, ChevronDown } from "lucide-react";
+import { Activity, Radio, CalendarDays, Workflow, BookOpen, Menu, MessagesSquare, Rocket, ChevronsUpDown, Command, Gauge, HelpCircle, Inbox, Moon, PanelLeft, Search, Settings, SlidersHorizontal, Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/theme/ThemeProvider";
 import { Avatar, Badge, Kbd } from "@/components/ui";
 import { WorkspaceContext } from "./WorkspaceContext";
 import { PageSidebarProvider } from "./PageSidebar";
+import { SidebarBackground } from "./SidebarBackground";
 import { SentryBell } from "@/components/sentry";
 import { useWorkspace } from "@/lib/live";
 
-export type Route = "work" | "reach" | "team" | "agents" | "knowledge" | "usage" | "settings" | "setup" | "architecture" | "calendar" | "monitoring";
+export type Route = "work" | "competitors" | "reach" | "team" | "agents" | "users" | "users-create" | "knowledge" | "usage" | "settings" | "setup" | "architecture" | "calendar" | "monitoring";
 
 const NAV: { id: Route; label: string; icon: typeof Inbox; hint: string }[] = [
   { id: "work", label: "Work", icon: Inbox, hint: "Decisions, active and blocked work, history" },
   { id: "reach", label: "Reach", icon: Radio, hint: "Call action items, daily todos and follow-ups" },
   { id: "architecture", label: "Architecture", icon: Workflow, hint: "Repository structure, research and team workflows" },
+  { id: "competitors", label: "Competitors", icon: Search, hint: "Competitor research, discussions and saved sources" },
   { id: "calendar", label: "Calendar", icon: CalendarDays, hint: "Planned reviews and recorded agent activity" },
-  { id: "agents", label: "Agents", icon: Bot, hint: "Inspect Hermes capabilities and recorded work" },
   { id: "team", label: "Team", icon: MessagesSquare, hint: "Invite teammates and talk to your workspace Hermes" },
-  { id: "knowledge", label: "Knowledge", icon: BookOpen, hint: "Reviewed observations and private notes" },
+  { id: "agents", label: "Agents", icon: Bot, hint: "Capabilities, workflow briefs, access and recorded activity" },
+  { id: "knowledge", label: "Harness", icon: BookOpen, hint: "Memory, repository context and agent tools" },
   { id: "monitoring", label: "Monitoring", icon: Activity, hint: "API requests, database health and investigation evidence" },
   { id: "usage", label: "Usage", icon: Gauge, hint: "Tokens, time and cost with coverage" },
   { id: "settings", label: "Settings", icon: Settings, hint: "Connections, repository, permissions, team" },
@@ -57,6 +60,10 @@ function AmbientAscii({ enabled }: { enabled: boolean }) {
 export function Shell({ route, onRoute, onOpenCustomizer, onOpenAccount, children }: { route: Route; onRoute: (r: Route) => void; onOpenCustomizer: () => void; onOpenAccount: () => void; children: ReactNode }) {
   const { theme, set, resolvedMode } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [usersOpen, setUsersOpen] = useState(true);
+  useEffect(() => {
+    if (route === "users" || route === "users-create") setUsersOpen(true);
+  }, [route]);
   const [contextOpen, setContextOpen] = useState(() => {
     try { const saved = localStorage.getItem("relay.context-sidebar"); if (saved !== null) return saved === "open"; } catch { /* Storage may be unavailable. */ }
     return window.matchMedia("(min-width: 1280px)").matches;
@@ -93,7 +100,7 @@ export function Shell({ route, onRoute, onOpenCustomizer, onOpenAccount, childre
   const sidebar = (
     <aside
       className={cn(
-        "flex h-full flex-col bg-surface text-foreground",
+        "relay-primary-sidebar relative isolate flex h-full flex-col bg-surface text-foreground",
         "max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-50 max-md:shadow-xl max-md:border-r max-md:border-border",
         !mobileOpen && "max-md:hidden",
         variant === "sidebar" && "border-r border-border",
@@ -103,13 +110,14 @@ export function Shell({ route, onRoute, onOpenCustomizer, onOpenAccount, childre
       style={{ width: collapsed ? 56 : "var(--sidebar-w)" }}
       aria-label="Primary navigation"
     >
+      <SidebarBackground enabled={theme.ambientEffects} reducedMotion={theme.reducedMotion} />
       <div className={cn("flex h-12 items-center gap-2 px-3", collapsed && "justify-center px-0")}>
         <img
-          src={`/brand/repro-relay-mark-${resolvedMode === "dark" ? "white" : "black"}.png`}
+          src="/brand/relay-sidebar-planet.png"
           alt={collapsed ? "Repro Relay" : ""}
-          width={24}
+          width={36}
           height={24}
-          className="h-6 w-6 flex-none object-contain"
+          className="h-6 w-9 flex-none object-contain"
         />
         {!collapsed && (
           <div className="min-w-0 leading-tight">
@@ -160,6 +168,34 @@ export function Shell({ route, onRoute, onOpenCustomizer, onOpenAccount, childre
             </button>
           );
         })}
+        <div>
+          <button
+            aria-label="Users"
+            aria-expanded={!collapsed && usersOpen}
+            aria-controls={collapsed ? undefined : "users-subpages"}
+            title={collapsed ? "Users" : undefined}
+            onClick={() => {
+              if (collapsed) { onRoute("users"); setMobileOpen(false); }
+              else setUsersOpen(!usersOpen);
+            }}
+            className={cn("nav-item t-control flex h-8 w-full items-center gap-2 rounded-md px-2 text-sm text-muted hover:bg-surface-2 hover:text-foreground", collapsed && "justify-center px-0")}
+          >
+            {!collapsed && <span className="nav-dot" aria-hidden />}
+            <Users className="h-4 w-4 flex-none" />
+            {!collapsed && <><span className="flex-1 text-left">Users</span><ChevronDown className={cn("h-4 w-4 transition-transform", !usersOpen && "-rotate-90")} /></>}
+          </button>
+          {!collapsed && usersOpen && (
+            <div id="users-subpages" className="ml-[29px] grid gap-0.5 border-l border-border pl-2">
+              {([{ id: "users", label: "List" }, { id: "users-create", label: "Create" }] as const).map(item => (
+                <button key={item.id} aria-current={route === item.id ? "page" : undefined}
+                  onClick={() => { onRoute(item.id); setMobileOpen(false); }}
+                  className={cn("t-control flex h-8 items-center justify-between rounded-md px-3 text-left text-sm", route === item.id ? "bg-accent-soft text-accent-text font-medium" : "text-muted hover:bg-surface-2 hover:text-foreground")}>
+                  {item.label}<span aria-hidden className={cn("h-1.5 w-1.5 rounded-full", route === item.id ? "bg-accent" : "bg-muted")} />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </nav>
 
       {!collapsed && (
@@ -207,7 +243,7 @@ export function Shell({ route, onRoute, onOpenCustomizer, onOpenAccount, childre
           <button className="t-control grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-surface-2 md:hidden" aria-label="Open navigation" onClick={() => setMobileOpen(true)}>
             <Menu className="h-4 w-4" />
           </button>
-          {route !== "work" && route !== "team" && <button className="t-control grid h-8 w-8 flex-none place-items-center rounded-md text-muted hover:bg-surface-2" id="workspace-context-toggle" aria-label={contextOpen ? "Hide workspace context" : "Show workspace context"} aria-expanded={contextOpen} aria-controls="workspace-context" onClick={toggleContext}>
+          {route !== "work" && route !== "team" && route !== "reach" && <button className="t-control grid h-8 w-8 flex-none place-items-center rounded-md text-muted hover:bg-surface-2" id="workspace-context-toggle" aria-label={contextOpen ? "Hide workspace context" : "Show workspace context"} aria-expanded={contextOpen} aria-controls="workspace-context" onClick={toggleContext}>
             <PanelLeft className="h-4 w-4" />
           </button>}
           <button className="t-control flex min-w-0 h-7 items-center gap-1.5 rounded-md px-2 text-xs hover:bg-surface-2" aria-label="Workspace settings" onClick={() => onRoute("settings")}>
@@ -252,7 +288,7 @@ export function Shell({ route, onRoute, onOpenCustomizer, onOpenAccount, childre
           </div>
         </header>
         <div className="flex min-h-0 flex-1 flex-col overflow-auto xl:flex-row xl:overflow-hidden">
-        {contextOpen && route !== "work" && route !== "team" && <WorkspaceContext route={route} onRoute={onRoute} onClose={() => { toggleContext(); document.getElementById("workspace-context-toggle")?.focus(); }} />}
+        {contextOpen && route !== "work" && route !== "team" && route !== "usage" && route !== "reach" && <WorkspaceContext route={route} onRoute={onRoute} onClose={() => { toggleContext(); document.getElementById("workspace-context-toggle")?.focus(); }} />}
         <main className="min-h-0 min-w-0 flex-1 overflow-auto max-xl:flex-none">
           <div className="mx-auto h-full" style={{ maxWidth: "var(--content-max)" }}>
             {children}

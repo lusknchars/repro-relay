@@ -21,9 +21,9 @@ test('real case, bounded investigation, persisted review and inline usage in sup
  await page.reload();await expect(page.getByRole('heading',{name:item.title,exact:true})).toBeVisible();
  const reviews=await page.request.get(`/api/v1/cases/${item.id}/run-reviews`);expect(await reviews.json()).toEqual(expect.arrayContaining([expect.objectContaining({decision:'accepted'})]));
  await page.locator('aside').getByRole('button',{name:'Usage',exact:true}).click();await page.getByRole('combobox',{name:/^Work record/}).selectOption(item.id);
- await expect(page.getByRole('cell',{name:'0.0020',exact:true})).toBeVisible();await expect(page.getByRole('cell',{name:/fixture-model/})).toBeVisible();
+ await expect(page.getByRole('row').filter({has:page.getByRole('cell',{name:item.id,exact:true})}).getByRole('cell',{name:'$0.0020',exact:true})).toBeVisible();await expect(page.getByText(/fixture-model/).first()).toBeVisible();
  await page.screenshot({path:'test-results/live-ui-usage.png'});
- for(const name of ['Team','Knowledge','Settings','Work']){await page.locator('aside').getByRole('button',{name:new RegExp(`^${name}`)}).click();await expect(page.getByRole('heading',{name,exact:true})).toBeVisible();}
+ for(const name of ['Team','Harness','Settings','Work']){await page.locator('aside').getByRole('button',{name:new RegExp(`^${name}`)}).click();await expect(page.getByRole('heading',{name,exact:true})).toBeVisible();}
  await page.getByRole('button',{name:'Customize appearance'}).click();await page.getByRole('dialog').getByRole('radio',{name:'Violet',exact:true}).click();await page.getByRole('dialog').getByRole('button',{name:'Close',exact:true}).click();await page.reload();await expect(page.locator('html')).toHaveAttribute('data-accent','violet');
  await page.getByRole('button',{name:'Switch to dark mode'}).click();await expect(page.locator('html')).toHaveClass(/dark/);
  await page.setViewportSize({width:390,height:844});for(const name of ['Team','Reach','Usage','Settings','Work']){await page.getByRole('navigation',{name:'Phone navigation'}).getByRole('button',{name,exact:true}).click();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}

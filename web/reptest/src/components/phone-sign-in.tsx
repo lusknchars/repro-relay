@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, ShieldCheck } from "lucide-react";
 import { Button, Input } from "@/components/ui";
 import { api, errorText, type Account } from "@/lib/live";
-import { useTheme } from "@/theme/ThemeProvider";
 
 type Completed = {
   authenticated?: boolean;
@@ -20,7 +19,6 @@ export function PhoneSignIn({
   onComplete: (created: boolean) => void;
   onPassword: () => void;
 }) {
-  const { resolvedMode } = useTheme();
   const [step, setStep] = useState<"phone" | "code" | "profile">("phone");
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
@@ -89,7 +87,7 @@ export function PhoneSignIn({
     >
       <div className="mb-8 flex items-center justify-center gap-2.5">
         <img
-          src={`/brand/repro-relay-mark-${resolvedMode === "dark" ? "white" : "black"}.png`}
+          src="/brand/relay-logo-transparent.svg"
           width={28}
           height={28}
           className="h-7 w-7 object-contain"

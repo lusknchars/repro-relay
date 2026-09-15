@@ -11,7 +11,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 INTEGRATION = ROOT / 'integrations/pi-harness'
 PROFILE = ROOT / '.data/pi-agent'
-TOOLS = ('relay_workspace_status', 'relay_list_work', 'relay_inspect_work')
+TOOLS = ('relay_workspace_status', 'relay_list_work', 'relay_inspect_work', 'relay_approved_context')
 
 
 def environment(profile=PROFILE):

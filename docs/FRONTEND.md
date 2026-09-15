@@ -1,10 +1,52 @@
 # Frontend design
 
+## Harness
+
+Harness retains the current theme and Memory source sidebar, with Repository context, Skills & tools, Run a trial and Activity navigation. Every non-empty instruction snapshot can be evaluated and approved, including unique contents. Repository cards expose actual revisions, paths, hashes and storage evaluations. Approval/pause actions use recorded versions; unavailable or historical context is not presented as retrievable. Exact approved contents open on demand as text. Run a trial previews a case-bound context digest and requires explicit authorization for one bounded Hermes attempt, preserving request identity on retry. Old Knowledge URLs remain supported. See [Harness](HARNESS.md) for context access and remaining comparison work.
+
+## Private sidebar background
+
+The local desktop can opt into React Bits Pro Glowing Ridges with `VITE_RELAY_PRIVATE_EFFECTS=1 make desktop-build`. Its authenticated registry source is installed at `web/reptest/src/private/reactbits/glowing-ridges.tsx`, excluded from Git. The standard build excludes the effect, even when that private file exists; a clean checkout uses the normal theme background. Never publish the private source or source maps. The commercial component is not covered by this repository's MIT license.
+
+The sidebar wrapper preserves the requested numeric/color configuration, adds a theme-colored readability veil, and prevents pointer or screen-reader interaction with the decoration. Ambient effects disables the renderer, reduced motion freezes it, and background tabs pause it. The component observes sidebar visibility and disposes its Three.js resources on unmount. A rendering failure leaves the theme background and navigation intact. React Three Fiber 8 is used with this frontend's React 18; the legacy frontend is unchanged. Registry credentials remain in ignored `web/.env.local`, not browser environment variables. Local preview also requires the explicit `VITE_RELAY_PRIVATE_EFFECTS=1` environment flag and a dev-server restart.
+
+## Usage reference layout
+
+Usage adapts the supplied `reptest-preview.html` composition: four service summaries, selected-work spend, hatched attempt bars, spend attribution ring, problem allocation, runtime summaries, efficiency and an expandable audit table. It retains the app's theme and omits the extra contextual sidebar on this route. UTC period filters, work selection, evidence navigation and JSON export use actual loaded Hermes records; desktop export uses the existing native save dialog.
+
+Missing cost remains distinct from zero. Token totals prefer reported totals and otherwise require both input and output counts. Phase costs, verified outcomes, duration, budgets, Pi/Mem0 billing and baselines are not supplied by the current summary API and are not invented from the HTML's sample values. The ring labels reported spend as unallocated by phase. Limited workspace history is disclosed, including in exported metadata. No terminal command is required to export or inspect work.
+
+## Agents catalog
+
+The Skills library header includes Add skills. It opens a theme-aware native dialog with a local SKILL.md file picker and plain-text preview. Files must be non-empty UTF-8 text, named SKILL.md and at most 128 KiB. Closing clears the selected file and restores trigger focus. No file is uploaded, stored or executed, and no skill is activated. The dialog explicitly explains that package installation is not connected yet.
+
+Agents uses the existing theme, searchable card/list layouts and URL-persisted Hermes details: Overview, Skills, Access and Activity. Skills reads the actual Architecture workflow briefs and links to their existing configuration flow. Activity reads recent workspace runs, excluding local validation. Runtime failures remain unknown rather than connected. The catalog does not create agents, install arbitrary skills, grant tools, start executions or promise isolated memory. Plow configuration remains in Settings. The Team redesign is separate work.
+
+## Typography rhythm
+
+Appearance now includes Interface font: Sans (Inter) or System. Sans is the default and bundles Inter weights 400/500/600/700 locally, matching the supplied preview's declared typeface instead of depending on an installed system copy. The choice persists with existing theme settings; old settings default to Sans, and reset restores Sans. Code remains monospace. Usage totals share a 24px, 600-weight, tabular-number metric style with 1.25 line-height, scaled by the existing text-size preference.
+
+The supplied typography references inform role-based tracking in the current frontend, retaining the existing font stack, colors and Appearance text scaling. Page headings use 24px at the default scale (22px on phones), 1.25 line-height and -0.025em tracking; section titles use -0.0125em and 1.35 line-height. Body tracking is 0.015em with paragraphs at 1.6 line-height. Controls and labels use 0.0075em, captions 0.025em and existing uppercase overlines 0.08em. Code and numeric values retain normal tracking. Sentence-case button labels remain intact. Reference display sizes are not applied to dense navigation or forms.
+
+## Users subpages
+
+The primary sidebar now has an expandable Users group with List and Create children, an active-row highlight and guide line based on the supplied screenshots. `?view=users` shows searchable actual workspace members; `?view=users-create` opens a live invitation preview and Personal information / Role & workspace cards. Both routes survive reloads and participate in the contextual sidebar and mobile navigation drawer. Owners create a single-use invitation through the existing team API. Display name is a local invitation-message draft, not a saved profile; the recipient chooses their profile when joining. Unsupported HR fields and role changes are not presented as functioning controls. Non-owners see an explicit access state. Fixture browser checks cover creation, duplicate-button prevention, subpage navigation, direct URLs, mobile width and owner restrictions without issuing real invitations.
+
+## Optional glass material and Team chat
+
+Appearance → Surface style offers Standard and Glassmorphism. The choice persists with the existing device theme preferences and resets to Standard. PaceUI's authenticated `migrate-design` and `migrate-design-director` (`glassmorphism`) supplied the design guidance: static accent gradients, frosted navigation and cards, subtle specular borders, and tinted input surfaces. Both color modes keep existing semantic colors; unsupported blur, reduced transparency and forced colors use opaque fallbacks. This is an optional material within the existing layout, not a replacement workflow.
+
+Team's existing Hermes conversation follows the supplied chat image with a rounded panel, right-aligned team requests, left-aligned agent replies, timestamped messages and an arrow composer. Its APIs, idempotent submissions, pending/error states and administrator connection controls are preserved. Browser validation used labelled fixture replies and sent no messages; visual checks do not establish a live Hermes connection.
+
 ## Local access and the team Hermes
 
 Local startup creates/resumes an administrator session without a login form. Team invitations open a name-only join form. Team also contains one shared Hermes conversation with attributed requests, genuine pending/replied states, connection freshness, and administrator-only connection controls. Existing phone/password accounts remain a secondary access path. See [access boundaries and setup](LOCAL-ACCESS-AND-CHAT.md).
 
 ## Reach
+
+Reach opens on a Plow-centered team communication map backed by the scoped team directory and the selected day's Reach brief. Circular teammate nodes are connected only when an open action has a saved matching owner. Dashed wires indicate prepared context, not messaging authorization or delivery. The Plow inspector reads the existing connection endpoint and distinguishes owner-chat configuration from unsupported teammate delivery. No outbound call or model request is made by this layout.
+
+Teammate/wire selection opens saved drafts, source context, linked work and a keyboard-focused jump to the existing version-checked action review. Search and project filters affect the map only; the daily queue remains below. Six teammates fit each map page, with assigned teammates first. Empty, unavailable and truncated data are labeled. Mobile uses stacked teammate cards and focuses the inspector on selection. Existing theme tokens apply in both modes, with no simulated traffic animation. Reach omits the redundant contextual sidebar.
 
 Reach listens to committed todo and meeting-action metadata every two seconds while open. The header reports connection/retry state; new events refresh the queue without replacing the user's open review. The terminal/agent disclosure includes a copyable listener command and explains the MCP event reader. The existing periodic brief refresh remains for team/context changes that do not emit todo events.
 
@@ -72,7 +114,7 @@ Reviewing a saved result no longer requires entering another diagnosis. Accept p
 
 Autonomous work replaces the prompt-driven Sessions screen on the existing `view=sessions` route. Desktop shows automatic audit history, evidence and proposal decisions, and repository monitoring. Mobile switches between Activity, Review, and Monitor. No session title, project form, first prompt, continuation form, or direction composer remains. Earlier saved notes are preserved in the API and shown as the latest 40 previews under Earlier notes.
 
-The local context harness collects tracked instruction snapshots automatically. The view shows real audits, duplicate-content proposals, version-bound approve/decline actions, pause/resume, and measured evaluation receipts. No duplicate files means no proposal. A disconnected harness never appears active. Evaluation builds a lossless storage representation without editing source or calling a model; its byte counts are not labeled token savings. History and decisions persist in PostgreSQL. The shared web/Tauri UI polls every five seconds; the separate harness runs every fifteen seconds. See [the harness contract](../integrations/context-harness/README.md).
+The local context harness collects tracked instruction snapshots automatically. The view shows real audits, evaluation candidates for every non-empty snapshot, version-bound approve/decline actions, pause/resume, and measured evaluation receipts. A disconnected harness never appears active. Evaluation builds a lossless storage representation without editing source or calling a model; its byte counts are not labeled token savings. History and decisions persist in PostgreSQL. The shared web/Tauri UI polls every five seconds; the separate harness runs every fifteen seconds. See [the harness contract](../integrations/context-harness/README.md).
 
 Overview values come from stored cases, observations, reviewed memories, and handoff snapshots. The activity chart groups reports and observations by UTC date over fourteen days. Agent controls use the existing Hermes coordinator with one active investigation. Phone intake, owner delivery, and Latch actions remain labeled as unconnected.
 

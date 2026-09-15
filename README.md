@@ -29,26 +29,38 @@ Install and open Docker Desktop, then run:
 curl -fsSL https://raw.githubusercontent.com/lusknchars/repro-relay/main/install.sh | sh
 ```
 
-Open **http://127.0.0.1:8178**. The installer starts the app and PostgreSQL, waits until they are ready, and opens the browser. Local access creates or resumes your administrator profile automatically.
+Open **http://127.0.0.1:8178**. The connected installer starts Repro, PostgreSQL and a dedicated Hermes service. Local access creates or resumes your administrator profile automatically. Select a provider and save its API key in **Settings → Models** to activate Hermes. No manual runtime URL or shared-key configuration is needed.
 
 - No signup, phone number, or provider key is needed to open Relay.
 - No Node, Rust, Python, or Git installation is needed on your Mac.
 - Your records and private settings survive restarts.
-- Connect an investigator when you are ready. Installation does not start a model or authorize external accounts.
+- Installation makes no model calls and does not authorize external accounts.
 
-A published package skips compilation. If it is unavailable, Docker builds the included source; the first build can take several minutes.
+Docker builds this connected version from source and installs a pinned Hermes release. The first start can take several minutes. The command above uses the published main branch; from this checkout, use the command below.
 
-Already downloaded the repository? Double-click **[Start Relay.command](Start%20Relay.command)** on macOS, or run `sh start.sh`.
+Already downloaded the repository? Double-click **[Start Relay.command](Start%20Relay.command)** on macOS, or run:
+
+```sh
+sh connect.sh
+```
 
 ```sh
 cd ~/.local/share/repro-relay
-./start.sh          # Start and open Relay
-./start.sh status   # Check the app and database
+sh connect.sh      # Start the connected workspace
+./start.sh status   # Check services
 ./start.sh logs     # Inspect startup problems
 ./start.sh stop     # Stop services and keep your data
 ```
 
-This path opens the local browser app. Native macOS builds are available from source below. For updates, existing installations, and troubleshooting, see the [setup guide](docs/EASY-START.md).
+This opens the local browser app. It does not provision a hosted Plow installation or connect every third-party account. Native macOS builds are available below. See [connected setup](docs/CONNECTED-SETUP.md) for credentials, restarts and boundaries.
+
+### Link a Discord call
+
+Run `sh connect.sh discord` once to configure the optional bot. It asks for your bot token, Discord server and authorized operators, and existing Repro work IDs. Open the invite URL in `./start.sh logs` and approve the bot for that server. Then join a voice channel and use `/repro_join work_id:RR-…`. Use `/repro_leave` to disconnect.
+
+The bot joins muted and deafened. It records call-link events in the work record, with no audio capture, transcription or model calls. See [Discord setup and limits](docs/DISCORD-VOICE.md).
+
+For consented local transcription and a Hermes reply in Team, use `sh connect.sh discord-notes`. Everyone must consent, then an operator chooses **Stop and share with Hermes**. See [call notes setup, limits and retention](docs/DISCORD-CALL-NOTES.md).
 
 ## Your workspace
 

@@ -442,6 +442,7 @@ async fn dispatch(
             max_seconds: input.max_seconds,
             follow_up_review_id: None,
             context_hash: None,
+            harness_scan_id: None,
         }),
     )
     .await?;

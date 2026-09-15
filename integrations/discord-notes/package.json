@@ -1,0 +1,7 @@
+{
+  "name": "relay-discord-call-notes",
+  "private": true,
+  "type": "module",
+  "scripts": {"test": "node --test *.test.mjs"},
+  "dependencies": {"discord.js": "14.27.0", "@discordjs/voice": "0.19.2", "opusscript": "0.1.1"}
+}

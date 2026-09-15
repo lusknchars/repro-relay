@@ -51,6 +51,10 @@ class Worker:
         self.api, self.hermes, self.state, self.clock = api, hermes, state, clock
 
     def tick(self):
+        for path in self.state.glob('*.json'):
+            saved = provider_setup.read_json(path)
+            if saved.get('call_notes') and saved.get('expires_at', 0) <= self.clock():
+                path.unlink()  # Only this worker's expired private call-note receipt.
         # Heartbeat only after the runtime responds. This is reachability, not proof of inference.
         self.hermes.request('GET', '/health')
         pending = self.api.request('GET', '/chat/pending')['items']
@@ -61,15 +65,18 @@ class Worker:
             if saved.get('blocked'):
                 continue  # A failed run is never silently resubmitted.
             if not saved:
-                if not isinstance(message['body'], str) or not 1 <= len(message['body']) <= 4000:
+                limit = 32000 if message.get('call_notes') else 4000
+                if not isinstance(message['body'], str) or not 1 <= len(message['body']) <= limit:
                     raise ValueError('Invalid team request.')
                 saved = {'request_id': identity, 'created_at': self.clock(),
                          'request': {'input': message['body'], 'instructions': POLICY},
                          'reply_id': str(uuid.uuid5(uuid.NAMESPACE_URL, 'relay-hermes-reply:' + identity))}
+                if message.get('call_notes'):
+                    saved.update(call_notes=True, expires_at=float(message['expires_at']))
                 history = []
                 for prior in sorted(self.state.glob('*.json'), key=lambda p: p.stat().st_mtime)[-5:]:
                     record = provider_setup.read_json(prior)
-                    if record.get('delivered_at') and record.get('reply'):
+                    if not message.get('call_notes') and not record.get('call_notes') and record.get('delivered_at') and record.get('reply'):
                         history.extend([{'role': 'user', 'content': record['request']['input']},
                                         {'role': 'assistant', 'content': record['reply']}])
                 if history:
@@ -115,6 +122,9 @@ class Worker:
             self.api.request('POST', '/chat/replies', {'request_id': identity,
                               'reply_id': saved['reply_id'], 'body': saved['reply']})
             saved['delivered_at'] = self.clock()
+            if saved.get('call_notes'):
+                saved.pop('request', None)
+                saved.pop('reply', None)
             provider_setup.private_write(path, saved)
             return 'replied'
         return 'idle'

@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+
 import { fontStack, normalizeFont, type InterfaceFont } from "./fonts";
 import "./font-faces.css";
 
@@ -10,6 +11,7 @@ export type Density = "compact" | "comfortable";
 
 export interface ThemeSettings {
   fontFamily: InterfaceFont;
+  material: "standard" | "glassmorphism";
   mode: Mode;
   accent: Accent;
   radius: number; // px
@@ -24,6 +26,7 @@ export interface ThemeSettings {
 
 export const DEFAULT_THEME: ThemeSettings = {
   fontFamily: "sans",
+  material: "standard",
   mode: "system",
   accent: "blue",
   radius: 8,
@@ -89,6 +92,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     root.dataset.accent = theme.accent;
     root.dataset.font = normalizeFont(theme.fontFamily);
     root.style.setProperty("--font-sans", fontStack(normalizeFont(theme.fontFamily)));
+    root.dataset.material = theme.material === "glassmorphism" ? "glassmorphism" : "standard";
     root.style.setProperty("--radius", `${theme.radius}px`);
     root.style.setProperty("--density", theme.density === "compact" ? "0.7" : "1");
     root.style.setProperty("--font-scale", String(theme.fontScale));
