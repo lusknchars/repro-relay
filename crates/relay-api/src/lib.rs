@@ -19,6 +19,7 @@ pub mod programs;
 pub mod reach;
 pub mod repairs;
 pub mod runs;
+pub mod sentry;
 pub mod sessions;
 pub mod tool_profile;
 pub mod usage;
@@ -223,6 +224,14 @@ pub fn app_with_hosting(pool: PgPool, hosting: Hosting) -> Router {
     app_with_runner(pool, hosting, runs::Runner::default())
 }
 pub fn app_with_runner(pool: PgPool, hosting: Hosting, runner: runs::Runner) -> Router {
+    app_with_connectors(pool, hosting, runner, sentry::Connector::default())
+}
+pub fn app_with_connectors(
+    pool: PgPool,
+    hosting: Hosting,
+    runner: runs::Runner,
+    sentry: sentry::Connector,
+) -> Router {
     let monitor = monitoring::Monitor::default();
     let routes = Router::new()
         .merge(accounts::routes())
@@ -235,6 +244,7 @@ pub fn app_with_runner(pool: PgPool, hosting: Hosting, runner: runs::Runner) -> 
         .merge(reach::routes())
         .merge(chat::routes())
         .merge(google_calendar::routes())
+        .merge(sentry::routes(sentry))
         .merge(monitoring::routes())
         .merge(automation::routes())
         .merge(channels::routes())

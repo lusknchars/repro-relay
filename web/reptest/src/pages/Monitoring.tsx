@@ -15,6 +15,7 @@ import { Badge, Button, Card } from "@/components/ui";
 import { api, useLoad, useWorkspace } from "@/lib/live";
 import { cn } from "@/lib/utils";
 import "./monitoring.css";
+import { SentryAlerts, SentryConnection } from "@/components/sentry";
 
 const latencyBands = [
   { label: "Fast", range: "<100 ms", limit: 100, bars: 1, tone: "fast" },
@@ -183,6 +184,15 @@ export function MonitoringPage({ onWork }: { onWork: (id: string) => void }) {
           Refresh monitoring
         </Button>
       </header>
+      <SentryAlerts onWork={onWork} />
+      <details className="rounded-lg border border-border p-4">
+        <summary className="cursor-pointer text-sm font-medium">
+          Sentry connection
+        </summary>
+        <div className="mt-3">
+          <SentryConnection />
+        </div>
+      </details>
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
         <span className="flex items-center gap-2">
           <Activity size={14} />

@@ -41,6 +41,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if hosted && !hosting.team && runner.0.is_some() {
         return Err("The guest beta cannot use a maintainer's Hermes runtime. Configure it on a local Relay server.".into());
     }
+    let sentry = relay_api::sentry::Connector::default();
+    let sentry_worker = if !hosted {
+        Some(tokio::spawn(sentry.clone().worker(pool.clone())))
+    } else {
+        None
+    };
     let worker = tokio::spawn(relay_api::runs::worker(pool.clone(), runner.clone()));
     let automation_worker = if !hosted || hosting.team {
         Some(tokio::spawn(relay_api::automation::worker(
@@ -78,10 +84,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .parse()?;
     let listener = tokio::net::TcpListener::bind((address, port)).await?;
     tracing::info!(port, mode = hosting.mode(), "Repro Relay API ready");
-    axum::serve(listener, relay_api::app_with_runner(pool, hosting, runner))
-        .with_graceful_shutdown(shutdown())
-        .await?;
+    axum::serve(
+        listener,
+        relay_api::app_with_connectors(pool, hosting, runner, sentry),
+    )
+    .with_graceful_shutdown(shutdown())
+    .await?;
     worker.abort();
+    if let Some(worker) = sentry_worker {
+        worker.abort();
+    }
     if let Some(worker) = automation_worker {
         worker.abort();
     }
