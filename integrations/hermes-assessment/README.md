@@ -106,3 +106,5 @@ After active work finishes, stop the dedicated Hermes gateway and start it again
 This connection adds five tools: file reading, skill listing/reading, current Mac permission status and pending-result retrieval. It does not add commands, file writing, browser actions, vault access or outgoing messages to scheduled investigations. File reads outside the shared Plow folder may need approval in Latch. Full Disk Access and macOS app permissions are separate from MCP authentication.
 
 A gateway health response proves reachability only. Validate the connection with a real Hermes request to `plow_device_status`, followed by reading a harmless test file through `plow_read_file`. Confirm the returned content against that file and retain the run ID/output privately. Model output alone is not a tool receipt. This configuration uses the existing local gateway; it does not launch a second Plow chat agent or automatically answer the phone line.
+
+For the worker that returns actual Hermes replies in Relay's shared Team chat, see [local connection and worker setup](../../docs/LOCAL-HERMES-CONNECTION.md).
