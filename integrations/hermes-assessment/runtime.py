@@ -8,6 +8,7 @@ import shlex
 import sys
 
 import provider_setup
+import latch_setup
 
 ROOT = Path(__file__).resolve().parents[2]
 STATE = ROOT / ".data/hermes-assessment"
@@ -109,7 +110,7 @@ def has_auth():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["setup", "login", "gateway", "dev", "enable-memory"])
+    parser.add_argument("action", choices=["setup", "login", "gateway", "dev", "enable-memory", "enable-latch"])
     args = parser.parse_args()
     if args.action == "setup":
         setup()
@@ -117,11 +118,15 @@ def main():
     if args.action == 'enable-memory':
         enable_memory()
         return
+    if args.action == 'enable-latch':
+        print(json.dumps(latch_setup.enable(STATE)))
+        return
     executable = INSTALL / ".venv/bin/hermes"
     if not executable.is_file() or not (STATE / "config.yaml").is_file():
         raise SystemExit("Install the pinned Hermes release and run runtime.py setup. See README.md.")
     env = environment()
     if args.action == "gateway":
+        latch_setup.apply_runtime(STATE, env)
         provider_setup.apply_runtime(STATE, env)
     if args.action == "login":
         if (STATE / "model-provider.json").exists():

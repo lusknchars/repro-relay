@@ -120,6 +120,8 @@ Stored `connected`/`transport_connected` flags are not a managed bridge heartbea
 
 ## Hermes, Latch, and native access
 
+Relay's dedicated local Hermes profile can now connect to the existing line's Latch MCP endpoint with `python3 integrations/hermes-assessment/runtime.py enable-latch`, followed by a gateway restart after active work finishes. This adds read and diagnostic tools only and rechecks the live grant on every gateway start. See [local Latch setup and verification](../hermes-assessment/README.md#connect-this-mac-through-plow-latch). The bridge's line check, a real MCP call, model inference and phone delivery remain separate checks.
+
 The official Plow Hermes base owns gateway boot, its pinned chat plugin, and credential-derived Latch configuration. Do not replace that plugin with this REST adapter or start a second gateway manually. This bridge only links selected reports and approved outbound records to Relay.
 
 The next runtime integration must prove that the chosen Plow Hermes image exposes Relay's required durable run capabilities, preserves one investigator slot across chat and API work, and produces actual Latch receipts. A Mac relay URL is not evidence that browser inspection or isolated repair is supported. Keep original acceptance checks outside a repair's editable scope.

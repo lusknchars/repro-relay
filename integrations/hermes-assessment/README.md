@@ -92,3 +92,17 @@ References: [official API documentation](https://hermes-agent.nousresearch.com/d
 ## Optional memory
 
 `python3 integrations/hermes-assessment/runtime.py enable-memory` adds scoped Mem0 tools to this profile while preserving provider settings. See [setup, ownership and memory boundaries](../mem0-memory/README.md). Restart the gateway to load them. Memory setup does not complete provider authentication.
+
+## Connect this Mac through Plow Latch
+
+With the existing Plow line connected through [the bridge setup](../plow/README.md), run:
+
+```sh
+python3 integrations/hermes-assessment/runtime.py enable-latch
+```
+
+After active work finishes, stop the dedicated Hermes gateway and start it again with `runtime.py gateway`. The launcher checks the current line and owner-chat grant on each boot and passes the provider-advertised MCP endpoint and line credential directly to Hermes's environment. The profile contains variable references, not copied tokens. A revoked grant or unsupported endpoint stops startup instead of using a stale connection. Existing model, memory, evidence servers and gateway identity are preserved.
+
+This connection adds five tools: file reading, skill listing/reading, current Mac permission status and pending-result retrieval. It does not add commands, file writing, browser actions, vault access or outgoing messages to scheduled investigations. File reads outside the shared Plow folder may need approval in Latch. Full Disk Access and macOS app permissions are separate from MCP authentication.
+
+A gateway health response proves reachability only. Validate the connection with a real Hermes request to `plow_device_status`, followed by reading a harmless test file through `plow_read_file`. Confirm the returned content against that file and retain the run ID/output privately. Model output alone is not a tool receipt. This configuration uses the existing local gateway; it does not launch a second Plow chat agent or automatically answer the phone line.
