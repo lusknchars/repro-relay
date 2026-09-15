@@ -3,6 +3,7 @@ import { Check, Monitor, Moon, RotateCcw, Sun, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme, type Accent, type SidebarVariant } from "./ThemeProvider";
 import { Button, Segmented, Switch } from "@/components/ui";
+import { INTERFACE_FONTS, normalizeFont } from "./fonts";
 
 const ACCENTS: { id: Accent; label: string; swatch: string }[] = [
   { id: "blue", label: "Blue (default)", swatch: "#2f6fed" },
@@ -72,6 +73,21 @@ export function Customizer({ open, onClose }: { open: boolean; onClose: () => vo
               { value: "system", label: <span className="flex items-center gap-1"><Monitor className="h-3 w-3" /> System</span> },
             ]}
           />
+        </Section>
+
+        <Section title="Font" hint="Choose your interface typeface. Code and logs keep their monospace font.">
+          <label className="text-xs text-muted" htmlFor="interface-font">Sans font</label>
+          <select
+            id="interface-font"
+            aria-label="Interface font"
+            className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            value={theme.fontFamily}
+            onChange={(event) => set("fontFamily", normalizeFont(event.target.value))}
+          >
+            {INTERFACE_FONTS.map((font) => <option key={font.id} value={font.id}>{font.name}</option>)}
+          </select>
+          <p className="rounded-md border border-border p-3 text-sm" aria-label="Font preview">Team context, clear decisions. Ação, revisão. 0123456789</p>
+          <p className="text-xs text-muted">Saved on this device. All fonts are bundled for offline use.</p>
         </Section>
 
         <Section title="Accent" hint="Blue matches the sidebar effect and grid. Other presets are yours to choose.">

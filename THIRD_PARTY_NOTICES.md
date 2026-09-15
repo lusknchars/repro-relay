@@ -118,6 +118,10 @@ The user provided `reptest.zip` as a frontend adaptation reference on September 
 
 `web/reptest` contains the actual user-supplied archive, replacing the earlier visual adaptation as the default frontend. Original source and package lockfile are retained. The archive README describes its PaceUI/shadcn reconstruction. Import for this requested local application does not establish a broader redistribution license. See `docs/REPTEST-ADAPTATION.md` for source hash and integration boundaries.
 
+## Bundled interface fonts
+
+`web/reptest/public/fonts/catalog` contains Fontsource 5.3.0 WOFF2 distributions for Inter, Roboto, Open Sans, Poppins, DM Sans, Montserrat, Lato, Mulish, Work Sans, IBM Plex Sans, Ubuntu, Nunito, Outfit, Space Grotesk and Lexend. Each family includes its original license. Ubuntu is under UFL-1.0; the other families are under OFL-1.1. These fonts are not relicensed under Relay's MIT license. Package provenance and integrity are recorded in `sources.json`; see `docs/FONTS.md` for weights, subsets and use.
+
 ## Repro Relay brand mark
 
 The current orbital logo was supplied by the user as `repo-relay-icon.svg` and `repo-relay-icon-transparent.svg`, preserved unchanged in `web/reptest/public/brand`. Web and desktop derivatives use the transparent source with a tighter display canvas. The two legacy theme PNG paths now carry this full-color artwork. `scripts/generate-brand-icons.mjs` regenerates the favicon and native icons with Tauri. See `docs/BRANDING.md`.

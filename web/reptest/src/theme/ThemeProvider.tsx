@@ -1,4 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { fontStack, normalizeFont, type InterfaceFont } from "./fonts";
+import "./font-faces.css";
 
 export type Mode = "light" | "dark" | "system";
 export type Accent = "blue" | "teal" | "violet" | "amber" | "rose" | "mono";
@@ -7,6 +9,7 @@ export type ContentLayout = "full" | "centered";
 export type Density = "compact" | "comfortable";
 
 export interface ThemeSettings {
+  fontFamily: InterfaceFont;
   mode: Mode;
   accent: Accent;
   radius: number; // px
@@ -20,6 +23,7 @@ export interface ThemeSettings {
 }
 
 export const DEFAULT_THEME: ThemeSettings = {
+  fontFamily: "sans",
   mode: "system",
   accent: "blue",
   radius: 8,
@@ -47,7 +51,8 @@ function loadSettings(): ThemeSettings {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_THEME;
-    return { ...DEFAULT_THEME, ...(JSON.parse(raw) as Partial<ThemeSettings>) };
+    const saved = JSON.parse(raw) as Partial<ThemeSettings>;
+    return { ...DEFAULT_THEME, ...saved, fontFamily: normalizeFont(saved?.fontFamily) };
   } catch {
     return DEFAULT_THEME; // storage unavailable (e.g. sandboxed preview) — keep settings in memory
   }
@@ -82,6 +87,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     root.classList.toggle("dark", resolvedMode === "dark");
     root.classList.toggle("reduce-motion", theme.reducedMotion);
     root.dataset.accent = theme.accent;
+    root.dataset.font = normalizeFont(theme.fontFamily);
+    root.style.setProperty("--font-sans", fontStack(normalizeFont(theme.fontFamily)));
     root.style.setProperty("--radius", `${theme.radius}px`);
     root.style.setProperty("--density", theme.density === "compact" ? "0.7" : "1");
     root.style.setProperty("--font-scale", String(theme.fontScale));

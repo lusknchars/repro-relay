@@ -1,0 +1,338 @@
+{
+  "inter": {
+    "package": "@fontsource/inter",
+    "version": "5.3.0",
+    "license": "OFL-1.1",
+    "url": "https://registry.npmjs.org/@fontsource/inter/-/inter-5.3.0.tgz",
+    "integrity": "sha512-RofMylZmjlJEfELXeNHFWBRcSs75rGU/6bV2S2jfnvv/3rPXPGe0LgUJTklcHZ9lM4OZmAVFhcJPnACfb91A3g==",
+    "weights": [
+      400,
+      500,
+      600,
+      700
+    ],
+    "files": [
+      "inter-latin-ext-400-normal.woff2",
+      "inter-latin-400-normal.woff2",
+      "inter-latin-ext-500-normal.woff2",
+      "inter-latin-500-normal.woff2",
+      "inter-latin-ext-600-normal.woff2",
+      "inter-latin-600-normal.woff2",
+      "inter-latin-ext-700-normal.woff2",
+      "inter-latin-700-normal.woff2"
+    ]
+  },
+  "roboto": {
+    "package": "@fontsource/roboto",
+    "version": "5.3.0",
+    "license": "OFL-1.1",
+    "url": "https://registry.npmjs.org/@fontsource/roboto/-/roboto-5.3.0.tgz",
+    "integrity": "sha512-BapRJOWYP+LZ21zp+wBQjfpPYKRoxc4LspJ/RLuI+HSMBD5u/X4O+ESDrSvEqDSy0rAl7GwBJ+09mdc16cVQ1Q==",
+    "weights": [
+      400,
+      500,
+      600,
+      700
+    ],
+    "files": [
+      "roboto-latin-ext-400-normal.woff2",
+      "roboto-latin-400-normal.woff2",
+      "roboto-latin-ext-500-normal.woff2",
+      "roboto-latin-500-normal.woff2",
+      "roboto-latin-ext-600-normal.woff2",
+      "roboto-latin-600-normal.woff2",
+      "roboto-latin-ext-700-normal.woff2",
+      "roboto-latin-700-normal.woff2"
+    ]
+  },
+  "open-sans": {
+    "package": "@fontsource/open-sans",
+    "version": "5.3.0",
+    "license": "OFL-1.1",
+    "url": "https://registry.npmjs.org/@fontsource/open-sans/-/open-sans-5.3.0.tgz",
+    "integrity": "sha512-V1bdMlGNyZrJwzrdusshMOw2YR0aqYDL7kOo9dkxUEKl8dFv66A9HLckOOXl572sG/7ohhDQrCrTFGSn9LZcSw==",
+    "weights": [
+      400,
+      500,
+      600,
+      700
+    ],
+    "files": [
+      "open-sans-latin-ext-400-normal.woff2",
+      "open-sans-latin-400-normal.woff2",
+      "open-sans-latin-ext-500-normal.woff2",
+      "open-sans-latin-500-normal.woff2",
+      "open-sans-latin-ext-600-normal.woff2",
+      "open-sans-latin-600-normal.woff2",
+      "open-sans-latin-ext-700-normal.woff2",
+      "open-sans-latin-700-normal.woff2"
+    ]
+  },
+  "poppins": {
+    "package": "@fontsource/poppins",
+    "version": "5.3.0",
+    "license": "OFL-1.1",
+    "url": "https://registry.npmjs.org/@fontsource/poppins/-/poppins-5.3.0.tgz",
+    "integrity": "sha512-cms1nM7U6SN8epIV1WMVOV8VsA645aSm3wHfzIQnkk188U341ThbJGSl2Sv54V29gnDbT2arMPfLzvVIIVCceQ==",
+    "weights": [
+      400,
+      500,
+      600,
+      700
+    ],
+    "files": [
+      "poppins-latin-ext-400-normal.woff2",
+      "poppins-latin-400-normal.woff2",
+      "poppins-latin-ext-500-normal.woff2",
+      "poppins-latin-500-normal.woff2",
+      "poppins-latin-ext-600-normal.woff2",
+      "poppins-latin-600-normal.woff2",
+      "poppins-latin-ext-700-normal.woff2",
+      "poppins-latin-700-normal.woff2"
+    ]
+  },
+  "dm-sans": {
+    "package": "@fontsource/dm-sans",
+    "version": "5.3.0",
+    "license": "OFL-1.1",
+    "url": "https://registry.npmjs.org/@fontsource/dm-sans/-/dm-sans-5.3.0.tgz",
+    "integrity": "sha512-lYJtMXXO28q1z+yz+z8XKd0s4hXaa9QdkETzkyD760sidCv5heI86weYA0sx0Nc4pAMAQTUuyf4gO44cYKKS9g==",
+    "weights": [
+      400,
+      500,
+      600,
+      700
+    ],
+    "files": [
+      "dm-sans-latin-ext-400-normal.woff2",
+      "dm-sans-latin-400-normal.woff2",
+      "dm-sans-latin-ext-500-normal.woff2",
+      "dm-sans-latin-500-normal.woff2",
+      "dm-sans-latin-ext-600-normal.woff2",
+      "dm-sans-latin-600-normal.woff2",
+      "dm-sans-latin-ext-700-normal.woff2",
+      "dm-sans-latin-700-normal.woff2"
+    ]
+  },
+  "montserrat": {
+    "package": "@fontsource/montserrat",
+    "version": "5.3.0",
+    "license": "OFL-1.1",
+    "url": "https://registry.npmjs.org/@fontsource/montserrat/-/montserrat-5.3.0.tgz",
+    "integrity": "sha512-iQPDtZOnmM5ih4JBGaMSXisRap0ixb9bAUw2hDtY7EjVfaqiiNlKtVuJl9XclxUwtwMMHNcWXfQR6zI9x05+Tg==",
+    "weights": [
+      400,
+      500,
+      600,
+      700
+    ],
+    "files": [
+      "montserrat-latin-ext-400-normal.woff2",
+      "montserrat-latin-400-normal.woff2",
+      "montserrat-latin-ext-500-normal.woff2",
+      "montserrat-latin-500-normal.woff2",
+      "montserrat-latin-ext-600-normal.woff2",
+      "montserrat-latin-600-normal.woff2",
+      "montserrat-latin-ext-700-normal.woff2",
+      "montserrat-latin-700-normal.woff2"
+    ]
+  },
+  "lato": {
+    "package": "@fontsource/lato",
+    "version": "5.3.0",
+    "license": "OFL-1.1",
+    "url": "https://registry.npmjs.org/@fontsource/lato/-/lato-5.3.0.tgz",
+    "integrity": "sha512-0WhF/4rhrw+ErIyneKvhHn2YAl+xf8GDtllgOgOzDmeaSlLQtjpChXaQOpWhG2BchQW0WJy2zLV12Hdg0ndOMw==",
+    "weights": [
+      400,
+      700
+    ],
+    "files": [
+      "lato-latin-ext-400-normal.woff2",
+      "lato-latin-400-normal.woff2",
+      "lato-latin-ext-700-normal.woff2",
+      "lato-latin-700-normal.woff2"
+    ]
+  },
+  "mulish": {
+    "package": "@fontsource/mulish",
+    "version": "5.3.0",
+    "license": "OFL-1.1",
+    "url": "https://registry.npmjs.org/@fontsource/mulish/-/mulish-5.3.0.tgz",
+    "integrity": "sha512-Fru/fmJwg4ZlKUU4jELz6/guZhba6Lz1vraAROqooYnUbtj1iMi7BXFkQU7AkB6QP5swpvwRnO5chUp6mNh5mA==",
+    "weights": [
+      400,
+      500,
+      600,
+      700
+    ],
+    "files": [
+      "mulish-latin-ext-400-normal.woff2",
+      "mulish-latin-400-normal.woff2",
+      "mulish-latin-ext-500-normal.woff2",
+      "mulish-latin-500-normal.woff2",
+      "mulish-latin-ext-600-normal.woff2",
+      "mulish-latin-600-normal.woff2",
+      "mulish-latin-ext-700-normal.woff2",
+      "mulish-latin-700-normal.woff2"
+    ]
+  },
+  "work-sans": {
+    "package": "@fontsource/work-sans",
+    "version": "5.3.0",
+    "license": "OFL-1.1",
+    "url": "https://registry.npmjs.org/@fontsource/work-sans/-/work-sans-5.3.0.tgz",
+    "integrity": "sha512-3cKV28+bEiLGdyOl0VgEGCFWE1XdZJu/K+nH4Jt76XC3T//XrRtm2EF7jA61GSMIy8sYp6ZFTE01nD3lLaBV9A==",
+    "weights": [
+      400,
+      500,
+      600,
+      700
+    ],
+    "files": [
+      "work-sans-latin-ext-400-normal.woff2",
+      "work-sans-latin-400-normal.woff2",
+      "work-sans-latin-ext-500-normal.woff2",
+      "work-sans-latin-500-normal.woff2",
+      "work-sans-latin-ext-600-normal.woff2",
+      "work-sans-latin-600-normal.woff2",
+      "work-sans-latin-ext-700-normal.woff2",
+      "work-sans-latin-700-normal.woff2"
+    ]
+  },
+  "ibm-plex-sans": {
+    "package": "@fontsource/ibm-plex-sans",
+    "version": "5.3.0",
+    "license": "OFL-1.1",
+    "url": "https://registry.npmjs.org/@fontsource/ibm-plex-sans/-/ibm-plex-sans-5.3.0.tgz",
+    "integrity": "sha512-CbE4CbbEEZJX860XyUiRpsksXIQR8Rp2XDva2VO53NJox9tVNtusrysd2x5YkUEY3ErQ66W1IiiQL8/wihhw5w==",
+    "weights": [
+      400,
+      500,
+      600,
+      700
+    ],
+    "files": [
+      "ibm-plex-sans-latin-ext-400-normal.woff2",
+      "ibm-plex-sans-latin-400-normal.woff2",
+      "ibm-plex-sans-latin-ext-500-normal.woff2",
+      "ibm-plex-sans-latin-500-normal.woff2",
+      "ibm-plex-sans-latin-ext-600-normal.woff2",
+      "ibm-plex-sans-latin-600-normal.woff2",
+      "ibm-plex-sans-latin-ext-700-normal.woff2",
+      "ibm-plex-sans-latin-700-normal.woff2"
+    ]
+  },
+  "ubuntu": {
+    "package": "@fontsource/ubuntu",
+    "version": "5.3.0",
+    "license": "UFL-1.0",
+    "url": "https://registry.npmjs.org/@fontsource/ubuntu/-/ubuntu-5.3.0.tgz",
+    "integrity": "sha512-LsjJXgE430QLs8LKfn1RIFbbdGAiZBU1gao8ASa4Z2kGNGh7lMb7Rzx09v3bLLuuK+3XA/JSLgPWTAbLD6r1fg==",
+    "weights": [
+      400,
+      500,
+      700
+    ],
+    "files": [
+      "ubuntu-latin-ext-400-normal.woff2",
+      "ubuntu-latin-400-normal.woff2",
+      "ubuntu-latin-ext-500-normal.woff2",
+      "ubuntu-latin-500-normal.woff2",
+      "ubuntu-latin-ext-700-normal.woff2",
+      "ubuntu-latin-700-normal.woff2"
+    ]
+  },
+  "nunito": {
+    "package": "@fontsource/nunito",
+    "version": "5.3.0",
+    "license": "OFL-1.1",
+    "url": "https://registry.npmjs.org/@fontsource/nunito/-/nunito-5.3.0.tgz",
+    "integrity": "sha512-vw9TaTQJ/zpEpKrsODuPmOvaVjXgdda6B+xXA4YqjrdeJ62MLgVoDerdRXFQHyBnSCt2yQ2nHKCHPP/Pv7Xq4Q==",
+    "weights": [
+      400,
+      500,
+      600,
+      700
+    ],
+    "files": [
+      "nunito-latin-ext-400-normal.woff2",
+      "nunito-latin-400-normal.woff2",
+      "nunito-latin-ext-500-normal.woff2",
+      "nunito-latin-500-normal.woff2",
+      "nunito-latin-ext-600-normal.woff2",
+      "nunito-latin-600-normal.woff2",
+      "nunito-latin-ext-700-normal.woff2",
+      "nunito-latin-700-normal.woff2"
+    ]
+  },
+  "outfit": {
+    "package": "@fontsource/outfit",
+    "version": "5.3.0",
+    "license": "OFL-1.1",
+    "url": "https://registry.npmjs.org/@fontsource/outfit/-/outfit-5.3.0.tgz",
+    "integrity": "sha512-0AVHzTTVJSxWDOxPKSfMeHhZeBFDU3cmgrcOb76ZEyhGo0+xgyG3GsLF3h9+X8w0IX7G4jzjJgFQEBiWdX6VgA==",
+    "weights": [
+      400,
+      500,
+      600,
+      700
+    ],
+    "files": [
+      "outfit-latin-ext-400-normal.woff2",
+      "outfit-latin-400-normal.woff2",
+      "outfit-latin-ext-500-normal.woff2",
+      "outfit-latin-500-normal.woff2",
+      "outfit-latin-ext-600-normal.woff2",
+      "outfit-latin-600-normal.woff2",
+      "outfit-latin-ext-700-normal.woff2",
+      "outfit-latin-700-normal.woff2"
+    ]
+  },
+  "space-grotesk": {
+    "package": "@fontsource/space-grotesk",
+    "version": "5.3.0",
+    "license": "OFL-1.1",
+    "url": "https://registry.npmjs.org/@fontsource/space-grotesk/-/space-grotesk-5.3.0.tgz",
+    "integrity": "sha512-ksnGizDPXIDuvqcTYTSrmZ+evx9sDlS8rp7+42BQ7wU+spt3twEoXfbJz672C+5CLg6VeUQwRy5RXshWb67LcQ==",
+    "weights": [
+      400,
+      500,
+      600,
+      700
+    ],
+    "files": [
+      "space-grotesk-latin-ext-400-normal.woff2",
+      "space-grotesk-latin-400-normal.woff2",
+      "space-grotesk-latin-ext-500-normal.woff2",
+      "space-grotesk-latin-500-normal.woff2",
+      "space-grotesk-latin-ext-600-normal.woff2",
+      "space-grotesk-latin-600-normal.woff2",
+      "space-grotesk-latin-ext-700-normal.woff2",
+      "space-grotesk-latin-700-normal.woff2"
+    ]
+  },
+  "lexend": {
+    "package": "@fontsource/lexend",
+    "version": "5.3.0",
+    "license": "OFL-1.1",
+    "url": "https://registry.npmjs.org/@fontsource/lexend/-/lexend-5.3.0.tgz",
+    "integrity": "sha512-4igbsooynC6xwfagkAW6eo9JMrw8ALFGkWn1YChYmYchufMJSPgWihD+cy5ruX5YX/gDk/gllcl1Oj7q6KUZmw==",
+    "weights": [
+      400,
+      500,
+      600,
+      700
+    ],
+    "files": [
+      "lexend-latin-ext-400-normal.woff2",
+      "lexend-latin-400-normal.woff2",
+      "lexend-latin-ext-500-normal.woff2",
+      "lexend-latin-500-normal.woff2",
+      "lexend-latin-ext-600-normal.woff2",
+      "lexend-latin-600-normal.woff2",
+      "lexend-latin-ext-700-normal.woff2",
+      "lexend-latin-700-normal.woff2"
+    ]
+  }
+}
