@@ -14,6 +14,55 @@ import {
 import { Badge, Button, Card } from "@/components/ui";
 import { api, useLoad, useWorkspace } from "@/lib/live";
 import { cn } from "@/lib/utils";
+import "./monitoring.css";
+
+const latencyBands = [
+  { label: "Fast", range: "<100 ms", limit: 100, bars: 1, tone: "fast" },
+  {
+    label: "Moderate",
+    range: "100–<500 ms",
+    limit: 500,
+    bars: 2,
+    tone: "moderate",
+  },
+  { label: "Slow", range: "≥500 ms", limit: Infinity, bars: 3, tone: "slow" },
+];
+
+function LatencyBars({ bars }: { bars: number }) {
+  return (
+    <span className="latency-bars" aria-hidden="true">
+      {[1, 2, 3].map((bar) => (
+        <i key={bar} data-filled={bar <= bars} />
+      ))}
+    </span>
+  );
+}
+
+function RequestLatency({ ms }: { ms: number }) {
+  const band =
+    Number.isFinite(ms) && ms >= 0
+      ? latencyBands.find((band) => ms < band.limit)
+      : undefined;
+  return (
+    <span
+      className="request-latency"
+      data-latency={band?.tone ?? "unknown"}
+      title={
+        band
+          ? `${band.label}: ${band.range}. Relay API handler time.`
+          : "Duration unavailable"
+      }
+    >
+      <LatencyBars bars={band?.bars ?? 0} />
+      <span>
+        {band
+          ? `${ms.toLocaleString(undefined, { maximumFractionDigits: 2 })} ms`
+          : "—"}
+      </span>
+      <span className="latency-label">{band?.label ?? "Unknown"}</span>
+    </span>
+  );
+}
 type Event = {
   id: number;
   at: string;
@@ -286,6 +335,15 @@ export function MonitoringPage({ onWork }: { onWork: (id: string) => void }) {
             </Button>
           </div>
         </div>
+        <div className="latency-legend" aria-label="Request latency legend">
+          <span>Handler time</span>
+          {latencyBands.map((band) => (
+            <span key={band.tone} data-latency={band.tone}>
+              <LatencyBars bars={band.bars} />
+              {band.label} {band.range}
+            </span>
+          ))}
+        </div>
         <div
           className="max-h-80 min-h-52 overflow-auto font-mono text-xs"
           aria-label="Request console"
@@ -294,7 +352,7 @@ export function MonitoringPage({ onWork }: { onWork: (id: string) => void }) {
             <button
               key={e.id}
               onClick={() => setSelected(e)}
-              className="grid w-full min-w-[520px] grid-cols-[85px_60px_45px_minmax(0,1fr)_65px] items-center gap-3 border-b border-border/40 px-4 py-2.5 text-left hover:bg-surface-2 focus-visible:bg-surface-2"
+              className="grid w-full min-w-[600px] grid-cols-[85px_60px_45px_minmax(0,1fr)_190px] items-center gap-3 border-b border-border/40 px-4 py-2.5 text-left hover:bg-surface-2 focus-visible:bg-surface-2"
             >
               <span className="text-muted">{stamp(e.at)}</span>
               <span>{e.method}</span>
@@ -304,9 +362,7 @@ export function MonitoringPage({ onWork }: { onWork: (id: string) => void }) {
                 {e.status}
               </span>
               <span className="truncate text-muted">{e.endpoint}</span>
-              <span className="text-right text-muted">
-                {e.duration_ms.toFixed(0)} ms
-              </span>
+              <RequestLatency ms={e.duration_ms} />
             </button>
           ))}
           {!consoleEvents.length && (

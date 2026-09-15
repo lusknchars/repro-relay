@@ -17,3 +17,7 @@ The client refreshes every three seconds while visible. Pause freezes the consol
 Service telemetry answers what happened inside Relay. It does not claim to capture console errors, network traces or screenshots from the application under investigation. Work records remain the source for reported conditions, builds, findings, assignments and test artifacts. No association is inferred from timestamps alone.
 
 The supplied tool-capability reference prioritizes browser diagnostics, environment and test-account setup, issue routing and fix verification. Existing investigation and repair contracts supply part of this workflow; this monitoring change does not add Slack, Sentry, browser recording or independent fix verification. Those integrations need their own source identity, authorization and tested receipt contracts.
+
+## Console latency signals
+
+Each live console row shows its measured handler duration and a labelled signal: green for Fast (<100 ms), amber for Moderate (100 to <500 ms), and red for Slow (≥500 ms). One, two or three filled bars make the bands distinguishable without color. The legend stays above the console. These are display thresholds for Relay's API handler time, not an end-to-end latency measurement or a service-level guarantee. HTTP status is independent: a fast request can still fail. Pause, clear, filtering and request details retain their existing behavior.
