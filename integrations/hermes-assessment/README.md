@@ -4,6 +4,10 @@ A dedicated Hermes home reviews captured interface state, selected source files,
 
 The application shows local checks separately from the later Hermes run. Test triage reads explicit journal receipts; saved or reported-running results are never presented as live execution. While Hermes is active, evidence refresh follows its checked timestamp even when the run status/version stays the same.
 
+## Configure in Relay
+
+**Settings → Model providers** saves an API provider, model ID and private key for the next dedicated gateway start. OpenAI API, Anthropic, Moonshot and OpenRouter are supported by this editor. Existing account sign-in and MCP permissions are preserved until you choose an API selection. See [model setup and activation](../../docs/MODEL-SETUP.md).
+
 ## Install and sign in
 
 Prerequisites: Python 3.11–3.13 for Hermes, `uv`, the Relay development environment, and either a Moonshot API key or a ChatGPT account that can authorize Codex. The launcher itself uses Python's standard library. Setup defaults to Hermes's `openai-codex` provider; an existing Moonshot account can be used instead, as described below.
@@ -31,7 +35,7 @@ In `.data/hermes-assessment/config.yaml`, change only the `model` object, preser
 
 Use a model available to your Moonshot account. Store `KIMI_API_KEY` in the profile's private `.env`, together with `KIMI_BASE_URL=https://api.moonshot.ai/v1` and `API_SERVER_ENABLED=true`. Keep the existing `API_SERVER_KEY`, host and port. File permissions should remain `0600`.
 
-If Pi already uses Moonshot, its API key can also authenticate this Hermes profile. Pi's login does not automatically configure Hermes. Copy the credential locally without pasting it into chat, terminal history, frontend settings, or Git. This path uses the Moonshot API endpoint; a Kimi Code subscription can require a different endpoint. No Codex login is needed for this profile.
+If Pi already uses Moonshot, its API key can also authenticate this Hermes profile. Pi's login does not automatically configure Hermes. Copy the credential locally without pasting it into chat, terminal history, browser storage, or Git. Relay's dedicated model setup form can save it privately for you. This path uses the Moonshot API endpoint; a Kimi Code subscription can require a different endpoint. No Codex login is needed for this profile.
 
 Restart the gateway after changing providers. A reachable gateway proves that Relay can submit and inspect runs; a successful model response is a separate check. Provider credit, authentication and rate-limit errors can still occur after the gateway connects.
 

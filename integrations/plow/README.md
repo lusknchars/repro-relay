@@ -12,6 +12,10 @@ Implemented operations:
 
 The adapter has protocol tests. Live activation, a real phone report, provider delivery, and a Latch action each need separate evidence. The SwiftUI app remains an offline simulation until authenticated native access is implemented. This bridge does not add telephony, a voice session, or a Hermes conversation adapter.
 
+## Choose the agent and model
+
+Latch works with MCP-compatible agents, including Claude, Codex and Hermes. MCP supplies the tool connection; the agent authenticates with its model provider separately. In Relay, **Settings → Model providers** configures the dedicated Hermes runtime. Claude, Codex and Pi retain their own authentication. A line grant does not establish a working model or MCP connection. See [model and Latch setup](../../docs/MODEL-SETUP.md).
+
 ## Set up a line
 
 For a first-time Plow user, Latch's setup creates the account from the phone number that sends its displayed activation message. Finish that setup to link the Mac. A Connected Mac with zero agents is a valid intermediate state; it does not provide Relay with a line credential or a running investigator. The CLI login below is a separate authorization flow for the local agent tooling. Use the current code and destination displayed by each flow.

@@ -17,6 +17,7 @@ pub mod google_calendar;
 pub mod hosting;
 pub mod intake;
 pub mod meetings;
+pub mod model_setup;
 pub mod monitoring;
 pub mod programs;
 pub mod reach;
@@ -256,6 +257,7 @@ pub fn app_with_discord(
         .merge(reach::routes())
         .merge(chat::routes())
         .merge(google_calendar::routes())
+        .merge(model_setup::routes())
         .merge(sentry::routes(sentry))
         .merge(exa::routes(exa::Connector::default()))
         .merge(discord::routes(discord))

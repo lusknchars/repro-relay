@@ -68,6 +68,7 @@ Start in **Settings**. Each connection has its own purpose and setup; signing in
 
 | Connection | Purpose | Setup |
 | --- | --- | --- |
+| Model providers | Configure OpenAI, Anthropic, Moonshot or OpenRouter for the dedicated Hermes runtime. | [Model setup](docs/MODEL-SETUP.md) |
 | Hermes | Submit, monitor, stop, and review investigations through a configured gateway. | [Runner configuration](docs/HERMES-RUNNER.md) |
 | Pi | Use Relay evidence from a local terminal agent. Model authentication belongs to that agent's provider configuration. | [Pi setup](integrations/pi-harness/README.md) |
 | Discord | Collect a selected channel’s discussion and save source-linked Reach todos. | [Discord setup](docs/DISCORD.md) |

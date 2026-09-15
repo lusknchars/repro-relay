@@ -7,6 +7,8 @@ import secrets
 import shlex
 import sys
 
+import provider_setup
+
 ROOT = Path(__file__).resolve().parents[2]
 STATE = ROOT / ".data/hermes-assessment"
 INSTALL = Path.home() / ".local/share/repro-relay/hermes-agent"
@@ -72,10 +74,15 @@ def enable_memory():
 
 def has_auth():
     """Check only the selected provider's saved credential presence, never validity."""
+    if (STATE / "model-provider.json").exists():
+        return provider_setup.status(STATE)["credential_saved"]
     config_path = STATE / "config.yaml"
     config = json.loads(config_path.read_text()) if config_path.exists() else {}
     provider = config.get("model", {}).get("provider", "openai-codex")
     key_names = {
+        "openai-api": ("OPENAI_API_KEY",),
+        "anthropic": ("ANTHROPIC_API_KEY", "ANTHROPIC_TOKEN"),
+        "openrouter": ("OPENROUTER_API_KEY",),
         "kimi-coding": ("KIMI_API_KEY", "KIMI_CODING_API_KEY"),
         "kimi-coding-cn": ("KIMI_CN_API_KEY",),
     }
@@ -114,13 +121,17 @@ def main():
     if not executable.is_file() or not (STATE / "config.yaml").is_file():
         raise SystemExit("Install the pinned Hermes release and run runtime.py setup. See README.md.")
     env = environment()
+    if args.action == "gateway":
+        provider_setup.apply_runtime(STATE, env)
     if args.action == "login":
+        if (STATE / "model-provider.json").exists():
+            raise SystemExit("This profile uses the API provider saved in Relay Settings. No Codex login is needed.")
         provider = json.loads((STATE / "config.yaml").read_text()).get("model", {}).get("provider")
         if provider != "openai-codex":
             raise SystemExit("This profile uses an API-key provider. Configure its private key in the profile .env; no Codex login is required.")
         os.execve(executable, [str(executable), "auth", "add", "openai-codex", "--type", "oauth", "--no-browser"], env)
     if not has_auth():
-        raise SystemExit("The selected Hermes provider has no saved credential. For Codex run runtime.py login; for Kimi set KIMI_API_KEY in the private profile .env.")
+        raise SystemExit("The selected Hermes provider has no saved credential. Configure an API provider in Relay Settings, or use runtime.py login for an existing Codex profile.")
     if not (STATE / "packet.json").is_file():
         raise SystemExit("Capture the assessment evidence first. See README.md.")
     if args.action == "gateway":

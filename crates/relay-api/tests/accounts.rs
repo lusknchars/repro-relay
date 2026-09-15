@@ -140,6 +140,22 @@ async fn invitation_link_joins_without_password_and_preserves_viewer_boundaries(
             .0,
         403
     );
+    for method in ["GET", "POST"] {
+        let body = json!({"revision":"a".repeat(64),"provider":"openai-api","model":"fixture-model","api_key":"fixture-private-key"});
+        assert_eq!(
+            call(
+                &local,
+                false,
+                method,
+                "/connections/model-provider",
+                &local_viewer,
+                body
+            )
+            .await
+            .0,
+            403
+        );
+    }
     let id = profile["profile"]["id"].as_str().unwrap();
     assert_eq!(
         call(
