@@ -38,7 +38,7 @@ async function workspace(page: Page, role: string, state: State) {
     if (path.endsWith('/hermes/console')) {
       return route.fulfill({json: {items: state.items, available: true, active: state.active, limit_seconds: 120}});
     }
-    if (!/\/(account|team\/directory|chat|runner|workspace\/runs|architectures)(\?|$)/.test(path)) {
+    if (!/\/(account|team\/directory|chat|runner|workspace\/runs|architectures|contributions|communication\/members|communication\/calls)(\?|$)/.test(path)) {
       (state.unmatched ??= new Set()).add(path);
     }
     const data = path.endsWith('/account') ? {enabled: true, authenticated: true, local_access: true, role,
@@ -47,7 +47,13 @@ async function workspace(page: Page, role: string, state: State) {
       : path.endsWith('/chat') ? {items: [], configured: false, connection: null}
       : path.endsWith('/runner') ? {available: true}
       : path.endsWith('/workspace/runs') ? {items: [], next_offset: null}
-      : path.endsWith('/architectures') ? {templates: [], settings: {}} : [];
+      : path.endsWith('/architectures') ? {templates: [], settings: {}}
+      // The Team page fetches these three. Each shape is the type declared at its call site:
+      // {items: Record[]}, {items: Call[]} and History. The bare [] fallback handed components a
+      // truthy value whose fields are undefined, which the real API never returns.
+      : path.endsWith('/communication/members') ? {items: []}
+      : path.endsWith('/communication/calls') ? {items: []}
+      : path.endsWith('/contributions') ? {snapshot: null, current: true} : [];
     await route.fulfill({json: data});
   });
 }
