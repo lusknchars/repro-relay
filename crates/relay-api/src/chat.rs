@@ -166,7 +166,7 @@ async fn disconnect(
         .await?;
     Ok(Json(json!({"disconnected":true})))
 }
-async fn agent(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, h: &HeaderMap) -> ApiResult<()> {
+pub(crate) async fn agent(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, h: &HeaderMap) -> ApiResult<()> {
     let key = h
         .get("x-relay-chat-key")
         .and_then(|v| v.to_str().ok())

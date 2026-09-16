@@ -63,6 +63,7 @@ pub fn routes() -> Router<PgPool> {
     Router::new()
         .route("/pair/start", post(start))
         .route("/pair/state", get(state))
+        .route("/pair/claim", post(claim))
 }
 
 fn code() -> String {
@@ -129,4 +130,71 @@ async fn state(
             }
         }
     }))
+}
+
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct Claim {
+    code: String,
+    platform: String,
+    handle: String,
+    display_name: String,
+}
+
+fn salt() -> ApiResult<String> {
+    std::env::var("REPRO_HANDLE_SALT").map_err(|_| ApiError {
+        status: StatusCode::SERVICE_UNAVAILABLE,
+        message: "Set REPRO_HANDLE_SALT before pairing.".into(),
+    })
+}
+
+async fn claim(
+    State(pool): State<PgPool>,
+    Extension(c): Extension<Hosting>,
+    h: HeaderMap,
+    Json(body): Json<Claim>,
+) -> ApiResult<Json<Value>> {
+    available(&c)?;
+    crate::hosting::rate_limit(&pool, "pair-claim", 60).await?;
+    let digest = hash(&format!("{}{}{}", salt()?, body.platform, body.handle));
+    let mut tx = pool.begin().await?;
+    crate::chat::agent(&mut tx, &h).await?;
+
+    let pending: Option<String> = sqlx::query_scalar(
+        "SELECT browser_hash FROM pair_requests \
+         WHERE code=$1 AND identity_id IS NULL AND expires_at>now() FOR UPDATE",
+    )
+    .bind(body.code.to_uppercase())
+    .fetch_optional(&mut *tx)
+    .await?;
+    // One message for unknown and expired alike, so this cannot probe for live codes.
+    let browser = pending.ok_or_else(|| denied("That code is not valid."))?;
+
+    let id: String = sqlx::query_scalar(
+        "INSERT INTO chat_identities(id,handle_digest,display_name) VALUES($1,$2,$3) \
+         ON CONFLICT(handle_digest) DO UPDATE SET display_name=EXCLUDED.display_name,last_seen=now() \
+         RETURNING id",
+    )
+    .bind(uuid::Uuid::new_v4().simple().to_string())
+    .bind(&digest)
+    .bind(&body.display_name)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    sqlx::query("UPDATE pair_requests SET identity_id=$1,claimed_at=now() WHERE code=$2")
+        .bind(&id)
+        .bind(body.code.to_uppercase())
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        "INSERT INTO chat_sessions(token_hash,identity_id) VALUES($1,$2) \
+         ON CONFLICT(token_hash) DO UPDATE SET identity_id=EXCLUDED.identity_id",
+    )
+    .bind(&browser)
+    .bind(&id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(Json(json!({"ok": true})))
 }

@@ -103,3 +103,58 @@ async fn pair_start_issues_a_code_and_state_reports_pending(pool: PgPool) {
     assert_eq!(state["status"], "pending");
     assert_eq!(state["code"], json!(code));
 }
+
+async fn bridge(pool: &PgPool) -> String {
+    let key = pairing::token();
+    sqlx::query("INSERT INTO relay_accounts(id,username,name,password_hash) VALUES('a1','owner','Owner','x')")
+        .execute(pool).await.unwrap();
+    sqlx::query("INSERT INTO workspaces(id) VALUES('local') ON CONFLICT DO NOTHING")
+        .execute(pool).await.ok();
+    sqlx::query("INSERT INTO hermes_chat_bridge(workspace_id,token_hash,created_by) VALUES('local',$1,'a1')")
+        .bind(pairing::hash(&key)).execute(pool).await.unwrap();
+    key
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_claim_signs_in_the_browser_that_requested_the_code(pool: PgPool) {
+    unsafe { std::env::set_var("REPRO_HANDLE_SALT", "test-salt") };
+    let key = bridge(&pool).await;
+    let app = relay_api::app(pool);
+    let (_, body, set) = send(&app, "POST", "/api/v1/pair/start", None).await;
+    let code = body["code"].as_str().unwrap().to_string();
+    let token = set.unwrap().split(';').next().unwrap().split('=').nth(1).unwrap().to_string();
+
+    let claim = Request::builder()
+        .method("POST")
+        .uri("/api/v1/pair/claim")
+        .header("host", "127.0.0.1:8178")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header("x-relay-chat-key", &key)
+        .body(Body::from(
+            json!({"code":code,"platform":"imessage","handle":"+15550100","display_name":"Ana"}).to_string(),
+        ))
+        .unwrap();
+    let response = app.clone().oneshot(claim).await.unwrap();
+    assert!(response.status().is_success(), "claim succeeds");
+
+    let (_, state, _) = send(&app, "GET", "/api/v1/pair/state", Some(&token)).await;
+    assert_eq!(state["status"], "signed_in");
+    assert_eq!(state["name"], "Ana");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_claim_without_the_bridge_key_is_refused(pool: PgPool) {
+    unsafe { std::env::set_var("REPRO_HANDLE_SALT", "test-salt") };
+    let app = relay_api::app(pool);
+    let (_, body, _) = send(&app, "POST", "/api/v1/pair/start", None).await;
+    let code = body["code"].as_str().unwrap().to_string();
+    let claim = Request::builder()
+        .method("POST")
+        .uri("/api/v1/pair/claim")
+        .header("host", "127.0.0.1:8178")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(json!({"code":code,"platform":"imessage","handle":"h","display_name":"Ana"}).to_string()))
+        .unwrap();
+    let response = app.oneshot(claim).await.unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
