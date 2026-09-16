@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import urllib.error
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location(
@@ -196,6 +197,75 @@ class RecoveryPolicy(unittest.TestCase):
         self.assertEqual(dog.observe(NOW, None, False), "reconnected")
         self.assertEqual((dog.failed, dog.alerted), (0, False))
         self.assertEqual(dog.observe(later(1), None, False), "none")
+
+
+class FakeResponse:
+    def __init__(self, body):
+        self.body = body
+
+    def read(self):
+        return self.body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def answering(body):
+    return lambda request, timeout: FakeResponse(body)
+
+
+def raising(error):
+    def opener(request, timeout):
+        raise error
+    return opener
+
+
+def http_error(code):
+    return urllib.error.HTTPError("https://api.plow.co/v1/chats/cht_owner/messages", code, "error", None, None)
+
+
+def alert_with(opener):
+    return watchdog.send_alert("https://api.plow.co", "tok", "cht_owner", opener=opener)
+
+
+class OwnerAlert(unittest.TestCase):
+    def test_the_request_has_the_shape_the_plugin_sends(self):
+        request = watchdog.build_alert_request("https://api.plow.co/", "tok", "cht_owner", "hello")
+        self.assertEqual(request.full_url, "https://api.plow.co/v1/chats/cht_owner/messages")
+        self.assertEqual(request.get_method(), "POST")
+        self.assertEqual(request.get_header("Authorization"), "Bearer tok")
+        self.assertEqual(json.loads(request.data), {"body": "hello"})
+
+    def test_sent_only_when_plow_returns_the_message_uid(self):
+        self.assertEqual(alert_with(answering(b'{"uid": "msg_1"}')), "sent")
+
+    def test_an_accepted_answer_without_a_uid_is_unknown(self):
+        for body in (b"{}", b"not json", b""):
+            with self.subTest(body=body):
+                self.assertEqual(alert_with(answering(body)), "unknown")
+
+    def test_statuses_the_plugin_reads_as_maybe_delivered_are_unknown(self):
+        for code in (408, 424, 500, 503):
+            with self.subTest(code=code):
+                self.assertEqual(alert_with(raising(http_error(code))), "unknown")
+
+    def test_other_client_errors_are_failed(self):
+        for code in (400, 401, 403, 404):
+            with self.subTest(code=code):
+                self.assertEqual(alert_with(raising(http_error(code))), "failed")
+
+    def test_a_refused_connection_is_failed_and_a_lost_answer_is_unknown(self):
+        self.assertEqual(alert_with(raising(urllib.error.URLError(ConnectionRefusedError()))), "failed")
+        self.assertEqual(alert_with(raising(urllib.error.URLError(TimeoutError()))), "unknown")
+        self.assertEqual(alert_with(raising(TimeoutError())), "unknown")
+        self.assertEqual(alert_with(raising(ConnectionResetError())), "unknown")
+
+    def test_the_alert_text_has_no_hyphens_or_dashes(self):
+        dashes = {"-", "‐", "‑", "‒", "–", "—", "―", "−"}
+        self.assertFalse(dashes & set(watchdog.ALERT_TEXT))
 
 
 if __name__ == "__main__":

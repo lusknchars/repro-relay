@@ -8,7 +8,10 @@ for six minutes means the retry loop itself has stopped. This reads that file
 from outside the process; nothing upstream is modified.
 """
 import datetime as dt
+import http.client
 import json
+import urllib.error
+import urllib.request
 
 STATE_PATH = "/var/lib/hermes/gateway_state.json"
 PROC = "/proc"
@@ -172,3 +175,52 @@ class Watchdog:
         self.pending_since = None
         self.failed = 0
         self.alerted = False
+
+
+API_BASE = "https://api.plow.co"
+ALERT_TEXT = (
+    "I stopped receiving messages and could not reconnect after three tries, so "
+    "anything you send me now will not reach me. Restarting the agent may fix it."
+)
+
+
+def delivery_unknown(status):
+    """Plow may have accepted a message answered this way, so it is never resent.
+
+    The reading the plugin's own _message_delivery_unknown gives these statuses.
+    """
+    return status >= 500 or status in (408, 424)
+
+
+def build_alert_request(base, token, chat_uid, text=ALERT_TEXT):
+    return urllib.request.Request(
+        f"{base.rstrip('/')}/v1/chats/{chat_uid}/messages",
+        data=json.dumps({"body": text}).encode("utf-8"),
+        method="POST",
+        headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"},
+    )
+
+
+def send_alert(base, token, chat_uid, opener=urllib.request.urlopen, text=ALERT_TEXT):
+    """sent, failed or unknown. Called once per failure episode and never retried.
+
+    Unknown means Plow may have the message, so sending again risks a double
+    send. The plugin sends over REST and only receives over the websocket, so
+    this path can stay open while the transport is deaf.
+    """
+    request = build_alert_request(base, token, chat_uid, text)
+    try:
+        with opener(request, timeout=20) as response:
+            raw = response.read()
+    except urllib.error.HTTPError as error:
+        return "unknown" if delivery_unknown(error.code) else "failed"
+    except urllib.error.URLError as error:
+        return "unknown" if isinstance(error.reason, TimeoutError) else "failed"
+    except (OSError, http.client.HTTPException):
+        return "unknown"
+    try:
+        payload = json.loads(raw or b"{}")
+    except ValueError:
+        return "unknown"
+    uid = payload.get("uid") if isinstance(payload, dict) else None
+    return "sent" if isinstance(uid, str) and uid else "unknown"
