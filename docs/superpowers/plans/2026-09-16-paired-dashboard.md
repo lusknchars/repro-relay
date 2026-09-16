@@ -1108,12 +1108,20 @@ git commit -m "Show the owner every paired conversation"
 ### Task 9: The pairing screen
 
 **Files:**
-- Create: `web/reptest/src/components/pairing.tsx`
+- Create: `web/reptest/src/pages/Pairing.tsx`
+- Modify: `web/reptest/src/App.tsx` (route whitelist near line 45, and a render line among those at 102-127)
 - Test: `web/reptest-tests/pairing.spec.ts`
 
 **Interfaces:**
 - Consumes: `api`, `useLoad` from `@/lib/live`.
-- Produces: `<Pairing />`, rendering the code when pending and the history when signed in.
+- Produces: `<PairingPage />`, rendering the code when pending and the history when
+  signed in, reachable at `/?view=pairing`.
+
+This is a page under `@/pages`, not a bare component, because `App.tsx` derives
+its `route` from `?view=` and renders pages by name. A component nowhere
+registered would never mount, and the spec below navigates to `/?view=pairing`,
+so it could not pass. Every other route in this application follows the same
+page pattern.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1141,7 +1149,7 @@ Expected: FAIL — the code text is never visible.
 
 - [ ] **Step 3: Implement**
 
-Create `web/reptest/src/components/pairing.tsx`:
+Create `web/reptest/src/pages/Pairing.tsx`:
 
 ```tsx
 import { api, useLoad } from "@/lib/live";
@@ -1153,7 +1161,7 @@ type History = {
   artifacts: { kind: string; title: string; body: string; created_at: string }[];
 };
 
-export function Pairing() {
+export function PairingPage() {
   const state = useLoad(() => api<State>("/pair/state"), [], 3000);
   const signedIn = state.data?.status === "signed_in";
   const history = useLoad(
