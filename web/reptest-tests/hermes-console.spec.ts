@@ -53,9 +53,22 @@ async function workspace(page: Page, role: string, state: State) {
  *  on owner-only UI while the page still showed "Loading account". Unmatched API paths are
  *  reported here because a missing mock shows up as a hang rather than a clear failure. */
 async function teamPageReady(page: Page, state: State) {
-  await expect(page.getByRole('heading', {name: 'Team', exact: true}))
-    .toBeVisible({timeout: 30_000});
-  if (state.unmatched?.size) console.warn('unmocked API paths:', [...state.unmatched].join(', '));
+  try {
+    await expect(page.getByRole('heading', {name: 'Team', exact: true}))
+      .toBeVisible({timeout: 30_000});
+  } catch (failure) {
+    // Report what the page actually held. A summary printed after the assertion never runs,
+    // which is why earlier failures on other platforms said nothing useful.
+    const headings = await page.locator('h1, h2').allTextContents().catch(() => []);
+    const loading = await page.getByText('Loading', {exact: false}).count().catch(() => -1);
+    const body = await page.locator('body').innerText().catch(() => '');
+    console.warn('[console-spec] unmocked API paths:',
+      state.unmatched?.size ? [...state.unmatched].join(', ') : 'none');
+    console.warn('[console-spec] headings:', headings.join(' | ') || 'none');
+    console.warn('[console-spec] loading indicators:', loading);
+    console.warn('[console-spec] body text:', body.replace(/\s+/g, ' ').slice(0, 400) || 'empty');
+    throw failure;
+  }
 }
 
 test('owner runs a console prompt and sees tool calls, usage and stop', async ({page}) => {
