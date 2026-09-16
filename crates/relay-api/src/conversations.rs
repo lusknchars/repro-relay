@@ -5,7 +5,7 @@ use axum::{
     Extension, Json, Router,
     extract::State,
     http::{HeaderMap, StatusCode},
-    routing::post,
+    routing::{get, post},
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -26,6 +26,7 @@ pub fn routes() -> Router<PgPool> {
     Router::new()
         .route("/conversations/messages", post(record))
         .route("/conversations/artifacts", post(artifact))
+        .route("/conversations/me", get(mine).delete(forget))
 }
 
 async fn record(
@@ -129,5 +130,56 @@ async fn artifact(
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
+    Ok(Json(json!({"ok": true})))
+}
+
+async fn purge(pool: &PgPool) -> ApiResult<()> {
+    sqlx::query("DELETE FROM chat_messages WHERE created_at < now()-interval '90 days'")
+        .execute(pool)
+        .await?;
+    sqlx::query("DELETE FROM agent_artifacts WHERE created_at < now()-interval '90 days'")
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+async fn mine(
+    State(pool): State<PgPool>,
+    Extension(c): Extension<Hosting>,
+    h: HeaderMap,
+) -> ApiResult<Json<Value>> {
+    let who = pairing::texter(&pool, &h, &c).await?;
+    purge(&pool).await?;
+    let messages: Vec<Value> = sqlx::query_scalar(
+        "SELECT jsonb_build_object('direction',direction,'body',body,'created_at',created_at) \
+         FROM chat_messages WHERE identity_id=$1 ORDER BY created_at DESC LIMIT 100",
+    )
+    .bind(&who.id)
+    .fetch_all(&pool)
+    .await?;
+    let artifacts: Vec<Value> = sqlx::query_scalar(
+        "SELECT jsonb_build_object('kind',kind,'title',title,'source_url',source_url,'body',body,'created_at',created_at) \
+         FROM agent_artifacts WHERE identity_id=$1 ORDER BY created_at DESC LIMIT 100",
+    )
+    .bind(&who.id)
+    .fetch_all(&pool)
+    .await?;
+    Ok(Json(json!({"name": who.name, "messages": messages, "artifacts": artifacts})))
+}
+
+async fn forget(
+    State(pool): State<PgPool>,
+    Extension(c): Extension<Hosting>,
+    h: HeaderMap,
+) -> ApiResult<Json<Value>> {
+    let who = pairing::texter(&pool, &h, &c).await?;
+    sqlx::query("DELETE FROM chat_messages WHERE identity_id=$1")
+        .bind(&who.id)
+        .execute(&pool)
+        .await?;
+    sqlx::query("DELETE FROM agent_artifacts WHERE identity_id=$1")
+        .bind(&who.id)
+        .execute(&pool)
+        .await?;
     Ok(Json(json!({"ok": true})))
 }

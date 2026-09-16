@@ -97,3 +97,33 @@ async fn an_artifact_records_produced_work(pool: PgPool) {
         .fetch_one(&pool).await.unwrap();
     assert_eq!(kind, "digest");
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_texter_reads_only_their_own_history(pool: PgPool) {
+    for (id, d, n) in [("i1", "d1", "Ana"), ("i2", "d2", "Bruno")] {
+        sqlx::query("INSERT INTO chat_identities(id,handle_digest,display_name) VALUES($1,$2,$3)")
+            .bind(id).bind(d).bind(n).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO chat_messages(id,identity_id,direction,body,platform,platform_message_id) VALUES($1,$2,'in',$3,'imessage',$1)")
+            .bind(format!("m-{id}")).bind(id).bind(format!("hello from {n}"))
+            .execute(&pool).await.unwrap();
+    }
+    let token = relay_api::pairing::token();
+    sqlx::query("INSERT INTO chat_sessions(token_hash,identity_id) VALUES($1,'i1')")
+        .bind(relay_api::pairing::hash(&token)).execute(&pool).await.unwrap();
+    let app = relay_api::app(pool.clone());
+
+    let (status, body, _) = send(&app, "GET", "/api/v1/conversations/me", Some(&token)).await;
+    assert!(status.is_success(), "{status} {body}");
+    let messages = body["messages"].as_array().unwrap();
+    assert_eq!(messages.len(), 1, "only Ana's message");
+    assert_eq!(messages[0]["body"], "hello from Ana");
+
+    let (status, _, _) = send(&app, "DELETE", "/api/v1/conversations/me", Some(&token)).await;
+    assert!(status.is_success());
+    let left: i64 = sqlx::query_scalar("SELECT count(*) FROM chat_messages WHERE identity_id='i1'")
+        .fetch_one(&pool).await.unwrap();
+    assert_eq!(left, 0, "deletion is real deletion");
+    let others: i64 = sqlx::query_scalar("SELECT count(*) FROM chat_messages WHERE identity_id='i2'")
+        .fetch_one(&pool).await.unwrap();
+    assert_eq!(others, 1, "another texter is untouched");
+}
