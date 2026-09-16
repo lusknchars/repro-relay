@@ -43,7 +43,8 @@
 | `crates/relay-api/src/accounts.rs` | Widen three cookie helpers to `pub(crate)` |
 | `crates/relay-api/src/chat.rs` | Widen `agent` to `pub(crate)` for reuse |
 | `crates/relay-api/src/lib.rs` | Declare and merge the two new modules |
-| `web/reptest/src/components/pairing.tsx` | Pair screen and history view |
+| `web/reptest/src/pages/Pairing.tsx` | Pair screen and history view |
+| `web/reptest/src/App.tsx` | Register the pairing route so `/?view=pairing` renders |
 | `agent/skills/relay-pair/SKILL.md` | Tells the agent to claim codes and record messages |
 
 Pairing and conversations are separate modules because they have different callers: `/pair/*` is driven by a browser and the agent's claim, while `/conversations/*` is driven by the agent writing and a texter reading. Splitting them keeps each file small enough to hold in context.
