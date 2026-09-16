@@ -93,8 +93,10 @@ impl Connector {
             .timeout(Duration::from_secs(25))
             .build()
             .map_err(|_| provider("Exa client unavailable."))?;
-        let mut request=json!({"query":query,"type":"auto","numResults":5,"contents":{"text":{"maxCharacters":1500}}});
-        if source_filter=="reddit" { request["includeDomains"]=json!(["reddit.com"]); }
+        let mut request = json!({"query":query,"type":"auto","numResults":5,"contents":{"text":{"maxCharacters":1500}}});
+        if source_filter == "reddit" {
+            request["includeDomains"] = json!(["reddit.com"]);
+        }
         let mut response=client.post(endpoint).header("x-api-key",&key.token).json(&request).send().await.map_err(|_|provider("Exa response unavailable. The search may have been charged; inspect history before starting another search."))?;
         if !response.status().is_success() {
             return Err(provider(match response.status().as_u16() {
@@ -121,9 +123,14 @@ impl Connector {
             &serde_json::from_slice(&bytes)
                 .map_err(|_| provider("Exa returned invalid data; billing is unknown."))?,
         )?;
-        if source_filter=="reddit" {
+        if source_filter == "reddit" {
             result["sources"].as_array_mut().unwrap().retain(|s| {
-                url::Url::parse(s["url"].as_str().unwrap_or("")).ok().is_some_and(|u| u.host_str().is_some_and(|h| h=="reddit.com" || h.ends_with(".reddit.com")))
+                url::Url::parse(s["url"].as_str().unwrap_or(""))
+                    .ok()
+                    .is_some_and(|u| {
+                        u.host_str()
+                            .is_some_and(|h| h == "reddit.com" || h.ends_with(".reddit.com"))
+                    })
             });
         }
         Ok(result)
@@ -257,12 +264,29 @@ struct Search {
     #[serde(default = "web_filter")]
     source_filter: String,
 }
-fn web_filter() -> String { "web".into() }
+fn web_filter() -> String {
+    "web".into()
+}
 async fn competitor_search(
-    State(p): State<PgPool>, Extension(w): Extension<Workspace>, Extension(h): Extension<Hosting>, Extension(c): Extension<Connector>, headers: HeaderMap, Json(input): Json<Search>,
+    State(p): State<PgPool>,
+    Extension(w): Extension<Workspace>,
+    Extension(h): Extension<Hosting>,
+    Extension(c): Extension<Connector>,
+    headers: HeaderMap,
+    Json(input): Json<Search>,
 ) -> ApiResult<Json<Value>> {
-    if input.competitor_id.is_none() {return Err(ApiError::invalid("Select a competitor before researching."));}
-    search(State(p),Extension(w),Extension(h),Extension(c),headers,Json(input)).await
+    if input.competitor_id.is_none() {
+        return Err(ApiError::invalid("Select a competitor before researching."));
+    }
+    search(
+        State(p),
+        Extension(w),
+        Extension(h),
+        Extension(c),
+        headers,
+        Json(input),
+    )
+    .await
 }
 async fn history(
     State(p): State<PgPool>,
@@ -284,10 +308,16 @@ async fn search(
 ) -> ApiResult<Json<Value>> {
     local(&p, &w, &h, &headers, true).await?;
     domain::text(&input.query, "Search query", 3, 500)?;
-    if !["web","reddit"].contains(&input.source_filter.as_str()) {return Err(ApiError::invalid("Choose web or Reddit search."));}
-    if let Some(id)=input.competitor_id {
+    if !["web", "reddit"].contains(&input.source_filter.as_str()) {
+        return Err(ApiError::invalid("Choose web or Reddit search."));
+    }
+    if let Some(id) = input.competitor_id {
         let active: bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM competitors WHERE workspace_id=$1 AND id=$2 AND archived_at IS NULL)").bind(&w.id).bind(id).fetch_one(&p).await?;
-        if !active {return Err(ApiError::invalid("Select an active competitor in this workspace."));}
+        if !active {
+            return Err(ApiError::invalid(
+                "Select an active competitor in this workspace.",
+            ));
+        }
     }
     let _guard = c
         .gate
@@ -299,7 +329,10 @@ async fn search(
     let inserted=sqlx::query("INSERT INTO exa_searches(workspace_id,id,query,status,competitor_id,source_filter) VALUES($1,$2,$3,'pending',$4,$5) ON CONFLICT DO NOTHING").bind(&w.id).bind(input.id).bind(&input.query).bind(input.competitor_id).bind(&input.source_filter).execute(&p).await?.rows_affected();
     if inserted == 0 {
         let (query,status,payload,error,competitor_id,source_filter):(String,String,Option<Value>,Option<String>,Option<uuid::Uuid>,String)=sqlx::query_as("SELECT query,status,payload,error,competitor_id,source_filter FROM exa_searches WHERE workspace_id=$1 AND id=$2").bind(&w.id).bind(input.id).fetch_one(&p).await?;
-        if query != input.query || competitor_id != input.competitor_id || source_filter != input.source_filter {
+        if query != input.query
+            || competitor_id != input.competitor_id
+            || source_filter != input.source_filter
+        {
             return Err(ApiError::conflict(
                 "Search identity belongs to a different query.",
             ));
