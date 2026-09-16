@@ -15,6 +15,8 @@ import urllib.request
 ROOT = Path(__file__).resolve().parent
 AGENT_ID = 'repro-relay'
 REPO = 'https://github.com/lusknchars/repro-relay'
+# The listing embeds YouTube, so the client takes a bare video ID and rejects a URL.
+VIDEO = 'Q_BjDQ6bw68'
 
 
 def credentials(path):
@@ -92,7 +94,8 @@ def main(argv=None):
             env.update(credentials(args.credentials))
             command += ['--register', '--agent', AGENT_ID, '--name', 'Repro Relay',
                         '--blurb', 'Turns meeting notes and todos into saved team action items with owners, deadlines and source quotes.',
-                        '--repo', REPO, '--runtime', 'Hermes', '--install-url', REPO + '/tree/main/agent']
+                        '--repo', REPO, '--runtime', 'Hermes', '--install-url', REPO + '/tree/main/agent',
+                        '--video', VIDEO]
         elif args.action == 'status':
             command += ['status']
         else:
