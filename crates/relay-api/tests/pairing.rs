@@ -158,3 +158,42 @@ async fn a_claim_without_the_bridge_key_is_refused(pool: PgPool) {
     let response = app.oneshot(claim).await.unwrap();
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn shifting_a_character_across_the_platform_handle_boundary_does_not_collide(pool: PgPool) {
+    unsafe { std::env::set_var("REPRO_HANDLE_SALT", "test-salt") };
+    let key = bridge(&pool).await;
+    let app = relay_api::app(pool.clone());
+
+    let (_, body_a, _) = send(&app, "POST", "/api/v1/pair/start", None).await;
+    let code_a = body_a["code"].as_str().unwrap().to_string();
+    let (_, body_b, _) = send(&app, "POST", "/api/v1/pair/start", None).await;
+    let code_b = body_b["code"].as_str().unwrap().to_string();
+
+    for (code, platform, handle) in [
+        (code_a, "imessage", "+15550100"),
+        (code_b, "imessage+", "15550100"),
+    ] {
+        let claim = Request::builder()
+            .method("POST")
+            .uri("/api/v1/pair/claim")
+            .header("host", "127.0.0.1:8178")
+            .header(header::CONTENT_TYPE, "application/json")
+            .header("x-relay-chat-key", &key)
+            .body(Body::from(
+                json!({"code":code,"platform":platform,"handle":handle,"display_name":"Ana"}).to_string(),
+            ))
+            .unwrap();
+        let response = app.clone().oneshot(claim).await.unwrap();
+        assert!(response.status().is_success(), "claim succeeds for {platform:?}/{handle:?}");
+    }
+
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM chat_identities")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        count, 2,
+        "a shifted platform/handle boundary must not collide onto one identity"
+    );
+}

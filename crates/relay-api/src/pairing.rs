@@ -142,11 +142,16 @@ struct Claim {
     display_name: String,
 }
 
-fn salt() -> ApiResult<String> {
-    std::env::var("REPRO_HANDLE_SALT").map_err(|_| ApiError {
+/// The single source of a texter's identity key. Each field is hashed
+/// before combining, so the fixed width inner digests make field
+/// boundaries unambiguous. A plain delimiter cannot guarantee that, since
+/// a handle may contain the delimiter.
+pub(crate) fn handle_key(platform: &str, handle: &str) -> ApiResult<String> {
+    let salt = std::env::var("REPRO_HANDLE_SALT").map_err(|_| ApiError {
         status: StatusCode::SERVICE_UNAVAILABLE,
         message: "Set REPRO_HANDLE_SALT before pairing.".into(),
-    })
+    })?;
+    Ok(hash(&format!("{}{}{}", hash(&salt), hash(platform), hash(handle))))
 }
 
 async fn claim(
@@ -157,9 +162,11 @@ async fn claim(
 ) -> ApiResult<Json<Value>> {
     available(&c)?;
     crate::hosting::rate_limit(&pool, "pair-claim", 60).await?;
-    let digest = hash(&format!("{}{}{}", salt()?, body.platform, body.handle));
     let mut tx = pool.begin().await?;
+    // Authenticate before resolving configuration, so an unauthenticated
+    // caller never learns whether REPRO_HANDLE_SALT is set.
     crate::chat::agent(&mut tx, &h).await?;
+    let digest = handle_key(&body.platform, &body.handle)?;
 
     let pending: Option<String> = sqlx::query_scalar(
         "SELECT browser_hash FROM pair_requests \
