@@ -661,7 +661,7 @@ Create `crates/relay-api/tests/conversations.rs` with the same `send` and `bridg
 async fn a_replayed_message_is_stored_once(pool: PgPool) {
     let key = bridge(&pool).await;
     sqlx::query("INSERT INTO chat_identities(id,handle_digest,display_name) VALUES('i1',$1,'Ana')")
-        .bind(relay_api::pairing::hash(&format!("test-salt{}{}", "imessage", "+15550100")))
+        .bind(relay_api::pairing::handle_key("imessage", "+15550100").unwrap())
         .execute(&pool).await.unwrap();
     let app = relay_api::app(pool.clone());
 
@@ -807,7 +807,7 @@ async fn an_artifact_records_produced_work(pool: PgPool) {
     unsafe { std::env::set_var("REPRO_HANDLE_SALT", "test-salt") };
     let key = bridge(&pool).await;
     sqlx::query("INSERT INTO chat_identities(id,handle_digest,display_name) VALUES('i1',$1,'Ana')")
-        .bind(relay_api::pairing::hash("test-saltimessage+15550100"))
+        .bind(relay_api::pairing::handle_key("imessage", "+15550100").unwrap())
         .execute(&pool).await.unwrap();
     let app = relay_api::app(pool.clone());
     let req = Request::builder()
