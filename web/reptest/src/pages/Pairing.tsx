@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui";
 import { api, useLoad } from "@/lib/live";
 
 type State = { status: string; code?: string; name?: string };
@@ -20,6 +21,15 @@ export function PairingPage() {
   }
   return (
     <section className="grid gap-4 p-4" aria-label="Pairing">
+      {state.error && (
+        <div role="alert" className="rounded-lg border border-border p-4 text-sm">
+          <p>{state.error}</p>
+          <Button className="mt-2" onClick={state.refresh}>Retry</Button>
+        </div>
+      )}
+      {state.loading && !state.data && (
+        <p role="status" className="text-sm text-muted">Checking pairing status…</p>
+      )}
       {state.data?.status === "pending" && (
         <p className="text-lg font-semibold">{state.data.code}</p>
       )}
@@ -27,11 +37,22 @@ export function PairingPage() {
         <button onClick={start}>Get a code</button>
       )}
       {signedIn && (
-        <ul className="grid gap-2">
-          {history.data?.messages?.map((m) => (
-            <li key={m.created_at + m.body}>{m.body}</li>
-          ))}
-        </ul>
+        <>
+          {history.error && (
+            <div role="alert" className="rounded-lg border border-border p-4 text-sm">
+              <p>{history.error}</p>
+              <Button className="mt-2" onClick={history.refresh}>Retry</Button>
+            </div>
+          )}
+          {history.loading && !history.data && (
+            <p role="status" className="text-sm text-muted">Loading conversation…</p>
+          )}
+          <ul className="grid gap-2">
+            {history.data?.messages?.map((m) => (
+              <li key={m.created_at + m.body}>{m.body}</li>
+            ))}
+          </ul>
+        </>
       )}
     </section>
   );
