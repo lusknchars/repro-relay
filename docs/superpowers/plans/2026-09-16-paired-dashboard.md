@@ -497,6 +497,7 @@ async fn bridge(pool: &PgPool) -> String {
 
 #[sqlx::test(migrations = "./migrations")]
 async fn a_claim_signs_in_the_browser_that_requested_the_code(pool: PgPool) {
+    unsafe { std::env::set_var("REPRO_HANDLE_SALT", "test-salt") };
     let key = bridge(&pool).await;
     let app = relay_api::app(pool);
     let (_, body, set) = send(&app, "POST", "/api/v1/pair/start", None).await;
@@ -522,6 +523,7 @@ async fn a_claim_signs_in_the_browser_that_requested_the_code(pool: PgPool) {
 
 #[sqlx::test(migrations = "./migrations")]
 async fn a_claim_without_the_bridge_key_is_refused(pool: PgPool) {
+    unsafe { std::env::set_var("REPRO_HANDLE_SALT", "test-salt") };
     let app = relay_api::app(pool);
     let (_, body, _) = send(&app, "POST", "/api/v1/pair/start", None).await;
     let code = body["code"].as_str().unwrap().to_string();
