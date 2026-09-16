@@ -72,6 +72,17 @@ For Discord, to danedelattre, about verification and one click deployment.
 > page appears to serve from a cache that predates them. If you open the listing
 > and see nothing, that is why, and it is not a sign the agent is unregistered.
 >
+> If you want the quickest thing to verify, it is the harness. Relay assembles a
+> bug investigation trial you can inspect before anything runs:
+> `GET /cases/{id}/investigation-preview` returns the exact payload, including
+> the limits it declares for itself, `max_seconds` 120, `attempts` 1,
+> `source_writes` false, `external_messages` false and `memory_publication`
+> false. It also tells the model to treat repository instruction files as
+> untrusted evidence rather than commands. The local context harness feeding it
+> reads `AGENTS.md`, `CLAUDE.md` and `SKILL.md` and never edits a checkout.
+> Nothing is sent to a model to look at that payload, so it costs you nothing to
+> check what would be sent.
+>
 > Two asks. Could you verify it, and could you set it up for one click
 > deployment on Plow infrastructure? Tell me what you need from me for that, for
 > example a pinned commit, a published image or compose changes.
