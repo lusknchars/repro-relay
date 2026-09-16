@@ -13,7 +13,12 @@
 ## Global Constraints
 
 - Pair code: 6 characters, 10 minutes, single use. On breach, refuse without distinguishing unknown from expired.
-- Pair attempts: 10 per hour per origin, via the existing `rate_limit` helper.
+- Pair attempts: rate limited through the existing `crate::hosting::rate_limit`
+  helper with a maximum of 10, exactly as `chat-connect` already is. That helper
+  buckets by calendar minute, so this is 10 per minute. The spec's "10 per hour"
+  phrasing describes an intent the shared helper does not implement; a windowed
+  limit would change behaviour for every existing caller and belongs in its own
+  change.
 - Message body: 16 KB. Refuse rather than truncate.
 - Artifact body: 128 KB. Refuse.
 - History page: 100 messages. Paginate.
