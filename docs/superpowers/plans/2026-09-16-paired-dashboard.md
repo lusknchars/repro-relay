@@ -1194,6 +1194,20 @@ export function PairingPage() {
 
 Guard every `.map` with `?.` as shown. The Team page white-screened once because `data` was guarded and its array was not.
 
+Then register it in `web/reptest/src/App.tsx`, in both places a route needs. Add the import alongside the other page imports:
+
+```tsx
+import { PairingPage } from "@/pages/Pairing";
+```
+
+Add `"pairing"` to the route whitelist array near line 45, and add this line among the renders at lines 102 to 127:
+
+```tsx
+{route === "pairing" && <PairingPage />}
+```
+
+Without both registrations, `/?view=pairing` renders nothing and the Step 1 spec cannot pass, because `App.tsx` derives `route` from the `view` parameter and renders pages by name.
+
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: the same command as Step 2.
@@ -1202,7 +1216,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add web/reptest/src/components/pairing.tsx web/reptest-tests/pairing.spec.ts
+git add web/reptest/src/pages/Pairing.tsx web/reptest/src/App.tsx web/reptest-tests/pairing.spec.ts
 git commit -m "Show the pairing code and the paired history"
 ```
 
