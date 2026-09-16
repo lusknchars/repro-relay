@@ -19,4 +19,4 @@ RUN set -eu; \
     find /opt/hermes/skills/relay-reach -type d -exec chmod 0755 {} +; \
     find /opt/hermes/skills/relay-reach -type f -exec chmod 0644 {} +
 COPY image/s6-overlay/ /etc/s6-overlay/
-RUN chmod 0755 /etc/s6-overlay/s6-rc.d/agent-index/run
+RUN chmod 0755 /etc/s6-overlay/s6-rc.d/agent-index/run /etc/s6-overlay/s6-rc.d/transport-watchdog/run

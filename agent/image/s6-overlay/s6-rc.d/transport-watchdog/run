@@ -1,0 +1,15 @@
+#!/bin/sh
+# Watch the transport, restart the gateway when it has gone silently deaf, and
+# text the owner only when that does not bring it back.
+#
+# The gateway process can stay alive while its transport stops receiving, and
+# nothing else in this image looks at the transport. Root, unlike the gateway:
+# restarting a service needs s6's control files under /run/service, and the
+# credential under /run/s6/container_environment is readable by root alone.
+
+# Absolute, for the same reason agent-index's is: a service inherits the
+# supervision tree's PATH, not a login shell's.
+PATH=/command:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
+export PATH
+
+exec /opt/hermes/.venv/bin/python3 /etc/s6-overlay/scripts/transport_watchdog.py

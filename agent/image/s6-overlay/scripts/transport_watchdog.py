@@ -10,6 +10,10 @@ from outside the process; nothing upstream is modified.
 import datetime as dt
 import http.client
 import json
+import os
+import subprocess
+import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -224,3 +228,75 @@ def send_alert(base, token, chat_uid, opener=urllib.request.urlopen, text=ALERT_
         return "unknown"
     uid = payload.get("uid") if isinstance(payload, dict) else None
     return "sent" if isinstance(uid, str) and uid else "unknown"
+
+
+GATEWAY_SERVICE = "/run/service/hermes-gateway"
+ENV_DIR = "/run/s6/container_environment"
+CHECK_SECONDS = 60
+
+
+def read_env(name, env_dir=ENV_DIR):
+    """One value plow-init published for the container, or an empty string."""
+    try:
+        with open(os.path.join(env_dir, name), encoding="utf-8") as handle:
+            return handle.read().strip()
+    except OSError:
+        return ""
+
+
+def log(message):
+    print(f"transport-watchdog: {message}", file=sys.stderr, flush=True)
+
+
+def restart_gateway(run=subprocess.run):
+    """Ask s6 to restart the gateway. A service held down with s6-svc -d stays down."""
+    try:
+        return run(["/command/s6-svc", "-r", GATEWAY_SERVICE], check=False).returncode == 0
+    except OSError:
+        return False
+
+
+def make_alert(base, token, chat_uid, send=send_alert):
+    """The alert to send when recovery fails. Only its outcome ever reaches the log."""
+    if not chat_uid:
+        return lambda: "not sent, no owner chat is configured"
+    return lambda: send(base, token, chat_uid)
+
+
+def once(dog, now, doc, restart, alert, log=log, start_time_of=process_start_time):
+    """Apply one observation, log what it led to, and return the action."""
+    silent_since, unseen = assess(doc, start_time_of)
+    action = dog.observe(now, silent_since, unseen)
+    if action == "restart":
+        log(f"transport not healthy since {dog.since:%H:%M} UTC, restarting the gateway")
+        if not restart():
+            log("s6 did not accept the restart")
+    elif action == "recovered":
+        log("transport reconnected after the restart")
+    elif action == "recovery_failed":
+        log(f"the restart did not reconnect the transport, {dog.failed} of {MAX_FAILED_RECOVERIES}")
+    elif action == "alert":
+        log(f"recovery failed {MAX_FAILED_RECOVERIES} times, owner alert {alert()}")
+    elif action == "reconnected":
+        log("transport connected again")
+    return action
+
+
+def main():
+    token = read_env("PLOW_AGENT_TOKEN")
+    if not token:
+        log("no PLOW_AGENT_TOKEN in this container, so there is no transport to watch; standing down")
+        time.sleep(86400)
+        return
+    alert = make_alert(read_env("PLOW_API_BASE") or API_BASE, token, read_env("PLOW_HOME_CHANNEL"))
+    dog = Watchdog()
+    while True:
+        try:
+            once(dog, dt.datetime.now(dt.timezone.utc), load_state(), restart_gateway, alert)
+        except Exception as error:  # a longrun that crashes is respawned in a tight loop
+            log(f"check failed with {type(error).__name__}")
+        time.sleep(CHECK_SECONDS)
+
+
+if __name__ == "__main__":
+    main()

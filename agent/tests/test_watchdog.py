@@ -1,6 +1,7 @@
 import datetime as dt
 import importlib.util
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -266,6 +267,91 @@ class OwnerAlert(unittest.TestCase):
     def test_the_alert_text_has_no_hyphens_or_dashes(self):
         dashes = {"-", "‐", "‑", "‒", "–", "—", "―", "−"}
         self.assertFalse(dashes & set(watchdog.ALERT_TEXT))
+
+
+def stalled():
+    return gateway(chat=entry("disconnected", minutes_ago(6)))
+
+
+class ServiceWiring(unittest.TestCase):
+    SERVICE = ROOT / "image/s6-overlay/s6-rc.d/transport-watchdog"
+
+    def test_is_a_longrun_after_plow_init_in_the_user_bundle(self):
+        self.assertEqual((self.SERVICE / "type").read_text().strip(), "longrun")
+        self.assertTrue((self.SERVICE / "dependencies.d/plow-init").is_file())
+        self.assertTrue((ROOT / "image/s6-overlay/s6-rc.d/user/contents.d/transport-watchdog").is_file())
+
+    def test_the_run_script_is_executable_and_starts_the_module(self):
+        run = self.SERVICE / "run"
+        self.assertTrue(os.access(run, os.X_OK))
+        text = run.read_text()
+        self.assertTrue(text.startswith("#!/bin/sh\n"))
+        self.assertIn("exec /opt/hermes/.venv/bin/python3 /etc/s6-overlay/scripts/transport_watchdog.py", text)
+
+    def test_the_image_makes_the_run_script_executable(self):
+        chmods = [line for line in (ROOT / "Dockerfile").read_text().splitlines()
+                  if line.startswith("RUN chmod 0755 ")]
+        self.assertTrue(any("/etc/s6-overlay/s6-rc.d/transport-watchdog/run" in line for line in chmods))
+
+
+class Loop(unittest.TestCase):
+    def test_restart_asks_s6_for_the_gateway_service_only(self):
+        calls = []
+
+        class Done:
+            returncode = 0
+
+        def run(args, check):
+            calls.append(args)
+            return Done()
+
+        self.assertTrue(watchdog.restart_gateway(run=run))
+        self.assertEqual(calls, [["/command/s6-svc", "-r", "/run/service/hermes-gateway"]])
+
+    def test_a_missing_s6_is_reported_rather_than_crashing(self):
+        def run(args, check):
+            raise FileNotFoundError(args[0])
+
+        self.assertFalse(watchdog.restart_gateway(run=run))
+
+    def test_a_stalled_transport_is_restarted_and_logged(self):
+        restarts, lines = [], []
+        action = watchdog.once(watchdog.Watchdog(), NOW, stalled(),
+                               restart=lambda: restarts.append(1) or True, alert=lambda: "sent",
+                               log=lines.append, start_time_of=running)
+        self.assertEqual((action, len(restarts), len(lines)), ("restart", 1, 1))
+
+    def test_a_restart_s6_refuses_is_logged(self):
+        lines = []
+        watchdog.once(watchdog.Watchdog(), NOW, stalled(), restart=lambda: False,
+                      alert=lambda: "sent", log=lines.append, start_time_of=running)
+        self.assertEqual(len(lines), 2)
+
+    def test_a_missing_file_is_waited_on_rather_than_acted_on(self):
+        restarts, lines = [], []
+        action = watchdog.once(watchdog.Watchdog(), NOW, None,
+                               restart=lambda: restarts.append(1) or True, alert=lambda: "sent",
+                               log=lines.append, start_time_of=running)
+        self.assertEqual((action, restarts, lines), ("none", [], []))
+
+    def test_the_alert_logs_its_outcome_and_never_the_token(self):
+        sent, lines = [], []
+        dog = watchdog.Watchdog()
+        dog.failed = watchdog.MAX_FAILED_RECOVERIES
+        alert = watchdog.make_alert("https://api.plow.co", "tok_secret", "cht_owner",
+                                    send=lambda base, token, chat: sent.append((base, token, chat)) or "sent")
+        action = watchdog.once(dog, NOW, stalled(), restart=lambda: True, alert=alert,
+                               log=lines.append, start_time_of=running)
+        self.assertEqual(action, "alert")
+        self.assertEqual(sent, [("https://api.plow.co", "tok_secret", "cht_owner")])
+        self.assertIn("owner alert sent", lines[-1])
+        self.assertNotIn("tok_secret", "\n".join(lines))
+
+    def test_without_an_owner_chat_no_alert_is_attempted(self):
+        called = []
+        alert = watchdog.make_alert("https://api.plow.co", "tok", "", send=lambda *args: called.append(args) or "sent")
+        self.assertIn("not sent", alert())
+        self.assertEqual(called, [])
 
 
 if __name__ == "__main__":
