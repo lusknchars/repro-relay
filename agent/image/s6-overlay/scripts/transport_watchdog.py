@@ -63,33 +63,36 @@ def _parse(value):
     return moment if moment.tzinfo else moment.replace(tzinfo=dt.timezone.utc)
 
 
-def problem_since(doc, now, first_seen_bad=None, start_time_of=process_start_time):
-    """When the current problem began, or None when every watched entry is healthy.
+def assess(doc, start_time_of=process_start_time):
+    """What the watched entries say, as (silent_since, unseen).
 
-    A live entry that is not connected dates from its own updated_at. A missing
-    file, an absent entry and an entry whose writer is gone carry no time worth
-    trusting, so they date from when this watchdog first saw the problem. That
-    covers the entries every new gateway inherits until its adapters report.
+    silent_since is the oldest updated_at among live entries that are not
+    connected, or None. The retry loop rewrites its entry after every attempt
+    that ends, so an old one means the loop has gone silent. unseen is True when
+    the file is missing or unreadable, an entry is absent or undated, or an
+    entry's writer is not live, which covers the entries every new gateway
+    inherits until its adapters report. Those carry no time worth trusting, so
+    the caller dates them from its own first sighting.
     """
-    unseen = now if first_seen_bad is None else first_seen_bad
     platforms = doc.get("platforms") if isinstance(doc, dict) else None
     if not isinstance(platforms, dict):
-        return unseen
-    earliest = None
+        return None, True
+    silent_since, unseen = None, False
     for name in PLATFORMS:
         entry = platforms.get(name)
         if not isinstance(entry, dict) or not writer_live(entry, start_time_of):
-            since = unseen
-        elif entry.get("state") == "connected":
+            unseen = True
             continue
-        else:
-            try:
-                since = _parse(entry["updated_at"])
-            except (KeyError, TypeError, ValueError):
-                since = unseen
-        if earliest is None or since < earliest:
-            earliest = since
-    return earliest
+        if entry.get("state") == "connected":
+            continue
+        try:
+            updated = _parse(entry["updated_at"])
+        except (KeyError, TypeError, ValueError):
+            unseen = True
+            continue
+        if silent_since is None or updated < silent_since:
+            silent_since = updated
+    return silent_since, unseen
 
 
 def unhealthy(since, now):
@@ -109,18 +112,28 @@ class Watchdog:
     """
 
     def __init__(self):
-        self.first_seen_bad = None
+        self.unseen_since = None
+        self.since = None
         self.last_restart_at = None
         self.pending_since = None
         self.failed = 0
         self.alerted = False
 
-    def observe(self, now, since):
-        """One of none, restart, recovered, recovery_failed, alert or reconnected."""
-        if since is None:
-            self.first_seen_bad = None
-        elif self.first_seen_bad is None:
-            self.first_seen_bad = now
+    def observe(self, now, silent_since, unseen):
+        """One of none, restart, recovered, recovery_failed, alert or reconnected.
+
+        silent_since and unseen are what assess reported. An unseen problem is
+        dated from the first observation that reported one and forgotten by the
+        first that does not, so a long stall never shortens the grace a dead
+        writer gets.
+        """
+        if not unseen:
+            self.unseen_since = None
+        elif self.unseen_since is None:
+            self.unseen_since = now
+        known = [moment for moment in (silent_since, self.unseen_since) if moment is not None]
+        self.since = min(known) if known else None
+        since = self.since
 
         if self.pending_since is not None:
             if since is None:
