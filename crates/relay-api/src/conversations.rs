@@ -22,8 +22,26 @@ struct Incoming {
     platform_message_id: String,
 }
 
+async fn everyone(
+    State(pool): State<PgPool>,
+    Extension(c): Extension<Hosting>,
+    h: HeaderMap,
+) -> ApiResult<Json<Value>> {
+    crate::accounts::owner(&pool, &h, &c).await?;
+    let items: Vec<Value> = sqlx::query_scalar(
+        "SELECT jsonb_build_object('name',i.display_name,'last_seen',i.last_seen,\
+         'messages',(SELECT count(*) FROM chat_messages m WHERE m.identity_id=i.id),\
+         'artifacts',(SELECT count(*) FROM agent_artifacts a WHERE a.identity_id=i.id)) \
+         FROM chat_identities i ORDER BY i.last_seen DESC LIMIT 100",
+    )
+    .fetch_all(&pool)
+    .await?;
+    Ok(Json(json!({"items": items})))
+}
+
 pub fn routes() -> Router<PgPool> {
     Router::new()
+        .route("/conversations", get(everyone))
         .route("/conversations/messages", post(record))
         .route("/conversations/artifacts", post(artifact))
         .route("/conversations/me", get(mine).delete(forget))

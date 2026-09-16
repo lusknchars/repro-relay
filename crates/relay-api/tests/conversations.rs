@@ -127,3 +127,15 @@ async fn a_texter_reads_only_their_own_history(pool: PgPool) {
         .fetch_one(&pool).await.unwrap();
     assert_eq!(others, 1, "another texter is untouched");
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_texter_session_cannot_read_the_owner_listing(pool: PgPool) {
+    sqlx::query("INSERT INTO chat_identities(id,handle_digest,display_name) VALUES('i1','d1','Ana')")
+        .execute(&pool).await.unwrap();
+    let token = relay_api::pairing::token();
+    sqlx::query("INSERT INTO chat_sessions(token_hash,identity_id) VALUES($1,'i1')")
+        .bind(relay_api::pairing::hash(&token)).execute(&pool).await.unwrap();
+    let app = relay_api::app(pool);
+    let (status, _, _) = send(&app, "GET", "/api/v1/conversations", Some(&token)).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "a texter is not an account");
+}
