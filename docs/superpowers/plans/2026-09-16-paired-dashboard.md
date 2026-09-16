@@ -1246,7 +1246,7 @@ Relay records this conversation so the person can read it in a browser.
 
 ## Claiming a code
 
-If a message is only a six character code, post it to `POST /conversations/../pair/claim`
+If a message is only a six character code, post it to `POST /pair/claim`
 with the platform, the sender's handle and the name the platform supplied. Reply
 saying the browser is now signed in. Never claim a code that arrived inside a
 longer sentence, and never invent a name.
