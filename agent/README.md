@@ -83,6 +83,30 @@ The image contains reporting as part of its behavior. To run a private edition
 without publication, build a separate image without the `agent-index` s6 service.
 That edition does not satisfy the competition's usage-reporting requirement.
 
+## Transport watchdog
+
+The image also runs `transport-watchdog`, an s6 service that checks once a
+minute that the agent can still receive messages. It reads the gateway's own
+record of its Plow chat and email connections. When a connection has stopped
+reporting for six minutes, it restarts only the gateway, at most once every ten
+minutes. A restart that works is silent. After three restarts that do not bring
+the connection back, it sends one text to the owner chat that `plow-init`
+configures, over the same REST API the agent replies through, and stops
+restarting until the connection returns.
+
+It runs as root, because restarting a service needs s6's control files, and it
+reads the agent token only to send that one text. The token goes only to
+`https://` Plow, never through a proxy or a redirect, and is never logged.
+Without a token or an owner chat it stands down. See what it has done:
+
+```sh
+docker compose logs agent | grep transport-watchdog:
+```
+
+To build without it, delete `image/s6-overlay/s6-rc.d/transport-watchdog`, its
+entry in `image/s6-overlay/s6-rc.d/user/contents.d/`, its path in the
+Dockerfile's `chmod` line, and the image check in `.github/workflows/agent.yml`.
+
 ## Restart and update
 
 `docker compose down` stops the agent and preserves its memory and installation

@@ -22,3 +22,11 @@ jobs:
           docker run --rm --platform linux/amd64 --network none
           --entrypoint /opt/hermes/.venv/bin/python3 repro-relay-agent:local
           /opt/plow/agent-index-client.py --self-check
+      - name: Check the transport watchdog is in the image
+        run: >-
+          docker run --rm --platform linux/amd64 --network none
+          --entrypoint /bin/sh repro-relay-agent:local -c
+          'test -x /etc/s6-overlay/s6-rc.d/transport-watchdog/run &&
+          test -f /etc/s6-overlay/s6-rc.d/user/contents.d/transport-watchdog &&
+          /opt/hermes/.venv/bin/python3 -I -S -c "import runpy, sys; runpy.run_path(sys.argv[1])"
+          /etc/s6-overlay/scripts/transport_watchdog.py'
