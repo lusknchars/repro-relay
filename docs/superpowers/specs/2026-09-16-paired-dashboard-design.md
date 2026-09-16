@@ -3,6 +3,15 @@
 Design approved September 16, 2026. It describes what to build; nothing here is
 shipped yet.
 
+Amended September 16, 2026, after the final whole branch review found the flow
+could not complete in any deployment mode, although every task had passed its
+own review. Changes: texter sessions use their own cookie; the hosting guard
+admits the texter and agent routes by exact path; the agent writes through a
+scoped tool rather than a bare skill; records are idempotent per direction; the
+owner sees counts, never content, and texters are told so; revocation deletes
+sessions rather than relying on salt rotation; and every route is tested in team
+mode as well as local mode.
+
 ## Why
 
 The agent talks to people every day and Relay records none of it. Reach saves
@@ -30,8 +39,8 @@ bundles; and any relaxation of the `local_only` guard that protects local mode.
 ## How a person connects
 
 1. The dashboard, served from the hosted origin, calls `POST /pair/start`. The
-   server mints a pending session, sets it as the existing account cookie, and
-   returns a short code such as `RELAY-7K2Q`.
+   server mints a pending session, sets it as the texter cookie, never the
+   account cookie, and returns a short code such as `RELAY-7K2Q`.
 2. The person texts that code to the agent from the phone that already talks to
    it.
 3. The agent recognises the code and calls `POST /pair/claim` with its bridge
@@ -64,8 +73,14 @@ texter through their own lookup, and no existing route accepts one.
 This is also forced by the schema: `relay_accounts.password_hash` is `NOT NULL`
 and a paired person has no password, so they cannot be an account row.
 
-Sessions reuse the existing cookie helper unchanged, which already emits
-`__Host-relay_account` with `Secure` on an HTTPS origin and a 64 hex value.
+Texter and pending sessions use their own cookie, `relay_texter` locally and
+`__Host-relay_texter` with `Secure` on an HTTPS origin, carrying a 64 hex value.
+They never use the account cookie. Sharing that name caused two defects the
+final review confirmed: the frontend's automatic local sign in overwrote a
+pairing within fifteen seconds, and starting a pairing in a signed in owner's
+browser signed the owner out. A separate name also makes the separation of
+principals physical, rather than dependent on which table resolves a shared
+cookie.
 
 ### Pairing
 
@@ -77,8 +92,12 @@ probe for live codes.
 ### Conversation record
 
 The agent posts each inbound message and each reply it sends. Records are
-idempotent on the platform's own message identifier, so a transport retry
-replays rather than duplicates.
+idempotent on the identity, the direction and the platform's own message
+identifier together, so a transport retry replays rather than duplicates, and a
+reply can never collide with the message it answers. A reply is recorded under
+its own platform message id, which Plow returns when the message is sent. When a
+send path returns no id, the reply is not recorded, rather than borrowing the
+inbound message's id.
 
 ### Artifacts
 
@@ -90,10 +109,18 @@ rather than only chatter.
 ### Agent write path
 
 `relay-reach` has no HTTP path to Relay, so this is new rather than an
-extension. A skill posts to the hosted origin with the bridge key in
-`x-relay-chat-key`, matching how `/chat/pending` and `/chat/replies` already
-authenticate. The agent keeps replying through Plow as it does today; recording
-is a side effect and a failure to record never blocks a reply.
+extension. Requests carry the bridge key in `x-relay-chat-key`, matching how
+`/chat/pending` and `/chat/replies` already authenticate. The agent keeps
+replying through Plow as it does today; recording is a side effect and a failure
+to record never blocks a reply.
+
+A skill alone cannot do this. The agent container has no Relay URL, no bridge
+key and no client for these routes, so the write path is a scoped tool: a read
+only connection file giving the origin and key, an allowlist of exactly the
+three agent routes, the key and origin set by the tool rather than by the model,
+and typed arguments so a field name cannot be misspelled. The skill describing
+when to call it stays out of the agent image until that tool exists and a team
+mode test proves the flow end to end.
 
 ## Data
 
@@ -105,13 +132,20 @@ Migration `0035`, following `0034_hermes_console.sql`.
 - `pair_requests`: code primary key, browser session hash, identity when
   claimed, claimed at, created at, expires at.
 - `chat_messages`: id, identity, direction in or out, body, platform, platform
-  message id, created at, unique on identity and platform message id.
+  message id, created at, unique on identity, direction and platform message id.
 - `agent_artifacts`: id, identity, optional message, kind constrained to
   `digest` or `tasks`, title, source link, body, created at.
 
-Raw handles are never stored. `handle_digest` is a salted SHA-256 of the
-platform handle, the salt held in server configuration; rotating it invalidates
-every pairing, which is the intended emergency control.
+Raw handles are never stored. `handle_digest` is a salted SHA-256 computed over
+the platform and the handle separately before combining, so a character cannot
+shift across the field boundary. The salt is held in the `REPRO_HANDLE_SALT`
+environment variable, and the server refuses to start in team mode when it is
+unset, rather than failing each claim.
+
+Rotating the salt alone revokes nothing, because an existing session never
+consults it. The emergency control is to delete every row in `chat_sessions`,
+which signs every paired browser out at once, and then to rotate the salt so new
+claims cannot match old identities.
 
 ## Endpoints
 
@@ -124,14 +158,14 @@ every pairing, which is the intended emergency control.
 | `POST /conversations/artifacts` | agent | Record produced work |
 | `GET /conversations/me` | texter | Own history, newest first |
 | `DELETE /conversations/me` | texter | Erase own history |
-| `GET /conversations` | owner | Every identity and thread |
+| `GET /conversations` | owner | Who paired, last active, message and artifact counts; never content |
 
 ## Limits and refusals
 
 | Limit | Value | On breach |
 | --- | --- | --- |
 | Pair code | 6 characters, 10 minutes, single use | Refuse without distinguishing unknown from expired |
-| Pair attempts | 10 per hour per origin | Rate limited, as `chat-connect` already is |
+| Pair attempts | 10 per calendar minute, shared | Rate limited through the same helper as `chat-connect`, which buckets by minute |
 | Message body | 16 KB | Refuse rather than truncate |
 | Artifact body | 128 KB | Refuse, matching the skill upload limit |
 | History page | 100 messages | Paginate |
@@ -143,10 +177,19 @@ every pairing, which is the intended emergency control.
 Hosted team mode only. Guest mode refuses, matching `accounts::available`.
 Local mode is untouched and keeps rejecting foreign hosts and origins.
 
-A texter reads only their own history. The owner reads every conversation, and
-the dashboard says so where a texter can see it, because a person texting an
-assistant should not have to guess who else can read it. Deletion is real
-deletion, not a flag.
+In team mode the hosting guard requires an account session on every API path
+outside a short allowlist, which is why every route below returned 401 there.
+The texter and agent routes of this design are admitted by exact path, never by
+prefix: `/pair/start`, `/pair/state`, `/pair/claim`, `/conversations/messages`,
+`/conversations/artifacts` and `/conversations/me`. `/conversations` itself
+stays behind the account check, and mutations keep the origin requirement.
+
+A texter reads only their own history. The owner sees who has paired, when each
+was last active, and how many messages and artifacts each has, and never sees
+what anyone said. The pairing page tells a texter exactly that before they pair,
+because a person texting an assistant should not have to guess who else can
+read it. Deletion is real deletion, not a flag, and a texter can erase their own
+history from the page.
 
 Conversation content on a server the owner operates is a genuine change in what
 Relay is, and it carries retention and deletion obligations that the local only
@@ -182,12 +225,20 @@ Plow team, not something to assume. Reach works everywhere either way.
 Pairing: happy path; expired code; reused code; a claim from a browser that did
 not request it; a claim without a bridge key; refusal in guest mode.
 
-Records: replayed message identifier stored once; oversized body refused;
-retention purge removing content; a texter unable to read another texter's
-history; the owner able to read all.
+Records: replayed message identifier stored once; a reply stored alongside the
+message it answers rather than dropped; oversized body refused; retention purge
+removing content; a texter unable to read another texter's history; the owner
+seeing counts but never content.
 
 Principals: an existing owner only route refusing a texter session, which is the
-regression this design is shaped to prevent.
+regression this design is shaped to prevent; and a signed in owner who starts a
+pairing staying signed in.
+
+Every route is exercised in team mode as well as local mode, and the pairing
+flow is proven end to end in team mode. The first build passed every task review
+while the whole flow was refused in team mode and wiped in local mode, because
+every test ran in local mode alone. A test that mocks the endpoint under test
+proves nothing about that endpoint.
 
 Platform: the installer tests running on `windows-latest` and `ubuntu-latest`.
 
