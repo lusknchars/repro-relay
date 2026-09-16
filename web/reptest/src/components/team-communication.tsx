@@ -75,7 +75,7 @@ export function TeamCommunication() {
   }
   const selectedCase = workspace.data?.cases.find((c) => c.id === caseId);
   const matches =
-    people.data?.items.filter(
+    people.data?.items?.filter(
       (p) => p.member.project === selectedCase?.project,
     ) || [];
   return (
@@ -114,14 +114,14 @@ export function TeamCommunication() {
           {notice}
         </p>
       )}
-      {people.data?.items.length === 0 && (
+      {people.data?.items?.length === 0 && (
         <p className="text-sm text-muted">
           Add a teammate’s project, work role and preferred phone number. These
           preferences are separate from account access.
         </p>
       )}
       <div className="divide-y divide-border">
-        {people.data?.items.map((p) => (
+        {people.data?.items?.map((p) => (
           <div
             key={p.id}
             className="flex flex-wrap items-center justify-between gap-2 py-3"
@@ -329,10 +329,10 @@ export function TeamCommunication() {
           </p>
         </div>
       </details>
-      {!!calls.data?.items.length && (
+      {!!calls.data?.items?.length && (
         <div className="grid gap-3">
           <h3 className="text-sm font-medium">Recent call context</h3>
-          {calls.data.items.map((c) => (
+          {calls.data?.items?.map((c) => (
             <article
               key={c.id}
               className="grid gap-2 rounded border border-border p-3"
