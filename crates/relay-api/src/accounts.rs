@@ -42,14 +42,14 @@ fn token() -> String {
         uuid::Uuid::new_v4().simple()
     )
 }
-fn cookie_name(c: &Hosting) -> &'static str {
+pub(crate) fn cookie_name(c: &Hosting) -> &'static str {
     if c.origin.as_ref().is_some_and(|o| o.starts_with("https://")) {
         "__Host-relay_account"
     } else {
         "relay_account"
     }
 }
-fn raw_cookie<'a>(h: &'a HeaderMap, c: &Hosting) -> Option<&'a str> {
+pub(crate) fn raw_cookie<'a>(h: &'a HeaderMap, c: &Hosting) -> Option<&'a str> {
     h.get(header::COOKIE)?
         .to_str()
         .ok()?
@@ -60,7 +60,7 @@ fn raw_cookie<'a>(h: &'a HeaderMap, c: &Hosting) -> Option<&'a str> {
                 .then_some(v)
         })
 }
-fn cookie(c: &Hosting, value: &str, age: u32) -> String {
+pub(crate) fn cookie(c: &Hosting, value: &str, age: u32) -> String {
     format!(
         "{}={value}; Path=/; HttpOnly; SameSite=Lax; Max-Age={age}{}",
         cookie_name(c),

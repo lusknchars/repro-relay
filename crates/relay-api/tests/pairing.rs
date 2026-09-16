@@ -30,3 +30,31 @@ async fn schema_keeps_one_identity_per_handle_and_one_message_per_platform_id(po
         .await;
     assert!(bad_direction.is_err(), "direction is constrained to in or out");
 }
+
+use axum::http::HeaderMap;
+use relay_api::{hosting::Hosting, pairing};
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_texter_session_resolves_only_from_its_own_table(pool: PgPool) {
+    let c = Hosting::local();
+    let token = pairing::token();
+    sqlx::query("INSERT INTO chat_identities(id,handle_digest,display_name) VALUES('i1','d1','Ana')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO chat_sessions(token_hash,identity_id) VALUES($1,'i1')")
+        .bind(pairing::hash(&token))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let mut h = HeaderMap::new();
+    h.insert("cookie", format!("relay_account={token}").parse().unwrap());
+    let who = pairing::texter(&pool, &h, &c).await.expect("texter resolves");
+    assert_eq!(who.id, "i1");
+    assert_eq!(who.name, "Ana");
+
+    // The same cookie must never satisfy an account lookup.
+    let account = relay_api::accounts::identity(&pool, &h, &c).await.unwrap();
+    assert!(account.is_none(), "a texter must never resolve as an account");
+}

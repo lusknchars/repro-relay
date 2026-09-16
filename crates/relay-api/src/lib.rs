@@ -23,6 +23,7 @@ pub mod intake;
 pub mod meetings;
 pub mod model_setup;
 pub mod monitoring;
+pub mod pairing;
 pub mod programs;
 pub mod reach;
 pub mod repairs;
