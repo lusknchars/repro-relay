@@ -152,6 +152,14 @@ means Plow may already have accepted it, which is how the plugin's own
 `_message_delivery_unknown` reads those statuses, so sending again risks a
 double send.
 
+The token is the agent's broad Plow credential, and the watchdog runs as root,
+so the alert takes the same care as the repository's own Plow bridge: it goes
+only to an `https` base and a well formed chat id, never through a proxy or a
+redirect, which urllib would otherwise follow with the header attached. The
+interpreter runs isolated and without site packages. Without the agent token or
+the owner chat the watchdog stands down, because the chat platform itself is
+only enabled when both are set, and there would be no one to tell.
+
 **Unproven assumption.** During the outage `GET /v1/chats` with the agent token
 returned 200, which shows the REST API was reachable. It does not show that a
 message send succeeds while the websocket is down. The test plan proves it.
