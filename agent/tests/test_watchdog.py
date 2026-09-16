@@ -1,11 +1,14 @@
 import datetime as dt
 import importlib.util
+import inspect
 import json
 import os
 from pathlib import Path
 import tempfile
 import unittest
+import unittest.mock
 import urllib.error
+import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location(
@@ -99,6 +102,23 @@ class HealthRule(unittest.TestCase):
                 self.assertIsNone(watchdog.load_state(path))
             path.write_text(json.dumps(gateway()))
             self.assertEqual(watchdog.load_state(path)["platforms"]["plow_chat"]["writer_pid"], PID)
+
+    def test_a_symlink_a_fifo_an_oversized_or_a_deeply_nested_file_loads_as_none(self):
+        with tempfile.TemporaryDirectory() as folder:
+            real = Path(folder) / "gateway_state.json"
+            real.write_text(json.dumps(gateway()))
+            link = Path(folder) / "link.json"
+            link.symlink_to(real)
+            fifo = Path(folder) / "fifo.json"
+            os.mkfifo(fifo)
+            big = Path(folder) / "big.json"
+            big.write_text(json.dumps({"pad": "x" * watchdog.STATE_LIMIT}))
+            deep = Path(folder) / "deep.json"
+            deep.write_text('{"a":' * 100000 + "1" + "}" * 100000)
+            for path in (link, fifo, big, deep):
+                with self.subTest(path=path.name):
+                    self.assertIsNone(watchdog.load_state(path))
+            self.assertEqual(watchdog.load_state(real)["pid"], PID)
 
 
 class ProcessStartTime(unittest.TestCase):
@@ -264,6 +284,35 @@ class OwnerAlert(unittest.TestCase):
         self.assertEqual(alert_with(raising(TimeoutError())), "unknown")
         self.assertEqual(alert_with(raising(ConnectionResetError())), "unknown")
 
+    def test_a_redirect_is_refused_rather_than_followed(self):
+        self.assertIsNone(watchdog.NoRedirect().redirect_request(None, None, 302, "Found", {}, "https://elsewhere.example/"))
+
+    def test_the_default_opener_ignores_proxy_settings_and_refuses_redirects(self):
+        proxy = {"https_proxy": "http://proxy.invalid:9", "HTTPS_PROXY": "http://proxy.invalid:9"}
+        with unittest.mock.patch.dict(os.environ, proxy):
+            stock = urllib.request.build_opener()
+            opener = watchdog.plow_opener()
+        self.assertTrue(any(isinstance(handler, urllib.request.ProxyHandler) for handler in stock.handlers))
+        self.assertFalse(any(isinstance(handler, urllib.request.ProxyHandler) for handler in opener.handlers))
+        redirects = [handler for handler in opener.handlers if isinstance(handler, urllib.request.HTTPRedirectHandler)]
+        self.assertTrue(redirects)
+        self.assertTrue(all(isinstance(handler, watchdog.NoRedirect) for handler in redirects))
+        self.assertEqual(inspect.signature(watchdog.send_alert).parameters["opener"].default, watchdog.OPENER.open)
+
+    def test_nothing_is_sent_to_a_malformed_chat_or_over_plain_http(self):
+        sent = []
+
+        def opener(request, timeout):
+            sent.append(request)
+            return FakeResponse(b'{"uid": "msg_1"}')
+
+        for base, chat in (("https://api.plow.co", "cht_owner/../../v1/agents"),
+                           ("https://api.plow.co", ""),
+                           ("http://api.plow.co", "cht_owner")):
+            with self.subTest(base=base, chat=chat):
+                self.assertEqual(watchdog.send_alert(base, "tok", chat, opener=opener), "failed")
+        self.assertEqual(sent, [])
+
     def test_the_alert_text_has_no_hyphens_or_dashes(self):
         dashes = {"-", "‐", "‑", "‒", "–", "—", "―", "−"}
         self.assertFalse(dashes & set(watchdog.ALERT_TEXT))
@@ -286,7 +335,7 @@ class ServiceWiring(unittest.TestCase):
         self.assertTrue(os.access(run, os.X_OK))
         text = run.read_text()
         self.assertTrue(text.startswith("#!/bin/sh\n"))
-        self.assertIn("exec /opt/hermes/.venv/bin/python3 /etc/s6-overlay/scripts/transport_watchdog.py", text)
+        self.assertIn("exec /opt/hermes/.venv/bin/python3 -I -S /etc/s6-overlay/scripts/transport_watchdog.py", text)
 
     def test_the_image_makes_the_run_script_executable(self):
         chmods = [line for line in (ROOT / "Dockerfile").read_text().splitlines()
@@ -325,7 +374,8 @@ class Loop(unittest.TestCase):
         lines = []
         watchdog.once(watchdog.Watchdog(), NOW, stalled(), restart=lambda: False,
                       alert=lambda: "sent", log=lines.append, start_time_of=running)
-        self.assertEqual(len(lines), 2)
+        self.assertEqual(lines, ["transport not healthy since 11:54 UTC, restarting the gateway",
+                                 "s6 did not accept the restart"])
 
     def test_a_missing_file_is_waited_on_rather_than_acted_on(self):
         restarts, lines = [], []
@@ -347,11 +397,55 @@ class Loop(unittest.TestCase):
         self.assertIn("owner alert sent", lines[-1])
         self.assertNotIn("tok_secret", "\n".join(lines))
 
-    def test_without_an_owner_chat_no_alert_is_attempted(self):
-        called = []
-        alert = watchdog.make_alert("https://api.plow.co", "tok", "", send=lambda *args: called.append(args) or "sent")
-        self.assertIn("not sent", alert())
-        self.assertEqual(called, [])
+    def test_every_outcome_after_a_restart_is_logged(self):
+        lines = []
+        dog = watchdog.Watchdog()
+
+        def check(minute, doc):
+            return watchdog.once(dog, later(minute), doc, restart=lambda: True, alert=lambda: "sent",
+                                 log=lines.append, start_time_of=running)
+
+        self.assertEqual(check(0, stalled()), "restart")
+        self.assertEqual(check(3, stalled()), "recovery_failed")
+        self.assertEqual(check(4, gateway()), "reconnected")
+        self.assertEqual(check(10, stalled()), "restart")
+        self.assertEqual(check(11, gateway()), "recovered")
+        self.assertEqual(lines, [
+            "transport not healthy since 11:54 UTC, restarting the gateway",
+            "the restart did not reconnect the transport, 1 of 3",
+            "transport connected again",
+            "transport not healthy since 11:54 UTC, restarting the gateway",
+            "transport reconnected after the restart",
+        ])
+
+    def test_an_alert_that_raises_still_leaves_a_record(self):
+        lines = []
+        dog = watchdog.Watchdog()
+        dog.failed = watchdog.MAX_FAILED_RECOVERIES
+
+        def alert():
+            raise ValueError("detail that must not reach the log")
+
+        action = watchdog.once(dog, NOW, stalled(), restart=lambda: True, alert=alert,
+                               log=lines.append, start_time_of=running)
+        self.assertEqual(action, "alert")
+        self.assertEqual(lines, ["recovery failed 3 times, owner alert failed with ValueError"])
+
+    def test_settings_come_from_the_names_plow_init_publishes(self):
+        env = {"PLOW_API_BASE": "https://staging.plow.example", "PLOW_AGENT_TOKEN": "tok", "PLOW_HOME_CHANNEL": "cht_owner"}
+        self.assertEqual(watchdog.settings(read=env.get), ("https://staging.plow.example", "tok", "cht_owner"))
+        self.assertEqual(watchdog.settings(read=lambda name: ""), ("https://api.plow.co", "", ""))
+
+    def test_without_the_token_or_the_owner_chat_it_stands_down_and_says_which(self):
+        for token, chat, missing in (("", "cht_owner", "PLOW_AGENT_TOKEN"), ("tok_secret", "", "PLOW_HOME_CHANNEL")):
+            with self.subTest(missing=missing):
+                lines, sleeps = [], []
+                watchdog.main(configured=lambda: ("https://api.plow.co", token, chat),
+                              sleep=sleeps.append, log=lines.append)
+                self.assertEqual(sleeps, [86400])
+                self.assertEqual(len(lines), 1)
+                self.assertIn(missing, lines[0])
+                self.assertNotIn("tok_secret", lines[0])
 
 
 if __name__ == "__main__":

@@ -12,4 +12,7 @@
 PATH=/command:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
 export PATH
 
-exec /opt/hermes/.venv/bin/python3 /etc/s6-overlay/scripts/transport_watchdog.py
+# Isolated and without site packages, because this interpreter runs as root: the
+# module needs only the standard library, so nothing installed in the venv, and
+# no environment variable, runs before it.
+exec /opt/hermes/.venv/bin/python3 -I -S /etc/s6-overlay/scripts/transport_watchdog.py

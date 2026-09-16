@@ -11,6 +11,8 @@ import datetime as dt
 import http.client
 import json
 import os
+import re
+import stat
 import subprocess
 import sys
 import time
@@ -21,14 +23,29 @@ STATE_PATH = "/var/lib/hermes/gateway_state.json"
 PROC = "/proc"
 PLATFORMS = ("plow_chat", "plow_email")
 GRACE_SECONDS = 360
+STATE_LIMIT = 1_048_576
 
 
 def load_state(path=STATE_PATH):
-    """The parsed state file, or None when it is missing or not a JSON object."""
+    """The parsed state file, or None when it is missing, unsafe or not a JSON object.
+
+    The gateway's own user writes this file and the watchdog reads it as root, so
+    a symlink, a FIFO, an oversized file or nesting deep enough to exhaust the
+    parser is refused rather than followed.
+    """
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
-        with open(path, encoding="utf-8") as handle:
-            doc = json.load(handle)
-    except (OSError, ValueError):
+        with os.fdopen(os.open(path, flags), "rb") as handle:
+            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                return None
+            raw = handle.read(STATE_LIMIT + 1)
+    except OSError:
+        return None
+    if len(raw) > STATE_LIMIT:
+        return None
+    try:
+        doc = json.loads(raw)
+    except (ValueError, RecursionError):
         return None
     return doc if isinstance(doc, dict) else None
 
@@ -191,9 +208,25 @@ ALERT_TEXT = (
 def delivery_unknown(status):
     """Plow may have accepted a message answered this way, so it is never resent.
 
-    The reading the plugin's own _message_delivery_unknown gives these statuses.
+    The plugin's own _message_delivery_unknown reads these statuses the same way.
     """
     return status >= 500 or status in (408, 424)
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse redirects, which urllib would follow carrying the Authorization header."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def plow_opener():
+    """An opener that ignores proxy settings and refuses redirects, as the Plow bridge's does."""
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+
+
+OPENER = plow_opener()
+CHAT_UID = re.compile(r"[A-Za-z0-9_-]{1,180}")
 
 
 def build_alert_request(base, token, chat_uid, text=ALERT_TEXT):
@@ -205,13 +238,17 @@ def build_alert_request(base, token, chat_uid, text=ALERT_TEXT):
     )
 
 
-def send_alert(base, token, chat_uid, opener=urllib.request.urlopen, text=ALERT_TEXT):
+def send_alert(base, token, chat_uid, opener=OPENER.open, text=ALERT_TEXT):
     """sent, failed or unknown. Called once per failure episode and never retried.
 
     Unknown means Plow may have the message, so sending again risks a double
     send. The plugin sends over REST and only receives over the websocket, so
-    this path can stay open while the transport is deaf.
+    this path can stay open while the transport is deaf. The bearer goes only to
+    an https base and a well formed chat id, never through a proxy or a
+    redirect, as the repository's own Plow bridge requires.
     """
+    if not base.startswith("https://") or not CHAT_UID.fullmatch(chat_uid):
+        return "failed"
     request = build_alert_request(base, token, chat_uid, text)
     try:
         with opener(request, timeout=20) as response:
@@ -258,9 +295,12 @@ def restart_gateway(run=subprocess.run):
 
 def make_alert(base, token, chat_uid, send=send_alert):
     """The alert to send when recovery fails. Only its outcome ever reaches the log."""
-    if not chat_uid:
-        return lambda: "not sent, no owner chat is configured"
     return lambda: send(base, token, chat_uid)
+
+
+def settings(read=read_env):
+    """(base, token, chat_uid) as plow-init published them, with the plugin's default base."""
+    return read("PLOW_API_BASE") or API_BASE, read("PLOW_AGENT_TOKEN"), read("PLOW_HOME_CHANNEL")
 
 
 def once(dog, now, doc, restart, alert, log=log, start_time_of=process_start_time):
@@ -276,26 +316,34 @@ def once(dog, now, doc, restart, alert, log=log, start_time_of=process_start_tim
     elif action == "recovery_failed":
         log(f"the restart did not reconnect the transport, {dog.failed} of {MAX_FAILED_RECOVERIES}")
     elif action == "alert":
-        log(f"recovery failed {MAX_FAILED_RECOVERIES} times, owner alert {alert()}")
+        try:
+            outcome = alert()
+        except Exception as error:  # the episode's only alert must still leave a record
+            outcome = f"failed with {type(error).__name__}"
+        log(f"recovery failed {MAX_FAILED_RECOVERIES} times, owner alert {outcome}")
     elif action == "reconnected":
         log("transport connected again")
     return action
 
 
-def main():
-    token = read_env("PLOW_AGENT_TOKEN")
-    if not token:
-        log("no PLOW_AGENT_TOKEN in this container, so there is no transport to watch; standing down")
-        time.sleep(86400)
+def main(configured=settings, sleep=time.sleep, log=log):
+    base, token, chat = configured()
+    missing = [name for name, value in (("PLOW_AGENT_TOKEN", token), ("PLOW_HOME_CHANNEL", chat)) if not value]
+    if missing:
+        # The chat platform is enabled only when both are set, and the alert needs
+        # both, so there is nothing to watch and no one to tell. Standing down for a
+        # day and exiting lets s6 look again, as agent-index does.
+        log(f"no {' or '.join(missing)} in this container, so the iMessage line is not set up; standing down")
+        sleep(86400)
         return
-    alert = make_alert(read_env("PLOW_API_BASE") or API_BASE, token, read_env("PLOW_HOME_CHANNEL"))
+    alert = make_alert(base, token, chat)
     dog = Watchdog()
     while True:
         try:
-            once(dog, dt.datetime.now(dt.timezone.utc), load_state(), restart_gateway, alert)
+            once(dog, dt.datetime.now(dt.timezone.utc), load_state(), restart_gateway, alert, log=log)
         except Exception as error:  # a longrun that crashes is respawned in a tight loop
             log(f"check failed with {type(error).__name__}")
-        time.sleep(CHECK_SECONDS)
+        sleep(CHECK_SECONDS)
 
 
 if __name__ == "__main__":
