@@ -6,7 +6,8 @@ type Item = {
   usage: Record<string, number> | null; tool_events: Record<string, unknown>[]; error: string | null;
   created_at: string; updated_at: string;
 };
-type State = { items: Item[]; active: boolean; posts: Record<string, string>[]; stops: string[]; startError?: string };
+type State = { items: Item[]; active: boolean; posts: Record<string, string>[]; stops: string[]; startError?: string;
+  unmatched?: Set<string> };
 
 async function workspace(page: Page, role: string, state: State) {
   await page.route('**/api/v1/**', async route => {
@@ -33,6 +34,9 @@ async function workspace(page: Page, role: string, state: State) {
     if (path.endsWith('/hermes/console')) {
       return route.fulfill({json: {items: state.items, available: true, active: state.active, limit_seconds: 120}});
     }
+    if (!/\/(account|team\/directory|chat|runner|workspace\/runs|architectures)(\?|$)/.test(path)) {
+      (state.unmatched ??= new Set()).add(path);
+    }
     const data = path.endsWith('/account') ? {enabled: true, authenticated: true, local_access: true, role,
         profile: {id: 'fixture', name: 'Fixture Owner', username: 'fixture', bio: ''}}
       : path.endsWith('/team/directory') ? {members: [], has_more: false}
@@ -44,12 +48,23 @@ async function workspace(page: Page, role: string, state: State) {
   });
 }
 
+
+/** The Team heading appears only once the account load resolves. Slower runners were asserting
+ *  on owner-only UI while the page still showed "Loading account". Unmatched API paths are
+ *  reported here because a missing mock shows up as a hang rather than a clear failure. */
+async function teamPageReady(page: Page, state: State) {
+  await expect(page.getByRole('heading', {name: 'Team', exact: true}))
+    .toBeVisible({timeout: 30_000});
+  if (state.unmatched?.size) console.warn('unmocked API paths:', [...state.unmatched].join(', '));
+}
+
 test('owner runs a console prompt and sees tool calls, usage and stop', async ({page}) => {
   const state: State = {items: [], active: false, posts: [], stops: []};
   await workspace(page, 'owner', state);
   await page.goto('/?view=team');
+  await teamPageReady(page, state);
   const region = page.getByRole('region', {name: 'Hermes test console'});
-  await expect(region).toBeVisible();
+  await expect(region).toBeVisible({timeout: 15_000});
   await region.getByLabel('Prompt for Hermes', {exact: true}).fill('Read notes.txt');
   await region.getByRole('button', {name: 'Run prompt', exact: true}).click();
   await expect(region.getByText('Running', {exact: true})).toBeVisible();
@@ -84,6 +99,7 @@ test('console shows a busy Hermes without clearing the prompt', async ({page}) =
     startError: 'Hermes is busy with another run. Try again when it finishes.'};
   await workspace(page, 'owner', state);
   await page.goto('/?view=team');
+  await teamPageReady(page, state);
   const region = page.getByRole('region', {name: 'Hermes test console'});
   await region.getByLabel('Prompt for Hermes', {exact: true}).fill('Hello');
   await region.getByRole('button', {name: 'Run prompt', exact: true}).click();
@@ -92,8 +108,10 @@ test('console shows a busy Hermes without clearing the prompt', async ({page}) =
 });
 
 test('teammates do not see the owner test console', async ({page}) => {
-  await workspace(page, 'member', {items: [], active: false, posts: [], stops: []});
+  const state: State = {items: [], active: false, posts: [], stops: []};
+  await workspace(page, 'member', state);
   await page.goto('/?view=team');
-  await expect(page.getByRole('region', {name: 'Hermes team conversation'})).toBeVisible();
+  await teamPageReady(page, state);
+  await expect(page.getByRole('region', {name: 'Hermes team conversation'})).toBeVisible({timeout: 15_000});
   await expect(page.getByRole('region', {name: 'Hermes test console'})).toHaveCount(0);
 });
