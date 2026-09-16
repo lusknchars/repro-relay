@@ -1175,6 +1175,12 @@ export function PairingPage() {
   }
   return (
     <section className="grid gap-4 p-4" aria-label="Pairing">
+      {state.loading && !state.data && <p role="status">Checking…</p>}
+      {state.error && (
+        <p role="alert">
+          {state.error} <button onClick={state.refresh}>Retry</button>
+        </p>
+      )}
       {state.data?.status === "pending" && (
         <p className="text-lg font-semibold">{state.data.code}</p>
       )}
