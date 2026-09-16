@@ -14,7 +14,7 @@
 
 - Watch exactly `plow_chat` and `plow_email` in `/var/lib/hermes/gateway_state.json`.
 - An entry is live only when `writer_pid` names a running process that is not a zombie and whose start time, field 22 of `/proc/<pid>/stat`, equals `writer_start_time` whenever both are known.
-- Grace: `GRACE_SECONDS = 360`. A live entry that is not `connected` dates from its own `updated_at`. An absent entry, a missing or unreadable file, and an entry whose writer is not live date from when the watchdog first saw the problem. Nothing acts at once.
+- Grace: `GRACE_SECONDS = 360`. A live entry that is not `connected` dates from its own `updated_at`. An absent or undated entry, a missing or unreadable file, and an entry whose writer is not live are unseen problems: they date from the first observation that reported one, and that date is forgotten as soon as an observation reports none, so a long stall never shortens the grace a dead writer gets. Nothing acts at once.
 - Restart only the gateway, with `/command/s6-svc -r /run/service/hermes-gateway`. Never the container.
 - `VERIFY_SECONDS = 180` after a restart; at most one restart per `RESTART_COOLDOWN_SECONDS = 600`; alert after `MAX_FAILED_RECOVERIES = 3` consecutive failed recoveries.
 - Alert only when recovery fails, once per failure episode, never resent: `POST {PLOW_API_BASE}/v1/chats/{PLOW_HOME_CHANNEL}/messages` with header `Authorization: Bearer {PLOW_AGENT_TOKEN}` and JSON body `{"body": text}`. `PLOW_API_BASE` defaults to `https://api.plow.co`, as in the plugin's `_transport.py`.
@@ -62,7 +62,7 @@ and the whole agent suite, as CI does, with:
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: `STATE_PATH`, `PROC`, `PLATFORMS`, `GRACE_SECONDS`; `load_state(path=STATE_PATH) -> dict | None`; `process_start_time(pid: int, proc: str = PROC) -> int | None`; `writer_live(entry: dict, start_time_of=process_start_time) -> bool`; `problem_since(doc: dict | None, now: datetime, first_seen_bad: datetime | None = None, start_time_of=process_start_time) -> datetime | None`; `unhealthy(since: datetime | None, now: datetime) -> bool`. Every datetime is timezone aware. Tests share the helpers `NOW`, `PID`, `STARTED`, `minutes_ago`, `entry`, `gateway`, `running`, `gone` and `since_for`.
+- Produces: `STATE_PATH`, `PROC`, `PLATFORMS`, `GRACE_SECONDS`; `load_state(path=STATE_PATH) -> dict | None`; `process_start_time(pid: int, proc: str = PROC) -> int | None`; `writer_live(entry: dict, start_time_of=process_start_time) -> bool`; `assess(doc: dict | None, start_time_of=process_start_time) -> tuple[datetime | None, bool]`, returning `(silent_since, unseen)`; `unhealthy(since: datetime | None, now: datetime) -> bool`. Every datetime is timezone aware. Tests share the helpers `NOW`, `PID`, `STARTED`, `minutes_ago`, `entry`, `gateway`, `running`, `gone` and `assessed`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -109,53 +109,55 @@ def gone(pid):
     return None
 
 
-def since_for(doc, now=NOW, first_seen_bad=None, start_time_of=running):
-    return watchdog.problem_since(doc, now, first_seen_bad, start_time_of)
+def assessed(doc, start_time_of=running):
+    return watchdog.assess(doc, start_time_of)
 
 
 class HealthRule(unittest.TestCase):
     def test_connected_entries_from_the_running_gateway_are_healthy_however_old(self):
-        self.assertIsNone(since_for(gateway(chat=entry(at=minutes_ago(600)))))
+        self.assertEqual(assessed(gateway(chat=entry(at=minutes_ago(600)))), (None, False))
 
     def test_a_retry_loop_that_is_still_reporting_is_left_alone(self):
-        since = since_for(gateway(chat=entry("disconnected", minutes_ago(5))))
-        self.assertFalse(watchdog.unhealthy(since, NOW))
+        silent_since, unseen = assessed(gateway(chat=entry("disconnected", minutes_ago(5))))
+        self.assertFalse(unseen)
+        self.assertFalse(watchdog.unhealthy(silent_since, NOW))
 
     def test_a_retry_loop_silent_for_six_minutes_is_unhealthy(self):
-        since = since_for(gateway(chat=entry("disconnected", minutes_ago(6))))
-        self.assertTrue(watchdog.unhealthy(since, NOW))
+        silent_since, unseen = assessed(gateway(chat=entry("disconnected", minutes_ago(6))))
+        self.assertFalse(unseen)
+        self.assertTrue(watchdog.unhealthy(silent_since, NOW))
 
     def test_fatal_and_retrying_count_like_disconnected(self):
         for state in ("fatal", "retrying"):
             with self.subTest(state=state):
-                since = since_for(gateway(email=entry(state, minutes_ago(7))))
-                self.assertTrue(watchdog.unhealthy(since, NOW))
+                silent_since, unseen = assessed(gateway(email=entry(state, minutes_ago(7))))
+                self.assertTrue(watchdog.unhealthy(silent_since, NOW))
 
-    def test_a_dead_writer_waits_out_the_grace_from_first_sighting(self):
-        self.assertEqual(since_for(gateway(), start_time_of=gone), NOW)
-        later = NOW + dt.timedelta(minutes=6)
-        since = since_for(gateway(), now=later, first_seen_bad=NOW, start_time_of=gone)
-        self.assertTrue(watchdog.unhealthy(since, later))
+    def test_the_longest_silent_entry_dates_the_problem(self):
+        doc = gateway(chat=entry("disconnected", minutes_ago(3)), email=entry("retrying", minutes_ago(8)))
+        self.assertEqual(assessed(doc), (NOW - dt.timedelta(minutes=8), False))
 
-    def test_an_old_entry_left_by_a_previous_gateway_does_not_act_at_once(self):
-        since = since_for(gateway(chat=entry("disconnected", minutes_ago(120), pid=4242, started=1)))
-        self.assertEqual(since, NOW)
-        self.assertFalse(watchdog.unhealthy(since, NOW))
+    def test_a_dead_writer_is_unseen_rather_than_dated(self):
+        self.assertEqual(assessed(gateway(), start_time_of=gone), (None, True))
+
+    def test_an_old_entry_left_by_a_previous_gateway_is_unseen_rather_than_dated(self):
+        doc = gateway(chat=entry("disconnected", minutes_ago(120), pid=4242, started=1))
+        self.assertEqual(assessed(doc), (None, True))
 
     def test_a_reused_process_id_is_not_the_writer(self):
-        self.assertEqual(since_for(gateway(), start_time_of=lambda pid: STARTED + 1), NOW)
+        self.assertEqual(assessed(gateway(), start_time_of=lambda pid: STARTED + 1), (None, True))
 
-    def test_an_absent_entry_or_file_dates_from_first_sighting(self):
-        doc = gateway()
-        del doc["platforms"]["plow_email"]
-        self.assertEqual(since_for(doc), NOW)
-        self.assertEqual(since_for(None), NOW)
-        earlier = NOW - dt.timedelta(minutes=2)
-        self.assertEqual(since_for(None, first_seen_bad=earlier), earlier)
+    def test_an_absent_entry_a_missing_file_or_an_undated_entry_is_unseen(self):
+        absent = gateway()
+        del absent["platforms"]["plow_email"]
+        undated = gateway(chat=entry("disconnected", "yesterday"))
+        for doc in (absent, None, undated):
+            with self.subTest(doc=doc):
+                self.assertEqual(assessed(doc), (None, True))
 
-    def test_the_earliest_problem_wins(self):
-        doc = gateway(chat=entry("disconnected", minutes_ago(3)), email=entry("retrying", minutes_ago(8)))
-        self.assertEqual(since_for(doc), NOW - dt.timedelta(minutes=8))
+    def test_a_silent_entry_and_an_unseen_one_are_both_reported(self):
+        doc = gateway(chat=entry("disconnected", minutes_ago(8)), email=entry(pid=4242))
+        self.assertEqual(assessed(doc), (NOW - dt.timedelta(minutes=8), True))
 
     def test_an_unreadable_file_loads_as_none(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -266,33 +268,36 @@ def _parse(value):
     return moment if moment.tzinfo else moment.replace(tzinfo=dt.timezone.utc)
 
 
-def problem_since(doc, now, first_seen_bad=None, start_time_of=process_start_time):
-    """When the current problem began, or None when every watched entry is healthy.
+def assess(doc, start_time_of=process_start_time):
+    """What the watched entries say, as (silent_since, unseen).
 
-    A live entry that is not connected dates from its own updated_at. A missing
-    file, an absent entry and an entry whose writer is gone carry no time worth
-    trusting, so they date from when this watchdog first saw the problem. That
-    covers the entries every new gateway inherits until its adapters report.
+    silent_since is the oldest updated_at among live entries that are not
+    connected, or None. The retry loop rewrites its entry after every attempt
+    that ends, so an old one means the loop has gone silent. unseen is True when
+    the file is missing or unreadable, an entry is absent or undated, or an
+    entry's writer is not live, which covers the entries every new gateway
+    inherits until its adapters report. Those carry no time worth trusting, so
+    the caller dates them from its own first sighting.
     """
-    unseen = now if first_seen_bad is None else first_seen_bad
     platforms = doc.get("platforms") if isinstance(doc, dict) else None
     if not isinstance(platforms, dict):
-        return unseen
-    earliest = None
+        return None, True
+    silent_since, unseen = None, False
     for name in PLATFORMS:
         entry = platforms.get(name)
         if not isinstance(entry, dict) or not writer_live(entry, start_time_of):
-            since = unseen
-        elif entry.get("state") == "connected":
+            unseen = True
             continue
-        else:
-            try:
-                since = _parse(entry["updated_at"])
-            except (KeyError, TypeError, ValueError):
-                since = unseen
-        if earliest is None or since < earliest:
-            earliest = since
-    return earliest
+        if entry.get("state") == "connected":
+            continue
+        try:
+            updated = _parse(entry["updated_at"])
+        except (KeyError, TypeError, ValueError):
+            unseen = True
+            continue
+        if silent_since is None or updated < silent_since:
+            silent_since = updated
+    return silent_since, unseen
 
 
 def unhealthy(since, now):
@@ -302,7 +307,7 @@ def unhealthy(since, now):
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `python3 -m unittest discover -s agent/tests -p test_watchdog.py -v`
-Expected: `Ran 12 tests`, `OK`.
+Expected: `Ran 13 tests`, `OK`.
 
 - [ ] **Step 5: Commit**
 
@@ -320,8 +325,8 @@ git commit -m "Tell from the gateway's own state file when the transport has sta
 - Modify: `agent/tests/test_watchdog.py` (add a test class above `if __name__`)
 
 **Interfaces:**
-- Consumes: `unhealthy(since, now)` from Task 1.
-- Produces: `RESTART_COOLDOWN_SECONDS`, `VERIFY_SECONDS`, `MAX_FAILED_RECOVERIES`; class `Watchdog()` with attributes `first_seen_bad`, `last_restart_at`, `pending_since`, `failed`, `alerted`, and `observe(now: datetime, since: datetime | None) -> str` returning exactly one of `"none"`, `"restart"`, `"recovered"`, `"recovery_failed"`, `"alert"`, `"reconnected"`.
+- Consumes: `unhealthy(since, now)` from Task 1, and the `(silent_since, unseen)` pair its `assess` returns.
+- Produces: `RESTART_COOLDOWN_SECONDS`, `VERIFY_SECONDS`, `MAX_FAILED_RECOVERIES`; class `Watchdog()` with attributes `unseen_since`, `since`, `last_restart_at`, `pending_since`, `failed`, `alerted`, and `observe(now: datetime, silent_since: datetime | None, unseen: bool) -> str` returning exactly one of `"none"`, `"restart"`, `"recovered"`, `"recovery_failed"`, `"alert"`, `"reconnected"`. `since` holds the date of the current problem as of the last observation, or None.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -338,43 +343,65 @@ def later(minutes):
 
 class RecoveryPolicy(unittest.TestCase):
     def test_healthy_does_nothing(self):
-        self.assertEqual(watchdog.Watchdog().observe(NOW, None), "none")
+        self.assertEqual(watchdog.Watchdog().observe(NOW, None, False), "none")
 
-    def test_inside_the_grace_it_waits_and_remembers_the_first_sighting(self):
+    def test_inside_the_grace_it_waits(self):
         dog = watchdog.Watchdog()
-        self.assertEqual(dog.observe(NOW, down_since(2)), "none")
-        self.assertEqual(dog.observe(later(1), down_since(2)), "none")
-        self.assertEqual(dog.first_seen_bad, NOW)
+        self.assertEqual(dog.observe(NOW, down_since(2), False), "none")
+        self.assertEqual(dog.observe(later(1), down_since(2), False), "none")
 
     def test_past_the_grace_it_restarts(self):
-        self.assertEqual(watchdog.Watchdog().observe(NOW, down_since(6)), "restart")
+        self.assertEqual(watchdog.Watchdog().observe(NOW, down_since(6), False), "restart")
+
+    def test_an_unseen_problem_waits_out_the_grace_from_its_first_sighting(self):
+        dog = watchdog.Watchdog()
+        self.assertEqual(dog.observe(NOW, None, True), "none")
+        self.assertEqual(dog.observe(later(5), None, True), "none")
+        self.assertEqual(dog.unseen_since, NOW)
+        self.assertEqual(dog.observe(later(6), None, True), "restart")
+
+    def test_a_long_stall_does_not_shorten_the_grace_a_dead_writer_gets(self):
+        dog = watchdog.Watchdog()
+        for minute in range(15):
+            self.assertEqual(dog.observe(later(minute), later(minute - 4), False), "none")
+        for minute in range(15, 21):
+            self.assertEqual(dog.observe(later(minute), None, True), "none")
+        self.assertEqual(dog.observe(later(21), None, True), "restart")
+
+    def test_an_unseen_problem_that_clears_starts_its_grace_again(self):
+        dog = watchdog.Watchdog()
+        dog.observe(NOW, None, True)
+        self.assertEqual(dog.observe(later(4), None, False), "none")
+        dog.observe(later(5), None, True)
+        self.assertEqual(dog.observe(later(10), None, True), "none")
+        self.assertEqual(dog.observe(later(11), None, True), "restart")
 
     def test_healthy_again_after_a_restart_is_a_recovery(self):
         dog = watchdog.Watchdog()
-        dog.observe(NOW, down_since(6))
-        self.assertEqual(dog.observe(later(1), None), "recovered")
-        self.assertEqual((dog.failed, dog.pending_since, dog.first_seen_bad), (0, None, None))
+        dog.observe(NOW, down_since(6), False)
+        self.assertEqual(dog.observe(later(1), None, False), "recovered")
+        self.assertEqual((dog.failed, dog.pending_since, dog.since), (0, None, None))
 
     def test_still_unhealthy_when_the_verify_window_ends_is_a_failed_recovery(self):
         dog = watchdog.Watchdog()
         since = down_since(6)
-        dog.observe(NOW, since)
-        self.assertEqual(dog.observe(later(2), since), "none")
-        self.assertEqual(dog.observe(later(3), since), "recovery_failed")
+        dog.observe(NOW, since, False)
+        self.assertEqual(dog.observe(later(2), since, False), "none")
+        self.assertEqual(dog.observe(later(3), since, False), "recovery_failed")
         self.assertEqual(dog.failed, 1)
 
     def test_restarts_are_at_least_ten_minutes_apart(self):
         dog = watchdog.Watchdog()
         since = down_since(6)
-        self.assertEqual(dog.observe(NOW, since), "restart")
-        self.assertEqual(dog.observe(later(3), since), "recovery_failed")
-        self.assertEqual(dog.observe(later(9), since), "none")
-        self.assertEqual(dog.observe(later(10), since), "restart")
+        self.assertEqual(dog.observe(NOW, since, False), "restart")
+        self.assertEqual(dog.observe(later(3), since, False), "recovery_failed")
+        self.assertEqual(dog.observe(later(9), since, False), "none")
+        self.assertEqual(dog.observe(later(10), since, False), "restart")
 
     def test_the_third_failed_recovery_alerts_once_and_restarts_stop(self):
         dog = watchdog.Watchdog()
         since = down_since(6)
-        actions = [dog.observe(later(minute), since) for minute in range(40)]
+        actions = [dog.observe(later(minute), since, False) for minute in range(40)]
         self.assertEqual(actions.count("restart"), 3)
         self.assertEqual(actions.count("recovery_failed"), 3)
         self.assertEqual(actions.count("alert"), 1)
@@ -383,17 +410,17 @@ class RecoveryPolicy(unittest.TestCase):
     def test_coming_back_on_its_own_after_a_failure_is_noted_and_resets(self):
         dog = watchdog.Watchdog()
         dog.failed, dog.alerted = watchdog.MAX_FAILED_RECOVERIES, True
-        self.assertEqual(dog.observe(NOW, None), "reconnected")
+        self.assertEqual(dog.observe(NOW, None, False), "reconnected")
         self.assertEqual((dog.failed, dog.alerted), (0, False))
-        self.assertEqual(dog.observe(later(1), None), "none")
+        self.assertEqual(dog.observe(later(1), None, False), "none")
 ```
 
-With one observation a minute, restarts land at minutes 0, 10 and 20, their failures at 3, 13 and 23, and the alert at 24.
+With one observation a minute, restarts land at minutes 0, 10 and 20, their failures at 3, 13 and 23, and the alert at 24. In the long stall test the retry loop reports every few minutes for a quarter of an hour, then the writer dies at minute 15; the restart waits until minute 21, six minutes after the dead writer was first seen, not after the stall began.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
 Run: `python3 -m unittest discover -s agent/tests -p test_watchdog.py -v`
-Expected: 8 errors, each `AttributeError: module 'transport_watchdog' has no attribute 'Watchdog'`; the 12 Task 1 tests still pass.
+Expected: 11 errors, each `AttributeError: module 'transport_watchdog' has no attribute 'Watchdog'`; the 13 Task 1 tests still pass.
 
 - [ ] **Step 3: Write the policy**
 
@@ -413,18 +440,28 @@ class Watchdog:
     """
 
     def __init__(self):
-        self.first_seen_bad = None
+        self.unseen_since = None
+        self.since = None
         self.last_restart_at = None
         self.pending_since = None
         self.failed = 0
         self.alerted = False
 
-    def observe(self, now, since):
-        """One of none, restart, recovered, recovery_failed, alert or reconnected."""
-        if since is None:
-            self.first_seen_bad = None
-        elif self.first_seen_bad is None:
-            self.first_seen_bad = now
+    def observe(self, now, silent_since, unseen):
+        """One of none, restart, recovered, recovery_failed, alert or reconnected.
+
+        silent_since and unseen are what assess reported. An unseen problem is
+        dated from the first observation that reported one and forgotten by the
+        first that does not, so a long stall never shortens the grace a dead
+        writer gets.
+        """
+        if not unseen:
+            self.unseen_since = None
+        elif self.unseen_since is None:
+            self.unseen_since = now
+        known = [moment for moment in (silent_since, self.unseen_since) if moment is not None]
+        self.since = min(known) if known else None
+        since = self.since
 
         if self.pending_since is not None:
             if since is None:
@@ -468,7 +505,7 @@ class Watchdog:
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `python3 -m unittest discover -s agent/tests -p test_watchdog.py -v`
-Expected: `Ran 20 tests`, `OK`.
+Expected: `Ran 24 tests`, `OK`.
 
 - [ ] **Step 5: Commit**
 
@@ -566,7 +603,7 @@ class OwnerAlert(unittest.TestCase):
 - [ ] **Step 2: Run the test to verify it fails**
 
 Run: `python3 -m unittest discover -s agent/tests -p test_watchdog.py -v`
-Expected: `Ran 27 tests`, `FAILED (errors=15)`, every error an `AttributeError` for `build_alert_request`, `send_alert` or `ALERT_TEXT`. Seven tests fail, and unittest counts each failing subtest separately, which makes fifteen. The 20 earlier tests still pass.
+Expected: `Ran 31 tests`, `FAILED (errors=15)`, every error an `AttributeError` for `build_alert_request`, `send_alert` or `ALERT_TEXT`. Seven tests fail, and unittest counts each failing subtest separately, which makes fifteen. The 24 earlier tests still pass.
 
 - [ ] **Step 3: Write the alert sender**
 
@@ -627,7 +664,7 @@ The order of the `except` clauses matters. `HTTPError` subclasses `URLError`, an
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `python3 -m unittest discover -s agent/tests -p test_watchdog.py -v`
-Expected: `Ran 27 tests`, `OK`.
+Expected: `Ran 31 tests`, `OK`.
 
 - [ ] **Step 5: Commit**
 
@@ -651,7 +688,7 @@ git commit -m "Text the owner over REST when the transport cannot be recovered"
 - Modify: `agent/tests/test_watchdog.py` (one import, then two test classes above `if __name__`)
 
 **Interfaces:**
-- Consumes: `load_state`, `problem_since`, `process_start_time` from Task 1; `Watchdog`, `MAX_FAILED_RECOVERIES` from Task 2; `API_BASE`, `send_alert` from Task 3.
+- Consumes: `load_state`, `assess`, `process_start_time` from Task 1; `Watchdog` with `observe(now, silent_since, unseen)`, `since` and `failed`, and `MAX_FAILED_RECOVERIES`, from Task 2; `API_BASE`, `send_alert` from Task 3.
 - Produces: `GATEWAY_SERVICE`, `ENV_DIR`, `CHECK_SECONDS`; `read_env(name, env_dir=ENV_DIR) -> str`; `log(message: str) -> None`; `restart_gateway(run=subprocess.run) -> bool`; `make_alert(base, token, chat_uid, send=send_alert) -> Callable[[], str]`; `once(dog, now, doc, restart, alert, log=log, start_time_of=process_start_time) -> str`; `main()`.
 
 - [ ] **Step 1: Write the failing test**
@@ -717,6 +754,13 @@ class Loop(unittest.TestCase):
                       alert=lambda: "sent", log=lines.append, start_time_of=running)
         self.assertEqual(len(lines), 2)
 
+    def test_a_missing_file_is_waited_on_rather_than_acted_on(self):
+        restarts, lines = [], []
+        action = watchdog.once(watchdog.Watchdog(), NOW, None,
+                               restart=lambda: restarts.append(1) or True, alert=lambda: "sent",
+                               log=lines.append, start_time_of=running)
+        self.assertEqual((action, restarts, lines), ("none", [], []))
+
     def test_the_alert_logs_its_outcome_and_never_the_token(self):
         sent, lines = [], []
         dog = watchdog.Watchdog()
@@ -740,7 +784,7 @@ class Loop(unittest.TestCase):
 - [ ] **Step 2: Run the test to verify it fails**
 
 Run: `python3 -m unittest discover -s agent/tests -p test_watchdog.py -v`
-Expected: 9 tests fail or error. The service and Dockerfile tests fail on missing files or assertions, and the loop tests error with `AttributeError` for `restart_gateway`, `once` or `make_alert`. The 27 earlier tests still pass.
+Expected: 10 tests fail or error. The service and Dockerfile tests fail on missing files or assertions, and the loop tests error with `AttributeError` for `restart_gateway`, `once` or `make_alert`. The 31 earlier tests still pass.
 
 - [ ] **Step 3: Write the loop**
 
@@ -782,10 +826,10 @@ def make_alert(base, token, chat_uid, send=send_alert):
 
 def once(dog, now, doc, restart, alert, log=log, start_time_of=process_start_time):
     """Apply one observation, log what it led to, and return the action."""
-    since = problem_since(doc, now, dog.first_seen_bad, start_time_of)
-    action = dog.observe(now, since)
+    silent_since, unseen = assess(doc, start_time_of)
+    action = dog.observe(now, silent_since, unseen)
     if action == "restart":
-        log(f"transport not healthy since {since:%H:%M} UTC, restarting the gateway")
+        log(f"transport not healthy since {dog.since:%H:%M} UTC, restarting the gateway")
         if not restart():
             log("s6 did not accept the restart")
     elif action == "recovered":
@@ -889,10 +933,10 @@ Append this step to the `package` job in `.github/workflows/agent.yml`, after th
 - [ ] **Step 7: Run the tests to verify they pass**
 
 Run: `python3 -m unittest discover -s agent/tests -p test_watchdog.py -v`
-Expected: `Ran 36 tests`, `OK`.
+Expected: `Ran 41 tests`, `OK`.
 
 Run: `python3 -m unittest discover -s agent/tests -v`
-Expected: `Ran 44 tests`, `OK`, the suite's existing 8 among them.
+Expected: `Ran 49 tests`, `OK`, the suite's existing 8 among them.
 
 - [ ] **Step 8: Build the image and run the CI check locally**
 
@@ -1025,10 +1069,12 @@ Expected: `transport connected again`, with no further alert, and `plow_chat` re
 
 ## Self-Review
 
-**Spec coverage.** The rule for both platforms, with liveness by pid and start time, the grace, and first sighting: Task 1. Restart only the gateway, three minutes to verify, one restart per ten minutes, the alert after three failures, and every outcome logged, including a later reconnection: Tasks 2 and 4. The alert over REST, sent once and never again, with the plugin's delivery unknown statuses and plain text without dashes: Tasks 2 and 3. The service in the image, with no upstream change: Task 4. The end to end proof, with the owner's go ahead: Task 5.
+**Spec coverage.** The rule for both platforms, with liveness by pid and start time: Task 1. The grace, with unseen problems dated from their own first sighting: Tasks 1 and 2. Restart only the gateway, three minutes to verify, one restart per ten minutes, the alert after three failures, and every outcome logged, including a later reconnection: Tasks 2 and 4. The alert over REST, sent once and never again, with the plugin's delivery unknown statuses and plain text without dashes: Tasks 2 and 3. The service in the image, with no upstream change: Task 4. The end to end proof, with the owner's go ahead: Task 5.
 
 **Checked on the running agent and in upstream code on September 16, not assumed.** The file's shape and its `+00:00` timestamps. `writer_pid` 198 with `writer_start_time` 38119734, equal to field 22 of `/proc/198/stat` under the parse Task 1 uses. The gateway runs as `hermes` under s6 at `/run/service/hermes-gateway`, and `/opt/hermes/.venv/bin/python3` is Python 3.13.5. `write_runtime_status` stamps `updated_at` on every write to an entry, and `_serve` calls `on_drop()` after every attempt that ends. `_post_message` sends `json={"body": ...}` to `{BASE}/v1/chats/{chat_id}/messages`, where `BASE` defaults to `https://api.plow.co`, and `_message_delivery_unknown` reads 408, 424 and 5xx as maybe delivered. The Dockerfile copies `image/s6-overlay/` and makes `agent-index/run` executable, and `.dockerignore` admits `image/**`. The container has no `iptables`.
 
 **Placeholder scan.** Every code step carries its code, and every command step its command and expected result.
 
-**Type consistency.** `problem_since` takes `start_time_of` in Tasks 1 and 4 alike. `observe` returns the six strings Task 4 matches. `send_alert` returns the three strings Task 3 asserts, and `make_alert` passes them through unchanged. Test counts run 12, 20, 27 and 36, plus the suite's existing 8.
+**Type consistency.** `assess` takes `start_time_of` in Tasks 1 and 4 alike, and returns the `(silent_since, unseen)` pair `observe` takes in Tasks 2 and 4. `observe` returns the six strings Task 4 matches, and Task 4 logs the `since` it keeps. `send_alert` returns the three strings Task 3 asserts, and `make_alert` passes them through unchanged. Test counts run 13, 24, 31 and 41, plus the suite's existing 8.
+
+**Corrected during execution.** Task 2's review found that a single first sighting for every kind of problem let a long stall shorten the grace a dead writer gets, restarting a starting gateway at once. `problem_since` became `assess`, which reports silent and unseen problems separately, and the `Watchdog` dates unseen problems itself.
