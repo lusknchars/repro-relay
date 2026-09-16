@@ -71,3 +71,29 @@ async fn a_replayed_message_is_stored_once(pool: PgPool) {
         .fetch_one(&pool).await.unwrap();
     assert_eq!(count, 1, "the replay must not duplicate");
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn an_artifact_records_produced_work(pool: PgPool) {
+    unsafe { std::env::set_var("REPRO_HANDLE_SALT", "test-salt") };
+    let key = bridge(&pool).await;
+    sqlx::query("INSERT INTO chat_identities(id,handle_digest,display_name) VALUES('i1',$1,'Ana')")
+        .bind(relay_api::pairing::handle_key("imessage", "+15550100").unwrap())
+        .execute(&pool).await.unwrap();
+    let app = relay_api::app(pool.clone());
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/conversations/artifacts")
+        .header("host", "127.0.0.1:8178")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header("x-relay-chat-key", &key)
+        .body(Body::from(json!({
+            "platform":"imessage","handle":"+15550100","kind":"digest",
+            "title":"Talk digest","source_url":"https://example.com/talk","body":"12:04 quote"
+        }).to_string()))
+        .unwrap();
+    assert!(app.oneshot(req).await.unwrap().status().is_success());
+
+    let kind: String = sqlx::query_scalar("SELECT kind FROM agent_artifacts")
+        .fetch_one(&pool).await.unwrap();
+    assert_eq!(kind, "digest");
+}
