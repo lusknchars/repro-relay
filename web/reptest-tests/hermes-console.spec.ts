@@ -7,9 +7,13 @@ type Item = {
   created_at: string; updated_at: string;
 };
 type State = { items: Item[]; active: boolean; posts: Record<string, string>[]; stops: string[]; startError?: string;
-  unmatched?: Set<string> };
+  unmatched?: Set<string>; crashes?: string[] };
 
 async function workspace(page: Page, role: string, state: State) {
+  // An uncaught render error unmounts the whole React root, which reaches the assertion as an
+  // empty page rather than as an error. Record it so a failure names its own exception.
+  state.crashes ??= [];
+  page.on('pageerror', error => state.crashes!.push(error.message));
   await page.route('**/api/v1/**', async route => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
@@ -67,6 +71,7 @@ async function teamPageReady(page: Page, state: State) {
     console.warn('[console-spec] headings:', headings.join(' | ') || 'none');
     console.warn('[console-spec] loading indicators:', loading);
     console.warn('[console-spec] body text:', body.replace(/\s+/g, ' ').slice(0, 400) || 'empty');
+    console.warn('[console-spec] page errors:', state.crashes?.join(' | ') || 'none');
     throw failure;
   }
 }
@@ -105,6 +110,7 @@ test('owner runs a console prompt and sees tool calls, usage and stop', async ({
   await page.screenshot({path: 'test-results/hermes-console-desktop.png', fullPage: true});
   await page.setViewportSize({width: 320, height: 900});
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  expect(state.crashes ?? []).toEqual([]);
 });
 
 test('console shows a busy Hermes without clearing the prompt', async ({page}) => {
@@ -118,6 +124,7 @@ test('console shows a busy Hermes without clearing the prompt', async ({page}) =
   await region.getByRole('button', {name: 'Run prompt', exact: true}).click();
   await expect(region.getByRole('alert')).toContainText('Hermes is busy');
   await expect(region.getByLabel('Prompt for Hermes', {exact: true})).toHaveValue('Hello');
+  expect(state.crashes ?? []).toEqual([]);
 });
 
 test('teammates do not see the owner test console', async ({page}) => {
@@ -127,4 +134,5 @@ test('teammates do not see the owner test console', async ({page}) => {
   await teamPageReady(page, state);
   await expect(page.getByRole('region', {name: 'Hermes team conversation'})).toBeVisible({timeout: 15_000});
   await expect(page.getByRole('region', {name: 'Hermes test console'})).toHaveCount(0);
+  expect(state.crashes ?? []).toEqual([]);
 });
