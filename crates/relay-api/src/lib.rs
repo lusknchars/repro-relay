@@ -10,6 +10,7 @@ pub mod chat;
 pub mod communication;
 mod competitors;
 pub mod contributions;
+pub mod conversations;
 pub mod discord;
 pub mod discord_notes;
 pub mod discord_voice;
@@ -267,6 +268,7 @@ pub fn app_with_discord(
         .merge(runtime_usage::routes())
         .merge(hermes_console::routes())
         .merge(pairing::routes())
+        .merge(conversations::routes())
         .merge(sentry::routes(sentry))
         .merge(exa::routes(exa::Connector::default()))
         .merge(competitors::routes())

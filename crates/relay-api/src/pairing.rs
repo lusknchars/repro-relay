@@ -146,7 +146,7 @@ struct Claim {
 /// before combining, so the fixed width inner digests make field
 /// boundaries unambiguous. A plain delimiter cannot guarantee that, since
 /// a handle may contain the delimiter.
-pub(crate) fn handle_key(platform: &str, handle: &str) -> ApiResult<String> {
+pub fn handle_key(platform: &str, handle: &str) -> ApiResult<String> {
     let salt = std::env::var("REPRO_HANDLE_SALT").map_err(|_| ApiError {
         status: StatusCode::SERVICE_UNAVAILABLE,
         message: "Set REPRO_HANDLE_SALT before pairing.".into(),
