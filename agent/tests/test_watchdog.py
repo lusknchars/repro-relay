@@ -114,5 +114,65 @@ class ProcessStartTime(unittest.TestCase):
             self.assertIsNone(watchdog.process_start_time(PID + 1, proc=folder))
 
 
+def down_since(minutes):
+    return NOW - dt.timedelta(minutes=minutes)
+
+
+def later(minutes):
+    return NOW + dt.timedelta(minutes=minutes)
+
+
+class RecoveryPolicy(unittest.TestCase):
+    def test_healthy_does_nothing(self):
+        self.assertEqual(watchdog.Watchdog().observe(NOW, None), "none")
+
+    def test_inside_the_grace_it_waits_and_remembers_the_first_sighting(self):
+        dog = watchdog.Watchdog()
+        self.assertEqual(dog.observe(NOW, down_since(2)), "none")
+        self.assertEqual(dog.observe(later(1), down_since(2)), "none")
+        self.assertEqual(dog.first_seen_bad, NOW)
+
+    def test_past_the_grace_it_restarts(self):
+        self.assertEqual(watchdog.Watchdog().observe(NOW, down_since(6)), "restart")
+
+    def test_healthy_again_after_a_restart_is_a_recovery(self):
+        dog = watchdog.Watchdog()
+        dog.observe(NOW, down_since(6))
+        self.assertEqual(dog.observe(later(1), None), "recovered")
+        self.assertEqual((dog.failed, dog.pending_since, dog.first_seen_bad), (0, None, None))
+
+    def test_still_unhealthy_when_the_verify_window_ends_is_a_failed_recovery(self):
+        dog = watchdog.Watchdog()
+        since = down_since(6)
+        dog.observe(NOW, since)
+        self.assertEqual(dog.observe(later(2), since), "none")
+        self.assertEqual(dog.observe(later(3), since), "recovery_failed")
+        self.assertEqual(dog.failed, 1)
+
+    def test_restarts_are_at_least_ten_minutes_apart(self):
+        dog = watchdog.Watchdog()
+        since = down_since(6)
+        self.assertEqual(dog.observe(NOW, since), "restart")
+        self.assertEqual(dog.observe(later(3), since), "recovery_failed")
+        self.assertEqual(dog.observe(later(9), since), "none")
+        self.assertEqual(dog.observe(later(10), since), "restart")
+
+    def test_the_third_failed_recovery_alerts_once_and_restarts_stop(self):
+        dog = watchdog.Watchdog()
+        since = down_since(6)
+        actions = [dog.observe(later(minute), since) for minute in range(40)]
+        self.assertEqual(actions.count("restart"), 3)
+        self.assertEqual(actions.count("recovery_failed"), 3)
+        self.assertEqual(actions.count("alert"), 1)
+        self.assertEqual(actions.index("alert"), 24)
+
+    def test_coming_back_on_its_own_after_a_failure_is_noted_and_resets(self):
+        dog = watchdog.Watchdog()
+        dog.failed, dog.alerted = watchdog.MAX_FAILED_RECOVERIES, True
+        self.assertEqual(dog.observe(NOW, None), "reconnected")
+        self.assertEqual((dog.failed, dog.alerted), (0, False))
+        self.assertEqual(dog.observe(later(1), None), "none")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -94,3 +94,68 @@ def problem_since(doc, now, first_seen_bad=None, start_time_of=process_start_tim
 
 def unhealthy(since, now):
     return since is not None and (now - since).total_seconds() >= GRACE_SECONDS
+
+
+RESTART_COOLDOWN_SECONDS = 600
+VERIFY_SECONDS = 180
+MAX_FAILED_RECOVERIES = 3
+
+
+class Watchdog:
+    """Decides, one observation at a time, whether to wait, restart or alert.
+
+    It never reads the clock, the file system or the network, so every rule is
+    tested by feeding it observations.
+    """
+
+    def __init__(self):
+        self.first_seen_bad = None
+        self.last_restart_at = None
+        self.pending_since = None
+        self.failed = 0
+        self.alerted = False
+
+    def observe(self, now, since):
+        """One of none, restart, recovered, recovery_failed, alert or reconnected."""
+        if since is None:
+            self.first_seen_bad = None
+        elif self.first_seen_bad is None:
+            self.first_seen_bad = now
+
+        if self.pending_since is not None:
+            if since is None:
+                self._reset()
+                return "recovered"
+            if (now - self.pending_since).total_seconds() < VERIFY_SECONDS:
+                return "none"
+            self.pending_since = None
+            self.failed += 1
+            return "recovery_failed"
+
+        if since is None:
+            if self.failed or self.alerted:
+                self._reset()
+                return "reconnected"
+            return "none"
+
+        if not unhealthy(since, now):
+            return "none"
+
+        if self.failed >= MAX_FAILED_RECOVERIES:
+            if self.alerted:
+                return "none"
+            self.alerted = True
+            return "alert"
+
+        if (self.last_restart_at is not None
+                and (now - self.last_restart_at).total_seconds() < RESTART_COOLDOWN_SECONDS):
+            return "none"
+
+        self.last_restart_at = now
+        self.pending_since = now
+        return "restart"
+
+    def _reset(self):
+        self.pending_since = None
+        self.failed = 0
+        self.alerted = False
