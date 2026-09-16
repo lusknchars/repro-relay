@@ -266,6 +266,7 @@ pub fn app_with_discord(
         .merge(model_setup::routes())
         .merge(runtime_usage::routes())
         .merge(hermes_console::routes())
+        .merge(pairing::routes())
         .merge(sentry::routes(sentry))
         .merge(exa::routes(exa::Connector::default()))
         .merge(competitors::routes())
