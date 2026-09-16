@@ -4,6 +4,15 @@ Design approved September 16, 2026: an s6 service inside the agent image, textin
 the owner only when recovery fails. It describes what to build; nothing here is
 shipped yet.
 
+Amended September 16, 2026, before planning, after reading the upstream code the
+design leans on. Changes: `updated_at` is rewritten after every failed attempt,
+not only on a state change, so the rule reads it as the retry loop's last report;
+a writer is judged live by process id and start time together, as upstream
+judges it; a dead writer waits out the same grace instead of acting at once,
+because every gateway start inherits the previous writer's entries; and the end
+to end tests no longer block the network, which this container cannot do and
+which would reproduce a healthy retry rather than the outage.
+
 ## Why
 
 On September 16 the iMessage transport stopped receiving at 04:28 and stayed
@@ -49,39 +58,64 @@ unproven, and this design does not depend on knowing it.
   "state": "connected",
   "error_code": null,
   "error_message": null,
-  "updated_at": "2026-09-16T17:06:57Z",
+  "updated_at": "2026-09-16T18:36:15.526494+00:00",
   "writer_pid": 198,
   "writer_start_time": 38119734
 }
 ```
 
-The gateway's base adapter writes it on every transition through
-`_mark_connected`, `_mark_disconnected` and `_set_fatal_error`, so `state` is one
-of `connected`, `retrying`, `disconnected` or `fatal`. `updated_at` marks the last
-state change, not a heartbeat.
+The gateway's base adapter writes an entry through `_mark_connected`,
+`_mark_disconnected` and `_set_fatal_error`, so `state` is one of `connected`,
+`retrying`, `disconnected` or `fatal`. `write_runtime_status` in
+`gateway/status.py` stamps `updated_at`, `writer_pid` and `writer_start_time` on
+every write to an entry, whether or not the state changed.
+
+That makes `updated_at` more useful than a last state change. The transport's
+loop calls `on_drop()`, which writes `disconnected`, after every attempt that
+ends, before it sleeps. While it retries, the entry is rewritten at least once
+per backoff, capped at five minutes, plus however long the failed attempt took.
+An entry that is not `connected` and has not been written for six minutes means
+the loop itself has stopped. Nothing rewrites a `connected` entry while the
+connection holds, so an old `updated_at` on a connected entry means nothing.
+
+`writer_pid` and `writer_start_time` name the process that wrote the entry. The
+start time is field 22 of `/proc/<pid>/stat`. Upstream's status endpoint treats
+an entry as live only when that process exists and its start time still
+matches, which guards against a reused process id.
 
 This is read from outside the process and needs no change to upstream code.
 
 **Unproven assumption.** The restart overwrote the file, so what it said during
-the outage cannot be recovered. Reading `_serve`, the generic handler calls
-`on_drop()`, which writes `disconnected`, before any retry. A retry that hung
-afterwards would leave the file reading `disconnected`. A socket that stayed half
-open while claiming `connected` should be caught by `ws_connect(heartbeat=30)`.
-Both are inferences from code. The test plan below exists to prove them.
+the outage cannot be recovered. Reading `_serve`, both endings of an attempt call
+`on_drop()` before the backoff sleep, so a retry that hung afterwards would leave
+the entry reading `disconnected` with an `updated_at` that stops moving. A socket
+that stayed half open while claiming `connected` should be caught by
+`ws_connect(heartbeat=30)`. Both are inferences from code. The first cannot be
+reproduced without changing upstream, since it needs an await that never
+returns; the test plan below proves everything around it.
 
 ## The rule
 
+Each watched entry is judged on its own, and the earliest problem wins.
+
 | Condition | Verdict |
 | --- | --- |
-| `state` is `connected` | Healthy |
-| `state` is anything else and `updated_at` is under 6 minutes old | Healthy; upstream's own retry is still inside its backoff cycle |
-| `state` is anything else and `updated_at` is 6 minutes or older | Unhealthy |
-| `writer_pid` is not a live process | Unhealthy immediately; the file is stale |
-| The file is missing or not valid JSON | Unhealthy after the same 6 minute grace |
+| The writer is live and `state` is `connected` | Healthy |
+| The writer is live, `state` is anything else, and `updated_at` is under 6 minutes old | Healthy; the retry loop is still reporting |
+| The writer is live, `state` is anything else, and `updated_at` is 6 minutes or older | Unhealthy |
+| The writer is not live: no such process, a zombie, or a different start time | Unhealthy once seen for 6 minutes |
+| The entry is absent, or the file is missing or not a JSON object | Unhealthy once seen for 6 minutes |
 
 Six minutes is one minute past upstream's five minute backoff cap, so the
 transport always gets one full retry cycle to recover on its own before the
 watchdog acts. Acting sooner would thrash on drops like the one at 17:06.
+
+A dead writer waits out the same grace rather than acting at once. s6 restarts a
+gateway that exits within a second, and the new process leaves the previous
+writer's entries in the file until its own adapters report. That happens on
+every container start and after every restart, including the watchdog's own, so
+acting at once would restart a gateway that is still starting. A writer that
+stays dead for six minutes means s6 cannot bring it back.
 
 The watchdog checks both `plow_chat` and `plow_email`. They share the transport
 and failed together at 04:27.
@@ -90,14 +124,15 @@ and failed together at 04:27.
 
 1. Restart the gateway service only, with `s6-svc -r`, not the container. Other
    services keep running.
-2. Wait up to three minutes for `plow_chat` to report `connected` again.
+2. Wait up to three minutes for the watched entries to report `connected` again.
 3. At most one restart per ten minutes, so a transport that cannot connect at all,
    for example while Plow itself is down, does not become a restart loop.
 4. After three consecutive recoveries that fail to reach `connected`, stop
    restarting and send the alert.
 
-Every recovery is written to the watchdog's log whether it succeeds or not, so
-the history exists for the dashboard later.
+Every recovery is written to the watchdog's log whether it succeeds or not, and
+so is a transport that comes back on its own after a failed recovery, so the
+history exists for the dashboard later.
 
 ## The alert
 
@@ -111,6 +146,11 @@ outage but never went mute.
 The watchdog posts to the owner's chat with the agent's token, using the chat id
 `plow-init` configures. The text follows the agent's voice rules: plain, short,
 and without hyphens or dashes of any kind.
+
+It is sent once per failure episode and never resent. A 408, a 424 or any 5xx
+means Plow may already have accepted it, which is how the plugin's own
+`_message_delivery_unknown` reads those statuses, so sending again risks a
+double send.
 
 **Unproven assumption.** During the outage `GET /v1/chats` with the agent token
 returned 200, which shows the REST API was reachable. It does not show that a
@@ -127,27 +167,36 @@ message send succeeds while the websocket is down. The test plan proves it.
 
 ## Testing
 
-Unit tests for the rule, against fixture files: connected; disconnected inside
-the grace period; disconnected past it; fatal; `writer_pid` not alive; missing
-file; malformed JSON.
+Unit tests for the rule, against the shape of the real file: connected; not
+connected inside the grace period; not connected past it; fatal; retrying; a
+writer that is gone, a zombie, or has a different start time; an entry left by
+a previous gateway; an absent entry; a missing file; malformed JSON. Unit tests
+for recovery, rate limiting, the alert request and every outcome of sending it,
+with the clock, the process table, s6 and the network all injected.
 
-End to end, on a running container, reproducing the outage on purpose rather
-than trusting the reading of the code above:
+End to end, on the running agent, only with the owner's go ahead, since it
+restarts the live agent, leaves it deaf for about half an hour, and sends one
+real message to the owner's own chat. The container has no `iptables`, and a
+network block would not reproduce the outage in any case: a loop that fails
+fast keeps writing `disconnected` every few minutes, which is a healthy retry
+the watchdog must leave alone. So:
 
-1. Block outbound websocket traffic from inside the container. Confirm
-   `plow_chat` leaves `connected` in `gateway_state.json`. This proves the first
-   unproven assumption.
-2. Keep it blocked past six minutes. Confirm exactly one gateway restart.
-3. Unblock. Confirm `plow_chat` returns to `connected` and **no** alert is sent.
-4. Block again and keep it blocked. Confirm restarts stay at most one per ten
-   minutes and that one alert arrives after the third failed recovery. This
-   proves the second unproven assumption, that a REST send works with the
-   websocket down.
-5. Kill the gateway process. Confirm the stale `writer_pid` is caught without
-   waiting for the grace period.
+1. After the rebuild, confirm the watchdog does not restart the gateway while
+   the container starts, and stays silent for ten minutes.
+2. As the gateway's own user, write the state a stalled loop leaves:
+   `plow_chat` reading `disconnected`, last written seven minutes ago. Confirm
+   exactly one restart, the entry returning to `connected` under a new writer, a
+   logged recovery, and **no** alert. This proves detection and recovery, not
+   what upstream writes during a hang.
+3. Hold the gateway down with `s6-svc -d`. Confirm the dead writer is caught
+   after the grace period, that restarts stay at most one per ten minutes, and
+   that one alert arrives after the third failed recovery. With the gateway down
+   this agent has no websocket at all, so the alert arriving proves the second
+   unproven assumption. Bring the gateway back with `s6-svc -u` and confirm the
+   watchdog logs it and sends nothing more.
 
-No test sends a real message except step 4, and that one goes only to the
-owner's own chat.
+No test sends a real message except step 3, and that one goes only to the
+owner's own chat. Nothing should be texted to the agent while it is held down.
 
 ## Deployment
 
