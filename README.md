@@ -41,6 +41,14 @@ One command: it checks Docker, signs you in to Plow (you send one activation tex
 
 Needs Docker Desktop running, Python 3, and the phone that owns your Plow account. The agent's model access comes from Plow, so no provider key is required.
 
+### The app, already built
+
+Open this repository's **Releases** page and download **Repro Relay.dmg**, then
+drag it to Applications. It is not signed by Apple, so the first open needs a
+right click on the app and then **Open**. The same release carries a starter
+archive: unzip it, double click **Start Relay.command**, and it runs the
+workspace service the app talks to.
+
 ### The workspace on this Mac
 
 ```sh
