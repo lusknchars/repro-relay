@@ -182,7 +182,9 @@ async fn mine(
     .bind(&who.id)
     .fetch_all(&pool)
     .await?;
-    Ok(Json(json!({"name": who.name, "messages": messages, "artifacts": artifacts})))
+    Ok(Json(
+        json!({"name": who.name, "messages": messages, "artifacts": artifacts}),
+    ))
 }
 
 async fn forget(

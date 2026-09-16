@@ -76,7 +76,9 @@ fn code() -> String {
 
 fn available(c: &Hosting) -> ApiResult<()> {
     if c.mode() == "guest" {
-        Err(denied("Pairing is unavailable in the temporary guest beta."))
+        Err(denied(
+            "Pairing is unavailable in the temporary guest beta.",
+        ))
     } else {
         Ok(())
     }
@@ -151,7 +153,12 @@ pub fn handle_key(platform: &str, handle: &str) -> ApiResult<String> {
         status: StatusCode::SERVICE_UNAVAILABLE,
         message: "Set REPRO_HANDLE_SALT before pairing.".into(),
     })?;
-    Ok(hash(&format!("{}{}{}", hash(&salt), hash(platform), hash(handle))))
+    Ok(hash(&format!(
+        "{}{}{}",
+        hash(&salt),
+        hash(platform),
+        hash(handle)
+    )))
 }
 
 async fn claim(
