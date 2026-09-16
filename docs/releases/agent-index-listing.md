@@ -57,6 +57,21 @@ For Discord, to danedelattre, about verification and one click deployment.
 > video digest skill and the official Agent Index reporter, and it is reporting
 > usage already.
 >
+> The listing now also carries a video, YouTube id `Q_BjDQ6bw68`, and three use
+> cases: `browser-seek-advert`, `talk-digest-citations` and
+> `terminal-repository-work`. Each one describes work the agent actually did,
+> written from its own session records rather than from a pitch.
+>
+> One thing worth checking on your side. Every write returns 200 with the data
+> echoed back, but the public page has not picked any of it up. Right now
+> `https://aiworthusing.com/agent-index/repro-relay` returns 118,765 bytes with
+> `x-vercel-cache: HIT` and `last-modified: Wed, 16 Sep 2026 12:39:18 GMT`, and
+> the HTML contains no occurrence of `repro-relay`, the video id, or any story
+> id. The register call reported `updated repro-relay` at that same URL at
+> 14:59, after that last modified time. So the writes appear to land and the
+> page appears to serve from a cache that predates them. If you open the listing
+> and see nothing, that is why, and it is not a sign the agent is unregistered.
+>
 > Two asks. Could you verify it, and could you set it up for one click
 > deployment on Plow infrastructure? Tell me what you need from me for that, for
 > example a pinned commit, a published image or compose changes.
