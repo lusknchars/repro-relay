@@ -121,6 +121,11 @@ const CONTEXT: Record<
       ["work", "Open investigation workspace"],
     ],
   },
+  pairing: {
+    title: "Pairing",
+    description: "A pairing code and the signed-in texter's own conversation history.",
+    links: [],
+  },
 };
 
 export function WorkspaceContext({

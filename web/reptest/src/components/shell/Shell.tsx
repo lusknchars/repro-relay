@@ -10,7 +10,7 @@ import { SidebarBackground } from "./SidebarBackground";
 import { SentryBell } from "@/components/sentry";
 import { useWorkspace } from "@/lib/live";
 
-export type Route = "work" | "competitors" | "reach" | "team" | "agents" | "users" | "users-create" | "knowledge" | "usage" | "settings" | "setup" | "architecture" | "calendar" | "monitoring";
+export type Route = "work" | "competitors" | "reach" | "team" | "agents" | "users" | "users-create" | "knowledge" | "usage" | "settings" | "setup" | "architecture" | "calendar" | "monitoring" | "pairing";
 
 const NAV: { id: Route; label: string; icon: typeof Inbox; hint: string }[] = [
   { id: "work", label: "Work", icon: Inbox, hint: "Decisions, active and blocked work, history" },

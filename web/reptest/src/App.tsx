@@ -16,6 +16,7 @@ import { UsagePage } from "@/pages/Usage";
 import { SettingsPage } from "@/pages/Settings";
 import { CompetitorsPage } from "@/pages/Competitors";
 import { SetupPage } from "@/pages/Setup";
+import { PairingPage } from "@/pages/Pairing";
 import { WorkspaceProvider } from "@/lib/live";
 import { WorkspaceGuide, guideSteps } from "@/components/workspace-guide";
 
@@ -42,6 +43,7 @@ function Root() {
             "architecture",
             "calendar",
             "monitoring",
+            "pairing",
           ].includes(view || "")
         ? (view as Route)
         : "work";
@@ -100,6 +102,7 @@ function Root() {
         onOpenAccount={() => setAccountOpen(true)}
       >
         {route === "work" && <WorkPage />}
+        {route === "pairing" && <PairingPage />}
         {route === "reach" && <ReachPage />}
         {route === "competitors" && <CompetitorsPage onSettings={openConnection} onTeam={() => navigate("team")} />}
         {(route === "users" || route === "users-create") && <UsersPage create={route === "users-create"} onRoute={navigate} />}
