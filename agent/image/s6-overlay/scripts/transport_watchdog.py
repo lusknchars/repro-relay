@@ -144,8 +144,16 @@ MCP_LOG = "/var/lib/hermes/logs/agent.log"
 MCP_SERVER = "plow"
 MCP_TAIL_BYTES = 262_144
 MCP_GRACE_SECONDS = 360
-MCP_CHANGE = re.compile(r"\(state:\s*(?P<was>[^)]*?)\s*(?:→|->)\s*(?P<now>[^)]*?)\s*\)")
-MCP_STAMP = re.compile(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),(\d{3})")
+# One anchored shape for the whole line, because a chat message or a tool error
+# quoting a state change is written into this same file verbatim, and only the
+# gateway's own MCP logger may be believed. Every variable part is bounded, so
+# one absurd line cannot cost the watchdog a minute of root cpu.
+MCP_LINE = re.compile(
+    r"(?P<stamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) [A-Z]{4,8} "
+    r"tools\.mcp_tool: MCP server '(?P<server>[^'\n]{1,64})'"
+    r"[^\n]{0,400}?"
+    r"\(state: ?(?P<was>[A-Za-z_]{1,32}) ?(?:→|->) ?(?P<now>[A-Za-z_]{1,32})\)")
+MCP_STAMP_FORMAT = "%Y-%m-%d %H:%M:%S,%f"
 
 
 def read_tail(path, limit):
@@ -168,56 +176,51 @@ def read_tail(path, limit):
     return text.partition("\n")[2] if start else text
 
 
-def logged_at(line):
-    """The UTC moment a log line was stamped with, or None when it carries none.
+def stamped_at(stamp):
+    """The UTC moment a logger stamp names, or None when it names no real moment.
 
     The container runs on UTC and the gateway's logger writes a naive stamp, so
     the moment is read as UTC and returned aware.
     """
-    stamp = MCP_STAMP.match(line)
-    if stamp is None:
-        return None
     try:
-        moment = dt.datetime.strptime(stamp.group(1), "%Y-%m-%d %H:%M:%S")
+        return dt.datetime.strptime(stamp, MCP_STAMP_FORMAT).replace(tzinfo=dt.timezone.utc)
     except ValueError:
         return None
-    return moment.replace(microsecond=int(stamp.group(2)) * 1000, tzinfo=dt.timezone.utc)
 
 
 def mcp_status(path=MCP_LOG, server=MCP_SERVER, tail=MCP_TAIL_BYTES):
     """(state, since) for the MCP session the agent reaches the owner's Mac through.
 
-    Nothing records this session in gateway_state.json, so the last line that
-    reports a state change for the server names both its state and when it
-    changed. The real log writes the arrow as U+2192; a plain -> reads the same.
-    (None, None) means there is no such line to read.
+    Nothing records this session in gateway_state.json, so the last line the
+    gateway's own MCP logger wrote about the server names both its state and when
+    it changed. The whole line must have that logger's shape: anything else in
+    this file, including a message or a tool error quoting a state change, is not
+    a reading, and neither is a line whose stamp names no real moment. The real
+    log writes the arrow as U+2192; a plain -> reads the same. (None, None) means
+    there is nothing to read.
     """
-    named = f"MCP server '{server}'"
     for line in reversed(read_tail(path, tail).splitlines()):
-        if named not in line:
+        written = MCP_LINE.match(line)
+        if written is None or written.group("server") != server:
             continue
-        change = MCP_CHANGE.search(line)
-        if change is None:
-            continue
-        state = change.group("now").lower()
-        if state:
-            return state, logged_at(line)
+        when = stamped_at(written.group("stamp"))
+        if when is not None:
+            return written.group("now").lower(), when
     return None, None
 
 
-def mcp_problem(state, since, now):
+def mcp_problem(state, since):
     """When the Mac session's trouble started, or None while there is none.
 
     Only connected is healthy. degraded and parked are what the log writes, and
-    any other state is read the same way rather than assumed benign. A change the
-    log left unstamped is dated from this sighting, so it waits out the grace
-    from here instead of being acted on at once. The caller applies that grace
-    with unhealthy, which gives the Mac session the MCP_GRACE_SECONDS the
+    any other state is read the same way rather than assumed benign. The date is
+    the log's own, never the clock, so the trouble ages. The caller applies the
+    grace with unhealthy, which gives the Mac session the MCP_GRACE_SECONDS the
     transport gets: a parked session self probes only every five minutes.
     """
     if state is None or state == "connected":
         return None
-    return since if since is not None else now
+    return since
 
 
 RESTART_COOLDOWN_SECONDS = 600
@@ -495,7 +498,7 @@ def mac_watch(dog, now, mcp, probe, alert, log):
     the owner is told once for the episode and the policy is left alone.
     """
     state, since = mcp()
-    problem = mcp_problem(state, since, now)
+    problem = mcp_problem(state, since)
     if problem is None:
         if dog.mac_reported:
             log("the Mac session is connected again")

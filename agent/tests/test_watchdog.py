@@ -1,10 +1,13 @@
+from contextlib import contextmanager
 import datetime as dt
 import importlib.util
 import inspect
 import json
 import os
 from pathlib import Path
+import signal
 import tempfile
+import time
 import unittest
 import unittest.mock
 import urllib.error
@@ -149,16 +152,36 @@ class ProcessStartTime(unittest.TestCase):
 
 ARROW = "→"
 
+# The lines the running agent wrote on September 17, verbatim.
+DEGRADED = "2026-09-17 18:27:49,111 WARNING tools.mcp_tool: MCP server 'plow' keepalive failed, triggering reconnect (state: connected → degraded): MCPError: Server returned an error response"
+PARKED = "2026-09-17 18:28:25,446 WARNING tools.mcp_tool: MCP server 'plow' failed after 5 reconnection attempts, parking; will self-probe every 300s until it recovers (state: degraded → parked): MCPError: Server returned an error response"
+REVIVED = "2026-09-17 18:36:29,267 WARNING tools.mcp_tool: MCP server 'plow': revived — session healthy again after parking (state: parked → connected)"
+UNKNOWN_TOOL = '2026-09-17 17:03:47,416 WARNING [20260915_195146_eccb6d55] agent.tool_executor: Tool mcp__plow__plow_device_status returned error (0.00s): {"error": "Unknown tool: mcp__plow__plow_device_status"}'
+AGENT_LOG = "\n".join([UNKNOWN_TOOL, DEGRADED, PARKED]) + "\n"
+
+# The same two substrings, inside lines the gateway's MCP logger did not write.
+CHAT_ECHO = f'2026-09-17 18:41:02,004 INFO agent.messages: message from the owner: "{PARKED}"'
+TOOL_ECHO = ('2026-09-17 18:42:11,900 WARNING [20260915_195146_eccb6d55] agent.tool_executor: '
+             f'Tool mcp__plow__plow_read_file returned error (0.00s): {{"error": "{REVIVED}"}}')
+
 
 def mcp_line(at, body, server="plow"):
     return f"2026-09-17 {at} WARNING tools.mcp_tool: MCP server '{server}' {body}"
 
 
-DEGRADED = mcp_line("18:27:49,111", f"keepalive failed, triggering reconnect (state: connected {ARROW} degraded): MCPError: Server returned an error response")
-PARKED = mcp_line("18:28:25,446", f"failed after 5 reconnection attempts, parking; will self-probe every 300s until it recovers (state: degraded {ARROW} parked): MCPError: Server returned an error response")
-REVIVED = mcp_line("18:36:29,267", f": revived — session healthy again after parking (state: parked {ARROW} connected)")
-UNKNOWN_TOOL = '2026-09-17 17:03:47,416 WARNING [20260915_195146_eccb6d55] agent.tool_executor: Tool mcp__plow__plow_device_status returned error (0.00s): {"error": "Unknown tool: mcp__plow__plow_device_status"}'
-AGENT_LOG = "\n".join([UNKNOWN_TOOL, DEGRADED, PARKED]) + "\n"
+@contextmanager
+def deadline(seconds=5):
+    """Turn a read that blocks into a failure rather than a hung suite."""
+    def ring(number, frame):
+        raise TimeoutError("the call blocked")
+
+    previous = signal.signal(signal.SIGALRM, ring)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
 
 
 def logged(folder, text):
@@ -183,6 +206,34 @@ class MacSessionLog(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             self.assertEqual(watchdog.mcp_status(logged(folder, text)),
                              ("connected", at(18, 36, 29, 267)))
+
+    def test_a_line_the_gateways_own_logger_did_not_write_is_not_a_reading(self):
+        text = "\n".join([DEGRADED, PARKED, REVIVED, CHAT_ECHO, TOOL_ECHO]) + "\n"
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertEqual(watchdog.mcp_status(logged(folder, text)),
+                             ("connected", at(18, 36, 29, 267)))
+            quoted = "\n".join([CHAT_ECHO, TOOL_ECHO]) + "\n"
+            self.assertEqual(watchdog.mcp_status(logged(folder, quoted)), (None, None))
+
+    def test_a_stamp_that_names_no_moment_is_not_a_reading(self):
+        impossible = PARKED.replace("2026-09-17 18:28:25,446", "2026-13-45 18:28:25,446")
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertEqual(watchdog.mcp_status(logged(folder, impossible + "\n")), (None, None))
+            both = "\n".join([DEGRADED, impossible]) + "\n"
+            self.assertEqual(watchdog.mcp_status(logged(folder, both)),
+                             ("degraded", at(18, 27, 49, 111)))
+
+    def test_a_quarter_megabyte_hostile_line_costs_almost_nothing(self):
+        hostile = "2026-09-17 18:29:00,000 WARNING tools.mcp_tool: MCP server 'plow' " + "(state: " * 34000
+        self.assertGreater(len(hostile.encode()), 256 * 1024)
+        text = "\n".join([PARKED, hostile]) + "\n"
+        with tempfile.TemporaryDirectory() as folder:
+            path = logged(folder, text)
+            started = time.perf_counter()
+            answer = watchdog.mcp_status(path, tail=len(text.encode()) + 1)
+            spent = time.perf_counter() - started
+        self.assertEqual(answer, ("parked", at(18, 28, 25, 446)))
+        self.assertLess(spent, 0.5, f"the pattern spent {spent:.1f}s on one line")
 
     def test_a_missing_or_unsafe_log_and_one_without_the_server_read_as_nothing(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -218,22 +269,19 @@ def down_since(minutes):
 
 class MacSessionRule(unittest.TestCase):
     def test_connected_or_nothing_read_is_no_problem(self):
-        self.assertIsNone(watchdog.mcp_problem("connected", at(18, 36, 29, 267), NOW))
-        self.assertIsNone(watchdog.mcp_problem(None, None, NOW))
+        self.assertIsNone(watchdog.mcp_problem("connected", at(18, 36, 29, 267)))
+        self.assertIsNone(watchdog.mcp_problem(None, None))
 
     def test_every_other_state_dates_the_problem_from_the_change(self):
         since = at(18, 27, 49, 111)
         for state in ("degraded", "parked", "reconnecting"):
             with self.subTest(state=state):
-                self.assertEqual(watchdog.mcp_problem(state, since, NOW), since)
-
-    def test_an_unstamped_change_dates_from_this_sighting(self):
-        self.assertEqual(watchdog.mcp_problem("parked", None, NOW), NOW)
+                self.assertEqual(watchdog.mcp_problem(state, since), since)
 
     def test_the_mac_session_waits_out_the_grace_the_transport_gets(self):
         self.assertEqual(watchdog.MCP_GRACE_SECONDS, watchdog.GRACE_SECONDS)
-        self.assertFalse(watchdog.unhealthy(watchdog.mcp_problem("parked", down_since(5), NOW), NOW))
-        self.assertTrue(watchdog.unhealthy(watchdog.mcp_problem("parked", down_since(6), NOW), NOW))
+        self.assertFalse(watchdog.unhealthy(watchdog.mcp_problem("parked", down_since(5)), NOW))
+        self.assertTrue(watchdog.unhealthy(watchdog.mcp_problem("parked", down_since(6)), NOW))
 
 
 def later(minutes):
