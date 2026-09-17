@@ -32,6 +32,12 @@ FIRST_PROMPT = 'Reply in one short sentence: say who you are and what you can do
 
 class AgentError(Exception):
     """A stop with an explanation the owner can act on."""
+    code = 1
+
+
+class DecisionNeeded(AgentError):
+    """A stop until the owner makes a choice, such as which line to use. Exit code 2 means exactly that."""
+    code = 2
 
 
 def preflight(run=None):
@@ -45,17 +51,61 @@ def preflight(run=None):
     return []
 
 
-def choose_line(lines, ask):
-    """Select a free line. Occupied lines are never taken from their agent."""
-    free = [line for line in lines if not line.get('agent_uid')]
+def choose_line(lines, ask, wanted=None, interactive=True):
+    """Select a free line. Occupied lines are never taken from their agent.
+
+    Free lines are listed in uid order, so a position means the same line on the next run.
+    """
+    free = sorted((line for line in lines if not line.get('agent_uid')), key=lambda line: line['uid'])
     if not free:
         held = len(lines) - len(free)
         detail = f'{held} line(s) already answer as an agent. ' if held else 'This account holds no assistant line. '
-        raise AgentError(detail + 'Run `./relay agent --new-line` to have Plow provision one, '
-                         'or retire an existing agent with `plow-agents revoke <line>` first.')
+        raise DecisionNeeded(detail + 'Run `./relay agent --new-line` to have Plow provision one, '
+                             'or retire an existing agent with `plow-agents revoke <line>` first.')
+    if wanted is not None:
+        chosen = find_line(free, wanted)
+        if chosen is None:
+            raise choose_later(f'No free line matches --line {wanted}. The free lines are:', free)
+        return chosen
     if len(free) == 1:
         return free[0]
+    if not interactive:
+        raise choose_later('Several free lines are available, and there is no terminal to ask which one to use:', free)
     return ask(free)
+
+
+def find_line(free, wanted):
+    """The free line --line names: by uid, by number (digits only) or by position in the list."""
+    value = str(wanted).strip()
+    number = digits(value)
+    for line in free:
+        if line['uid'] == value:
+            return line
+    for line in free:
+        if number and digits(line.get('provider_key')) == number:
+            return line
+    if value.isdecimal() and 1 <= int(value) <= len(free):
+        return free[int(value) - 1]
+    return None
+
+
+def digits(number):
+    """A phone number without spaces, dashes, parentheses or a leading +; empty unless only digits remain."""
+    text = str(number or '').strip()
+    text = ''.join(character for character in text.removeprefix('+') if character not in ' -()')
+    return text if text.isascii() and text.isdigit() else ''
+
+
+def line_choices(free):
+    """The free lines as numbered rows: position, display name, number and uid."""
+    return '\n'.join(f'  {position}. ' + ' '.join(part for part in (line.get('display_name') or 'assistant',
+                                                                      line.get('provider_key'), f'({line["uid"]})') if part)
+                     for position, line in enumerate(free, 1))
+
+
+def choose_later(reason, free):
+    """A stop that lists the free lines and the exact command that picks one without asking."""
+    return DecisionNeeded(f'{reason}\n{line_choices(free)}\nChoose one with: ./relay agent --line <position>')
 
 
 def existing_line(path, identity):
@@ -205,11 +255,14 @@ def reported_usage():
 
 def ask_for_line(options):
     print('\nSeveral free lines are available:', flush=True)
-    for number, line in enumerate(options, 1):
-        print(f'  {number}. {line.get("display_name") or "assistant"} {line.get("provider_key") or ""}', flush=True)
+    print(line_choices(options), flush=True)
     while True:
-        answer = input('Choose a line number: ').strip()
-        if answer.isdigit() and 1 <= int(answer) <= len(options):
+        try:
+            answer = input('Choose a line number: ').strip()
+        except EOFError:
+            print(flush=True)
+            raise choose_later('No line was chosen. The free lines are:', options) from None
+        if answer.isdecimal() and 1 <= int(answer) <= len(options):
             return options[int(answer) - 1]
         print('Enter one of the listed numbers.', flush=True)
 
@@ -239,7 +292,8 @@ def credential_for_new_line(args):
         print('Plow sign-in ...... follow the activation text below', flush=True)
         client['login'](SimpleNamespace(api_base=ORIGIN, token_file=None, new_line=args.new_line))
         token = client['account_token'](SimpleNamespace(token_file=None))
-    line = choose_line(client['account_lines'](ORIGIN, token), ask_for_line)
+    line = choose_line(client['account_lines'](ORIGIN, token), ask_for_line, getattr(args, 'line', None),
+                       interactive=bool(sys.stdin and sys.stdin.isatty()))
     announce_line(line)
     outcome = ensure_credential(CREDENTIAL, line, identity, lambda path, uid: mint_credential(client, path, uid))
     print(f'Credential ........ {outcome}', flush=True)
@@ -298,7 +352,7 @@ def run_agent(args):
             return install(args)
     except AgentError as error:
         print(str(error), file=sys.stderr, flush=True)
-        return 1
+        return error.code
     except KeyboardInterrupt:
         print('Stopped before finishing. Nothing was left half-created; run it again to continue.',
               file=sys.stderr, flush=True)

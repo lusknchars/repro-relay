@@ -14,6 +14,7 @@ from unittest.mock import patch
 import urllib.parse
 import urllib.request
 
+import cli
 import plow_agent
 
 
@@ -109,6 +110,7 @@ class Installation:
 
     def mint(self, args):
         self.calls.append('mint')
+        self.minted = args.line
         Path(args.credential_file).write_text('PLOW_API_BASE=https://api.plow.co\nPLOW_AGENT_TOKEN=agt_fixture_token\n')
 
     def identity(self, path):
@@ -134,6 +136,7 @@ class Installation:
                 stack.enter_context(patch.object(plow_agent, name, value))
             stack.enter_context(patch.dict(os.environ, {'XDG_CONFIG_HOME': str(self.root / 'config')}))
             stack.enter_context(patch('builtins.input', side_effect=AssertionError('The installer asked a question.')))
+            stack.enter_context(patch('sys.stdin', SimpleNamespace(isatty=lambda: False)))
             stack.enter_context(contextlib.redirect_stdout(self.out))
             stack.enter_context(contextlib.redirect_stderr(self.err))
             arguments = dict(agent_action=None, new_line=False, line=None)
@@ -178,6 +181,24 @@ class ResumeTests(unittest.TestCase):
                 self.assertIn('could not be verified', install.err.getvalue())
                 self.assertIn('left untouched', install.err.getvalue())
 
+    def test_several_free_lines_without_a_terminal_exit_2_before_minting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.lines = [line('ln_a', name='Alder'), line('ln_b', name='Birch')]
+            self.assertEqual(install.run(), 2)
+            self.assertFalse(install.credential.exists())
+        self.assertNotIn('mint', install.calls)
+        self.assertNotIn('compose up -d --build', install.calls)
+        self.assertIn('./relay agent --line <position>', install.err.getvalue())
+
+    def test_line_flag_installs_on_the_named_line(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.lines = [line('ln_a', name='Alder'), line('ln_b', name='Birch', number='+15550000002')]
+            self.assertEqual(install.run(line='+1 555 000 0002'), 0)
+        self.assertEqual(install.minted, 'ln_b')
+        self.assertIn('Line .............. Birch +15550000002', install.out.getvalue())
+
     def test_identity_reports_an_unusable_credential_as_an_agent_error(self):
         with tempfile.TemporaryDirectory() as directory:
             credential = Path(directory) / 'plow-credentials'
@@ -210,6 +231,50 @@ class LineSelectionTests(unittest.TestCase):
         with self.assertRaises(plow_agent.AgentError) as error:
             plow_agent.choose_line([], ask=lambda options: options[0])
         self.assertIn('--new-line', str(error.exception))
+
+    def test_line_flag_matches_a_free_line_by_uid_number_or_position(self):
+        lines = [line('ln_b', number='+1 (555) 000-0002', name='Birch'), line('ln_a', number='+15550000001', name='Alder'),
+                 line('ln_c', agent='ag_c', number='+15550000003', name='Cedar')]
+        for wanted, uid in [('ln_b', 'ln_b'), ('+1 555-000-0001', 'ln_a'), ('1 (555) 000 0002', 'ln_b'), ('1', 'ln_a'), ('2', 'ln_b')]:
+            with self.subTest(wanted=wanted):
+                chosen = plow_agent.choose_line(lines, ask=lambda options: self.fail('asked'), wanted=wanted, interactive=False)
+                self.assertEqual(chosen['uid'], uid)
+
+    def test_line_flag_naming_no_free_line_lists_the_free_lines(self):
+        lines = [line('ln_a', number='+15550000001', name='Alder'), line('ln_c', agent='ag_c', number='+15550000003', name='Cedar')]
+        for wanted in ('ln_c', '+15550000003', '2', 'ln_missing'):
+            with self.subTest(wanted=wanted), self.assertRaises(plow_agent.DecisionNeeded) as error:
+                plow_agent.choose_line(lines, ask=lambda options: self.fail('asked'), wanted=wanted)
+            self.assertEqual(error.exception.code, 2)
+            self.assertIn('  1. Alder +15550000001 (ln_a)', str(error.exception))
+            self.assertNotIn('Cedar', str(error.exception))
+
+    def test_several_free_lines_without_a_terminal_list_them_with_the_rerun_command(self):
+        lines = [line('ln_b', number='+15550000002', name='Birch'), line('ln_a', number='+15550000001', name='Alder')]
+        with self.assertRaises(plow_agent.DecisionNeeded) as error:
+            plow_agent.choose_line(lines, ask=lambda options: self.fail('asked'), interactive=False)
+        self.assertEqual(error.exception.code, 2)
+        self.assertIn('  1. Alder +15550000001 (ln_a)\n  2. Birch +15550000002 (ln_b)', str(error.exception))
+        self.assertIn('./relay agent --line <position>', str(error.exception))
+
+    def test_a_single_free_line_needs_no_terminal(self):
+        chosen = plow_agent.choose_line([line('ln_1'), line('ln_2', agent='ag_2')],
+                                        ask=lambda options: self.fail('asked'), interactive=False)
+        self.assertEqual(chosen['uid'], 'ln_1')
+
+    def test_no_free_line_is_a_decision_with_new_line_guidance(self):
+        for wanted in (None, '1'):
+            with self.subTest(wanted=wanted), self.assertRaises(plow_agent.DecisionNeeded) as error:
+                plow_agent.choose_line([line('ln_1', agent='ag_1')], ask=lambda options: self.fail('asked'),
+                                       wanted=wanted, interactive=False)
+            self.assertEqual(error.exception.code, 2)
+            self.assertIn('./relay agent --new-line', str(error.exception))
+
+    def test_end_of_input_while_asking_is_a_decision_not_an_eoferror(self):
+        with patch('builtins.input', side_effect=EOFError), contextlib.redirect_stdout(io.StringIO()), \
+                self.assertRaises(plow_agent.DecisionNeeded) as error:
+            plow_agent.ask_for_line([line('ln_a', name='Alder'), line('ln_b', name='Birch')])
+        self.assertIn('./relay agent --line <position>', str(error.exception))
 
 
 class CredentialTests(unittest.TestCase):
@@ -336,6 +401,15 @@ class ReportedUsageTests(unittest.TestCase):
         self.assertEqual(plow_agent.parse_usage(logs), {})
 
 
+class CommandLineTests(unittest.TestCase):
+    def test_line_flag_reaches_the_installer_and_its_exit_code_is_returned(self):
+        received = []
+        with patch.object(plow_agent, 'run_agent', side_effect=lambda args: received.append(args) or 2):
+            self.assertEqual(cli.main(['agent', '--line', '+1 (555) 000-0002']), 2)
+            self.assertEqual(cli.main(['agent']), 2)
+        self.assertEqual([args.line for args in received], ['+1 (555) 000-0002', None])
+
+
 class DocumentationTests(unittest.TestCase):
     def test_readme_teaches_the_command_and_keeps_no_install_url(self):
         readme = (plow_agent.ROOT / 'README.md').read_text()
@@ -348,6 +422,10 @@ class DocumentationTests(unittest.TestCase):
     def test_agent_readme_teaches_the_same_command(self):
         readme = (plow_agent.ROOT / 'agent/README.md').read_text()
         self.assertIn('./relay agent', readme)
+
+    def test_agent_readme_teaches_choosing_a_line_without_being_asked(self):
+        readme = (plow_agent.ROOT / 'agent/README.md').read_text()
+        self.assertIn('./relay agent --line', readme)
 
 
 if __name__ == '__main__':

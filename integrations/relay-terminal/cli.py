@@ -237,6 +237,7 @@ def main(argv=None):
     reach.add_argument('reach_args', nargs=argparse.REMAINDER)
     agent = sub.add_parser('agent', help='Install and run the Plow chat agent on your own line')
     agent.add_argument('--new-line', action='store_true', help='Ask Plow to provision a new assistant line during sign-in')
+    agent.add_argument('--line', metavar='VALUE', help='Use this free line without asking: its position in the list, its number or its uid')
     agent_actions = agent.add_subparsers(dest='agent_action')
     agent_actions.add_parser('status', help='Agent, line, Plow setup and reported usage')
     agent_test = agent_actions.add_parser('test', help='Send one prompt to the running agent')

@@ -22,6 +22,7 @@ It checks Docker, signs you in to Plow, selects a free assistant line, starts th
 Needs Docker Desktop running, Python 3, and the phone that owns the Plow account. The pinned upstream image is Linux amd64; Docker Desktop emulates it on Apple Silicon, so the first start downloads several GB.
 
 ```sh
+./relay agent --line 2            # use a free line by list position, number or uid, without being asked
 ./relay agent status              # agent, line, Plow setup and reported usage
 ./relay agent test "prompt"       # one prompt, printed with its token usage
 ./relay agent stop                # stop it, keeping memory and identity
