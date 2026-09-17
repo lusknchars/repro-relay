@@ -404,13 +404,39 @@ def signin_path():
     return Path(os.path.join(config, 'plow', 'token'))
 
 
-def settle_signin(path, existed):
-    """After a successful install: remove a sign-in this run created, keep one the owner already had."""
-    if existed:
-        print('Sign-in ........... kept; revoke the plow-agents session in Plow Latch if you no longer need it', flush=True)
-    elif path.exists():
+def signin_marker():
+    """Where the installer notes a sign-in it created: the SHA-256 of that file's bytes, never the token."""
+    return ROOT / '.data/agent/signin-created.sha256'
+
+
+def remember_signin(path, marker):
+    """Record the sign-in this run's activation just wrote, so a later successful run can remove exactly that file."""
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    with os.fdopen(os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w') as output:
+        output.write(digest + '\n')
+    os.chmod(marker, 0o600)
+
+
+def settle_signin(path, marker, minted):
+    """After a successful run, fresh or resumed: remove the sign-in this installer created, and only that one."""
+    kept = 'Sign-in ........... kept; revoke the plow-agents session in Plow Latch if you no longer need it'
+    try:
+        recorded = marker.read_text().strip()
+    except OSError:
+        if minted and path.exists():
+            print(kept, flush=True)
+        return
+    try:
+        current = hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        current = None
+    if current == recorded:
         path.unlink()
         print('Sign-in ........... removed from this Mac; the agent keeps its own credential', flush=True)
+    elif path.exists():
+        print(kept, flush=True)  # someone signed in again since; that sign-in is theirs
+    marker.unlink(missing_ok=True)
 
 
 def announce_line(line):
@@ -427,6 +453,7 @@ def credential_for_new_line(args):
     if token is None or args.new_line:
         print('Plow sign-in ...... follow the activation text below', flush=True)
         client['login'](SimpleNamespace(api_base=ORIGIN, token_file=None, new_line=args.new_line))
+        remember_signin(signin_path(), signin_marker())
         token = client['account_token'](SimpleNamespace(token_file=None))
     line = choose_line(client['account_lines'](ORIGIN, token), ask_for_line, getattr(args, 'line', None),
                        interactive=bool(sys.stdin and sys.stdin.isatty()))
@@ -445,8 +472,6 @@ def install(args):
     print('Docker ............ ready', flush=True)
     resuming = CREDENTIAL.exists()
     refuse_other_install(fresh=not resuming)  # before signing in, minting or starting anything
-    signin = signin_path()
-    signed_in_before = signin.exists()
     if resuming:
         # A rerun after minting continues with that agent's own line; no sign-in or line choice.
         line = existing_line(CREDENTIAL, identity)
@@ -468,8 +493,7 @@ def install(args):
         raise AgentError(detail)
     print('Agent ready ....... ' + detail.split(READY)[-1].strip(), flush=True)
     print('Testing Hermes .... ' + speak(FIRST_PROMPT), flush=True)
-    if not resuming:
-        settle_signin(signin, signed_in_before)
+    settle_signin(signin_path(), signin_marker(), minted=not resuming)
     print(f'\nDone. Text {line.get("provider_key") or "your line"} to talk to your agent.', flush=True)
     print('Next: ./relay agent status, ./relay agent test "prompt", ./relay agent stop', flush=True)
     return 0

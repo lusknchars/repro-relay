@@ -4,6 +4,7 @@ The contract tests load the real pinned plow-agents client, downloading and veri
 from GitHub only when .data/tools/plow-agents is absent.
 """
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -748,12 +749,16 @@ class SignInTests(unittest.TestCase):
     REMOVED = 'Sign-in ........... removed from this Mac; the agent keeps its own credential'
     KEPT = 'Sign-in ........... kept; revoke the plow-agents session in Plow Latch if you no longer need it'
 
+    def marker(self, install):
+        return install.root / '.data/agent/signin-created.sha256'
+
     def test_a_sign_in_this_install_created_is_removed_after_it_succeeds(self):
         with tempfile.TemporaryDirectory() as directory:
             install = Installation(directory)
             self.assertEqual(install.run(), 0)
             self.assertIn('login', install.calls)
             self.assertFalse(install.signin.exists())
+            self.assertFalse(self.marker(install).exists())
         self.assertIn(self.REMOVED, install.out.getvalue())
         self.assertNotIn(self.KEPT, install.out.getvalue())
 
@@ -775,6 +780,7 @@ class SignInTests(unittest.TestCase):
             self.assertEqual(install.run(), 1)
             self.assertIn('login', install.calls)
             self.assertTrue(install.signin.exists())
+            self.assertTrue(self.marker(install).exists())
         self.assertNotIn('Sign-in .....', install.out.getvalue())
 
     def test_a_sign_in_is_kept_when_the_agent_never_reports_ready(self):
@@ -784,6 +790,7 @@ class SignInTests(unittest.TestCase):
             self.assertEqual(install.run(), 1)
             self.assertIn('login', install.calls)
             self.assertTrue(install.signin.exists())
+            self.assertTrue(self.marker(install).exists())
         self.assertIn('parking; no gateway will start', install.err.getvalue())
         self.assertNotIn('Sign-in .....', install.out.getvalue())
 
@@ -794,7 +801,82 @@ class SignInTests(unittest.TestCase):
             self.assertEqual(install.run(), 1)
             self.assertIn('login', install.calls)
             self.assertTrue(install.signin.exists())
+            self.assertTrue(self.marker(install).exists())
         self.assertIn('did not answer', install.err.getvalue())
+        self.assertNotIn('Sign-in .....', install.out.getvalue())
+
+    def test_login_records_only_a_private_digest_of_the_sign_in(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.lines = [line('ln_a'), line('ln_b')]
+            self.assertEqual(install.run(), 2)
+            marker = self.marker(install)
+            recorded, mode = marker.read_text(), marker.stat().st_mode & 0o777
+            expected = hashlib.sha256(install.signin.read_bytes()).hexdigest()
+        self.assertEqual(recorded.strip(), expected)
+        self.assertEqual(mode, 0o600)
+        self.assertNotIn('acct_fixture_token', recorded)
+
+    def test_a_rerun_after_choosing_a_line_removes_the_sign_in_the_first_run_created(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.lines = [line('ln_a'), line('ln_b')]
+            self.assertEqual(install.run(), 2)
+            install.out = io.StringIO()
+            self.assertEqual(install.run(line='1'), 0)
+            self.assertFalse(install.signin.exists())
+            self.assertFalse(self.marker(install).exists())
+        self.assertEqual(install.calls.count('login'), 1)
+        self.assertIn(self.REMOVED, install.out.getvalue())
+
+    def test_a_rerun_after_a_stalled_download_removes_the_sign_in(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.up = subprocess.TimeoutExpired(['docker', 'compose', 'up', '-d', '--build'], 1800)
+            self.assertEqual(install.run(), 1)
+            self.assertTrue(install.signin.exists() and self.marker(install).exists())
+            install.up, install.out = SimpleNamespace(returncode=0), io.StringIO()
+            self.assertEqual(install.run(), 0)
+            self.assertFalse(install.signin.exists())
+            self.assertFalse(self.marker(install).exists())
+        self.assertIn('Credential ........ reused', install.out.getvalue())
+        self.assertIn(self.REMOVED, install.out.getvalue())
+
+    def test_a_sign_in_replaced_after_the_marker_is_kept(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.up = SimpleNamespace(returncode=1)
+            self.assertEqual(install.run(), 1)
+            install.signin.write_text('acct_signed_in_again\n')
+            install.up, install.out = SimpleNamespace(returncode=0), io.StringIO()
+            self.assertEqual(install.run(), 0)
+            self.assertEqual(install.signin.read_text(), 'acct_signed_in_again\n')
+            self.assertFalse(self.marker(install).exists())
+        self.assertIn(self.KEPT, install.out.getvalue())
+        self.assertNotIn(self.REMOVED, install.out.getvalue())
+
+    def test_a_sign_in_written_by_another_process_without_a_marker_is_never_removed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.signin.parent.mkdir(parents=True)
+            install.signin.write_text('acct_from_another_process\n')
+            self.assertEqual(install.run(), 0)
+            self.assertIn(self.KEPT, install.out.getvalue())
+            install.out = io.StringIO()
+            self.assertEqual(install.run(), 0)
+            self.assertEqual(install.signin.read_text(), 'acct_from_another_process\n')
+        self.assertIn('Credential ........ reused', install.out.getvalue())
+        self.assertNotIn('Sign-in .....', install.out.getvalue())
+
+    def test_a_marker_without_a_sign_in_is_removed_silently(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.credential.write_text('PLOW_AGENT_TOKEN=agt_existing\n')
+            marker = self.marker(install)
+            marker.parent.mkdir(parents=True)
+            marker.write_text('0' * 64 + '\n')
+            self.assertEqual(install.run(), 0)
+            self.assertFalse(marker.exists())
         self.assertNotIn('Sign-in .....', install.out.getvalue())
 
     def test_resuming_says_nothing_about_the_sign_in(self):
