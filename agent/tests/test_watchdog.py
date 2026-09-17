@@ -410,7 +410,17 @@ class OwnerAlert(unittest.TestCase):
 
     def test_the_alert_text_has_no_hyphens_or_dashes(self):
         dashes = {"-", "‐", "‑", "‒", "–", "—", "―", "−"}
-        self.assertFalse(dashes & set(watchdog.ALERT_TEXT))
+        for text in (watchdog.ALERT_TEXT, watchdog.MAC_ALERT_TEXT, watchdog.LATCH_ALERT_TEXT):
+            with self.subTest(text=text[:24]):
+                self.assertFalse(dashes & set(text))
+
+    def test_the_mac_texts_say_what_is_lost_and_what_the_owner_can_do(self):
+        self.assertEqual(watchdog.MAC_ALERT_TEXT, (
+            "I lost my connection to your Mac and could not get it back after three tries, "
+            "so I cannot read files or run commands there. Restarting the agent may fix it."))
+        self.assertEqual(watchdog.LATCH_ALERT_TEXT, (
+            "I cannot reach your Mac through Latch right now, so I cannot read files or run "
+            "commands there. Waking the Mac or opening Latch should fix it. Messages still reach me."))
 
 
 LATCH_URL = "https://api.plow.co/v1/mcp/dev_2f8a9c"
@@ -486,6 +496,10 @@ def stalled():
     return gateway(chat=entry("disconnected", minutes_ago(6)))
 
 
+def mac(state, minutes=None):
+    return lambda: (state, None if minutes is None else down_since(minutes))
+
+
 class ServiceWiring(unittest.TestCase):
     SERVICE = ROOT / "image/s6-overlay/s6-rc.d/transport-watchdog"
 
@@ -553,11 +567,11 @@ class Loop(unittest.TestCase):
         dog = watchdog.Watchdog()
         dog.failed = watchdog.MAX_FAILED_RECOVERIES
         alert = watchdog.make_alert("https://api.plow.co", "tok_secret", "cht_owner",
-                                    send=lambda base, token, chat: sent.append((base, token, chat)) or "sent")
+                                    send=lambda base, token, chat, text: sent.append((base, token, chat, text)) or "sent")
         action = watchdog.once(dog, NOW, stalled(), restart=lambda: True, alert=alert,
                                log=lines.append, start_time_of=running)
         self.assertEqual(action, "alert")
-        self.assertEqual(sent, [("https://api.plow.co", "tok_secret", "cht_owner")])
+        self.assertEqual(sent, [("https://api.plow.co", "tok_secret", "cht_owner", watchdog.ALERT_TEXT)])
         self.assertIn("owner alert sent", lines[-1])
         self.assertNotIn("tok_secret", "\n".join(lines))
 
@@ -587,7 +601,7 @@ class Loop(unittest.TestCase):
         dog = watchdog.Watchdog()
         dog.failed = watchdog.MAX_FAILED_RECOVERIES
 
-        def alert():
+        def alert(text):
             raise ValueError("detail that must not reach the log")
 
         action = watchdog.once(dog, NOW, stalled(), restart=lambda: True, alert=alert,
@@ -595,21 +609,138 @@ class Loop(unittest.TestCase):
         self.assertEqual(action, "alert")
         self.assertEqual(lines, ["recovery failed 3 times, owner alert failed with ValueError"])
 
+    def test_a_stuck_mac_session_latch_answers_for_joins_the_transports_problem(self):
+        restarts, lines = [], []
+        dog = watchdog.Watchdog()
+        action = watchdog.once(dog, NOW, gateway(), restart=lambda: restarts.append(1) or True,
+                               alert=lambda text: "sent", log=lines.append, start_time_of=running,
+                               mcp=mac("parked", 7), probe=lambda: True)
+        self.assertEqual((action, len(restarts)), ("restart", 1))
+        self.assertEqual(dog.since, down_since(7))
+
+    def test_a_mac_session_inside_the_grace_is_left_alone_and_latch_is_not_asked(self):
+        probes, restarts, lines = [], [], []
+        action = watchdog.once(watchdog.Watchdog(), NOW, gateway(),
+                               restart=lambda: restarts.append(1) or True,
+                               alert=lambda text: "sent", log=lines.append, start_time_of=running,
+                               mcp=mac("degraded", 5), probe=lambda: probes.append(1) or False)
+        self.assertEqual((action, probes, restarts, lines), ("none", [], [], []))
+
+    def test_a_mac_latch_does_not_answer_for_is_not_restarted_and_is_told_once(self):
+        restarts, sent, lines = [], [], []
+        dog = watchdog.Watchdog()
+
+        def check(minute, session):
+            return watchdog.once(dog, later(minute), gateway(),
+                                 restart=lambda: restarts.append(1) or True,
+                                 alert=lambda text: sent.append(text) or "sent",
+                                 log=lines.append, start_time_of=running,
+                                 mcp=session, probe=lambda: False)
+
+        self.assertEqual(check(0, mac("parked", 7)), "none")
+        self.assertEqual(check(1, mac("parked", 8)), "none")
+        self.assertEqual((restarts, sent), ([], [watchdog.LATCH_ALERT_TEXT]))
+        self.assertEqual(check(2, mac("connected", 0)), "none")
+        self.assertEqual(check(3, mac("parked", 10)), "none")
+        self.assertEqual(sent, [watchdog.LATCH_ALERT_TEXT, watchdog.LATCH_ALERT_TEXT])
+        self.assertEqual(restarts, [])
+
+    def test_the_alert_is_worded_for_whichever_problem_came_first(self):
+        stale = gateway(chat=entry("disconnected", minutes_ago(20)))
+        for doc, session, expected in ((stale, mac("parked", 7), watchdog.ALERT_TEXT),
+                                       (stale, mac("parked", 30), watchdog.MAC_ALERT_TEXT),
+                                       (gateway(), mac("parked", 30), watchdog.MAC_ALERT_TEXT),
+                                       (None, mac("parked", 30), watchdog.MAC_ALERT_TEXT),
+                                       (stale, mac("connected", 0), watchdog.ALERT_TEXT),
+                                       (stale, None, watchdog.ALERT_TEXT)):
+            with self.subTest(expected=expected[:24]):
+                sent, lines = [], []
+                dog = watchdog.Watchdog()
+                dog.failed = watchdog.MAX_FAILED_RECOVERIES
+                action = watchdog.once(dog, NOW, doc, restart=lambda: True,
+                                       alert=lambda text: sent.append(text) or "sent",
+                                       log=lines.append, start_time_of=running,
+                                       mcp=session, probe=lambda: True)
+                self.assertEqual((action, sent), ("alert", [expected]))
+
+    def test_the_mac_session_is_logged_when_it_goes_when_latch_is_out_and_when_it_returns(self):
+        lines = []
+        dog = watchdog.Watchdog()
+
+        def check(minute, session, reachable):
+            return watchdog.once(dog, later(minute), gateway(), restart=lambda: True,
+                                 alert=lambda text: "sent", log=lines.append, start_time_of=running,
+                                 mcp=session, probe=lambda: reachable)
+
+        check(0, mac("degraded", 7), False)
+        check(1, mac("parked", 8), False)
+        check(2, mac("connected", 0), True)
+        check(3, mac("parked", 20), True)
+        self.assertEqual(lines, [
+            "the Mac session has been degraded since 11:53 UTC",
+            "cannot reach the Mac through Latch, owner notice sent",
+            "the Mac session is connected again",
+            "the Mac session has been parked since 11:40 UTC",
+            "transport not healthy since 11:40 UTC, restarting the gateway",
+        ])
+
     def test_settings_come_from_the_names_plow_init_publishes(self):
-        env = {"PLOW_API_BASE": "https://staging.plow.example", "PLOW_AGENT_TOKEN": "tok", "PLOW_HOME_CHANNEL": "cht_owner"}
-        self.assertEqual(watchdog.settings(read=env.get), ("https://staging.plow.example", "tok", "cht_owner"))
-        self.assertEqual(watchdog.settings(read=lambda name: ""), ("https://api.plow.co", "", ""))
+        env = {"PLOW_API_BASE": "https://staging.plow.example", "PLOW_AGENT_TOKEN": "tok",
+               "PLOW_HOME_CHANNEL": "cht_owner", "PLOW_MCP_URL": LATCH_URL}
+        self.assertEqual(watchdog.settings(read=env.get),
+                         ("https://staging.plow.example", "tok", "cht_owner", LATCH_URL, "tok"))
+        self.assertEqual(watchdog.settings(read=lambda name: ""),
+                         ("https://api.plow.co", "", "", "", ""))
 
     def test_without_the_token_or_the_owner_chat_it_stands_down_and_says_which(self):
         for token, chat, missing in (("", "cht_owner", "PLOW_AGENT_TOKEN"), ("tok_secret", "", "PLOW_HOME_CHANNEL")):
             with self.subTest(missing=missing):
                 lines, sleeps = [], []
-                watchdog.main(configured=lambda: ("https://api.plow.co", token, chat),
+                watchdog.main(configured=lambda: ("https://api.plow.co", token, chat, LATCH_URL, token),
                               sleep=sleeps.append, log=lines.append)
                 self.assertEqual(sleeps, [86400])
                 self.assertEqual(len(lines), 1)
                 self.assertIn(missing, lines[0])
                 self.assertNotIn("tok_secret", lines[0])
+
+    def test_main_watches_the_mac_only_when_latch_is_configured(self):
+        class Stop(Exception):
+            pass
+
+        seen = []
+
+        def fake_once(dog, now, doc, restart, alert, log=None, start_time_of=None, mcp=None, probe=None):
+            seen.append((mcp, probe))
+            return "none"
+
+        def stop(seconds):
+            raise Stop
+
+        def run(mcp_url):
+            lines = []
+            with unittest.mock.patch.object(watchdog, "once", fake_once), \
+                    unittest.mock.patch.object(watchdog, "load_state", lambda: None):
+                with self.assertRaises(Stop):
+                    watchdog.main(configured=lambda: ("https://api.plow.co", "tok_secret", "cht_owner",
+                                                      mcp_url, "tok_secret"),
+                                  sleep=stop, log=lines.append)
+            return lines
+
+        self.assertEqual(run(LATCH_URL), [])
+        read_session, probe = seen[-1]
+        asked = []
+        with unittest.mock.patch.object(watchdog, "mcp_status", lambda: ("parked", NOW)), \
+                unittest.mock.patch.object(watchdog, "latch_reachable",
+                                           lambda url, token: asked.append((url, token)) or True):
+            self.assertEqual(read_session(), ("parked", NOW))
+            self.assertTrue(probe())
+        self.assertEqual(asked, [(LATCH_URL, "tok_secret")])
+
+        lines = run("")
+        self.assertEqual(seen[-1], (None, None))
+        self.assertEqual(len(lines), 1)
+        self.assertIn("PLOW_MCP_URL", lines[0])
+        self.assertNotIn("tok_secret", lines[0])
 
     def test_main_hands_base_token_and_chat_to_the_alert_in_that_order(self):
         class Stop(Exception):
@@ -627,7 +758,7 @@ class Loop(unittest.TestCase):
         with unittest.mock.patch.object(watchdog, "make_alert", fake_make_alert), \
                 unittest.mock.patch.object(watchdog, "load_state", lambda: None):
             with self.assertRaises(Stop):
-                watchdog.main(configured=lambda: ("https://api.plow.co", "tok", "cht_owner"),
+                watchdog.main(configured=lambda: ("https://api.plow.co", "tok", "cht_owner", LATCH_URL, "tok"),
                               sleep=stop, log=lambda message: None)
         self.assertEqual(made, [("https://api.plow.co", "tok", "cht_owner")])
 

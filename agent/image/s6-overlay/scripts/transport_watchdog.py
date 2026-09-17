@@ -239,6 +239,8 @@ class Watchdog:
         self.pending_since = None
         self.failed = 0
         self.alerted = False
+        self.mac_reported = False
+        self.mac_notified = False
 
     def observe(self, now, silent_since, unseen):
         """One of none, restart, recovered, recovery_failed, alert or reconnected.
@@ -294,11 +296,26 @@ class Watchdog:
         self.failed = 0
         self.alerted = False
 
+    def forget_mac(self):
+        """End the Mac session's episode, so the next one is logged and told about again."""
+        self.mac_reported = False
+        self.mac_notified = False
+
 
 API_BASE = "https://api.plow.co"
 ALERT_TEXT = (
     "I stopped receiving messages and could not reconnect after three tries, so "
     "anything you send me now will not reach me. Restarting the agent may fix it."
+)
+MAC_ALERT_TEXT = (
+    "I lost my connection to your Mac and could not get it back after three "
+    "tries, so I cannot read files or run commands there. Restarting the agent "
+    "may fix it."
+)
+LATCH_ALERT_TEXT = (
+    "I cannot reach your Mac through Latch right now, so I cannot read files or "
+    "run commands there. Waking the Mac or opening Latch should fix it. Messages "
+    "still reach me."
 )
 
 
@@ -446,19 +463,68 @@ def restart_gateway(run=subprocess.run):
 
 
 def make_alert(base, token, chat_uid, send=send_alert):
-    """The alert to send when recovery fails. Only its outcome ever reaches the log."""
-    return lambda: send(base, token, chat_uid)
+    """The alert to send, in the words the failure calls for. Only its outcome is logged."""
+    return lambda text=ALERT_TEXT: send(base, token, chat_uid, text=text)
+
+
+def outcome(alert, text):
+    """The word an alert left behind. An alert that raises must still leave a record."""
+    try:
+        return alert(text)
+    except Exception as error:  # an episode's only alert is never retried
+        return f"failed with {type(error).__name__}"
 
 
 def settings(read=read_env):
-    """(base, token, chat_uid) as plow-init published them, with the plugin's default base."""
-    return read("PLOW_API_BASE") or API_BASE, read("PLOW_AGENT_TOKEN"), read("PLOW_HOME_CHANNEL")
+    """(base, token, chat_uid, mcp_url, mcp_token) as plow-init published them.
+
+    The first three are the alert's, with the plugin's default base. The last two
+    are the Latch endpoint and the credential the Mac probe carries, which is the
+    agent's own, so that endpoint and its bearer are read together.
+    """
+    return (read("PLOW_API_BASE") or API_BASE, read("PLOW_AGENT_TOKEN"), read("PLOW_HOME_CHANNEL"),
+            read("PLOW_MCP_URL"), read("PLOW_AGENT_TOKEN"))
 
 
-def once(dog, now, doc, restart, alert, log=log, start_time_of=process_start_time):
-    """Apply one observation, log what it led to, and return the action."""
-    silent_since, unseen = assess(doc, start_time_of)
-    action = dog.observe(now, silent_since, unseen)
+def mac_watch(dog, now, mcp, probe, alert, log):
+    """The Mac session's problem for the policy to weigh, or None to leave it alone.
+
+    A session Latch answers for is stuck inside the gateway, so it joins the
+    transport's problem and takes the same restart, cooldown and three failures.
+    A Mac that does not answer cannot be reached by restarting anything here, so
+    the owner is told once for the episode and the policy is left alone.
+    """
+    state, since = mcp()
+    problem = mcp_problem(state, since, now)
+    if problem is None:
+        if dog.mac_reported:
+            log("the Mac session is connected again")
+        dog.forget_mac()
+        return None
+    if not unhealthy(problem, now):
+        return None
+    if not dog.mac_reported:
+        dog.mac_reported = True
+        log(f"the Mac session has been {state} since {problem:%H:%M} UTC")
+    if probe():
+        return problem
+    if not dog.mac_notified:
+        dog.mac_notified = True
+        log(f"cannot reach the Mac through Latch, owner notice {outcome(alert, LATCH_ALERT_TEXT)}")
+    return None
+
+
+def once(dog, now, doc, restart, alert, log=log, start_time_of=process_start_time,
+         mcp=None, probe=None):
+    """Apply one observation, log what it led to, and return the action.
+
+    mcp and probe are the Mac session's reading and the Latch handshake. Without
+    both, only the messaging transport is watched.
+    """
+    transport_since, unseen = assess(doc, start_time_of)
+    mac_since = None if mcp is None or probe is None else mac_watch(dog, now, mcp, probe, alert, log)
+    known = [moment for moment in (transport_since, mac_since) if moment is not None]
+    action = dog.observe(now, min(known) if known else None, unseen)
     if action == "restart":
         log(f"transport not healthy since {dog.since:%H:%M} UTC, restarting the gateway")
         if not restart():
@@ -468,18 +534,19 @@ def once(dog, now, doc, restart, alert, log=log, start_time_of=process_start_tim
     elif action == "recovery_failed":
         log(f"the restart did not reconnect the transport, {dog.failed} of {MAX_FAILED_RECOVERIES}")
     elif action == "alert":
-        try:
-            outcome = alert()
-        except Exception as error:  # the episode's only alert must still leave a record
-            outcome = f"failed with {type(error).__name__}"
-        log(f"recovery failed {MAX_FAILED_RECOVERIES} times, owner alert {outcome}")
+        # The owner is told about whichever of the two went first, which is the
+        # one the restarts were trying to recover.
+        theirs = [moment for moment in (transport_since, dog.unseen_since) if moment is not None]
+        mac_first = mac_since is not None and (not theirs or mac_since < min(theirs))
+        word = outcome(alert, MAC_ALERT_TEXT if mac_first else ALERT_TEXT)
+        log(f"recovery failed {MAX_FAILED_RECOVERIES} times, owner alert {word}")
     elif action == "reconnected":
         log("transport connected again")
     return action
 
 
 def main(configured=settings, sleep=time.sleep, log=log):
-    base, token, chat = configured()
+    base, token, chat, mcp_url, mcp_token = configured()
     missing = [name for name, value in (("PLOW_AGENT_TOKEN", token), ("PLOW_HOME_CHANNEL", chat)) if not value]
     if missing:
         # The chat platform is enabled only when both are set, and the alert needs
@@ -489,10 +556,20 @@ def main(configured=settings, sleep=time.sleep, log=log):
         sleep(86400)
         return
     alert = make_alert(base, token, chat)
+    mcp = probe = None
+    if mcp_url and mcp_token:
+        mcp = lambda: mcp_status()
+        probe = lambda: latch_reachable(mcp_url, mcp_token)
+    else:
+        # Latch is what the Mac tools travel over. Without it there is no session
+        # to watch, while the messaging transport is still worth watching.
+        blank = [name for name, value in (("PLOW_MCP_URL", mcp_url), ("PLOW_AGENT_TOKEN", mcp_token)) if not value]
+        log(f"no {' or '.join(blank)} in this container, so the Mac tools are not watched")
     dog = Watchdog()
     while True:
         try:
-            once(dog, dt.datetime.now(dt.timezone.utc), load_state(), restart_gateway, alert, log=log)
+            once(dog, dt.datetime.now(dt.timezone.utc), load_state(), restart_gateway, alert,
+                 log=log, mcp=mcp, probe=probe)
         except Exception as error:  # a longrun that crashes is respawned in a tight loop
             log(f"check failed with {type(error).__name__}")
         sleep(CHECK_SECONDS)
