@@ -147,6 +147,71 @@ class ProcessStartTime(unittest.TestCase):
             self.assertIsNone(watchdog.process_start_time(PID + 1, proc=folder))
 
 
+ARROW = "→"
+
+
+def mcp_line(at, body, server="plow"):
+    return f"2026-09-17 {at} WARNING tools.mcp_tool: MCP server '{server}' {body}"
+
+
+DEGRADED = mcp_line("18:27:49,111", f"keepalive failed, triggering reconnect (state: connected {ARROW} degraded): MCPError: Server returned an error response")
+PARKED = mcp_line("18:28:25,446", f"failed after 5 reconnection attempts, parking; will self-probe every 300s until it recovers (state: degraded {ARROW} parked): MCPError: Server returned an error response")
+REVIVED = mcp_line("18:36:29,267", f": revived — session healthy again after parking (state: parked {ARROW} connected)")
+UNKNOWN_TOOL = '2026-09-17 17:03:47,416 WARNING [20260915_195146_eccb6d55] agent.tool_executor: Tool mcp__plow__plow_device_status returned error (0.00s): {"error": "Unknown tool: mcp__plow__plow_device_status"}'
+AGENT_LOG = "\n".join([UNKNOWN_TOOL, DEGRADED, PARKED]) + "\n"
+
+
+def logged(folder, text):
+    path = Path(folder) / "agent.log"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def at(hour, minute, second, millisecond=0):
+    return dt.datetime(2026, 9, 17, hour, minute, second, millisecond * 1000, tzinfo=dt.timezone.utc)
+
+
+class MacSessionLog(unittest.TestCase):
+    def test_the_last_state_change_for_the_server_is_the_session_state(self):
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertEqual(watchdog.mcp_status(logged(folder, AGENT_LOG)),
+                             ("parked", at(18, 28, 25, 446)))
+
+    def test_a_plain_arrow_reads_like_the_unicode_one_and_another_server_is_not_ours(self):
+        elsewhere = mcp_line("18:40:12,000", f"keepalive failed (state: connected {ARROW} degraded)", server="github")
+        text = "\n".join([AGENT_LOG, REVIVED.replace(ARROW, "->"), elsewhere]) + "\n"
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertEqual(watchdog.mcp_status(logged(folder, text)),
+                             ("connected", at(18, 36, 29, 267)))
+
+    def test_a_missing_or_unsafe_log_and_one_without_the_server_read_as_nothing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertEqual(watchdog.mcp_status(Path(folder) / "gone.log"), (None, None))
+            real = logged(folder, AGENT_LOG)
+            link = Path(folder) / "link.log"
+            link.symlink_to(real)
+            fifo = Path(folder) / "fifo.log"
+            os.mkfifo(fifo)
+            directory = Path(folder) / "directory.log"
+            directory.mkdir()
+            quiet = Path(folder) / "quiet.log"
+            quiet.write_text(UNKNOWN_TOOL + "\n", encoding="utf-8")
+            for path in (link, fifo, directory, quiet):
+                with self.subTest(path=path.name):
+                    self.assertEqual(watchdog.mcp_status(path), (None, None))
+            self.assertEqual(watchdog.mcp_status(real)[0], "parked")
+
+    def test_only_the_end_of_the_log_is_read_and_the_partial_first_line_is_dropped(self):
+        text = "\n".join([DEGRADED, PARKED, UNKNOWN_TOOL]) + "\n"
+        opens_inside_the_parked_line = len(PARKED.encode()) + len(UNKNOWN_TOOL.encode()) - 3
+        with tempfile.TemporaryDirectory() as folder:
+            path = logged(folder, text)
+            self.assertEqual(watchdog.mcp_status(path, tail=len(text.encode())),
+                             ("parked", at(18, 28, 25, 446)))
+            self.assertEqual(watchdog.mcp_status(path, tail=opens_inside_the_parked_line),
+                             (None, None))
+
+
 def down_since(minutes):
     return NOW - dt.timedelta(minutes=minutes)
 

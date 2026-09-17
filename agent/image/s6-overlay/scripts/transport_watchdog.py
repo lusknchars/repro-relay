@@ -26,12 +26,12 @@ GRACE_SECONDS = 360
 STATE_LIMIT = 1_048_576
 
 
-def load_state(path=STATE_PATH):
-    """The parsed state file, or None when it is missing, unsafe or not a JSON object.
+def read_safely(path, read):
+    """What `read` makes of a regular file at path, or None when there is none.
 
-    The gateway's own user writes this file and the watchdog reads it as root, so
-    a symlink, a FIFO, an oversized file or nesting deep enough to exhaust the
-    parser is refused rather than followed.
+    The gateway's own user writes the files this module reads and the watchdog
+    reads them as root, so a symlink, a FIFO or a directory is refused rather
+    than followed, and the open never blocks.
     """
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
@@ -43,13 +43,22 @@ def load_state(path=STATE_PATH):
             return None
         with os.fdopen(descriptor, "rb") as handle:
             descriptor = None
-            raw = handle.read(STATE_LIMIT + 1)
+            return read(handle)
     except OSError:
         return None
     finally:
         if descriptor is not None:
             os.close(descriptor)
-    if len(raw) > STATE_LIMIT:
+
+
+def load_state(path=STATE_PATH):
+    """The parsed state file, or None when it is missing, unsafe or not a JSON object.
+
+    An oversized file or nesting deep enough to exhaust the parser is refused
+    too, on top of the care read_safely takes.
+    """
+    raw = read_safely(path, lambda handle: handle.read(STATE_LIMIT + 1))
+    if raw is None or len(raw) > STATE_LIMIT:
         return None
     try:
         doc = json.loads(raw)
@@ -129,6 +138,71 @@ def assess(doc, start_time_of=process_start_time):
 
 def unhealthy(since, now):
     return since is not None and (now - since).total_seconds() >= GRACE_SECONDS
+
+
+MCP_LOG = "/var/lib/hermes/logs/agent.log"
+MCP_SERVER = "plow"
+MCP_TAIL_BYTES = 262_144
+MCP_GRACE_SECONDS = 360
+MCP_CHANGE = re.compile(r"\(state:\s*(?P<was>[^)]*?)\s*(?:→|->)\s*(?P<now>[^)]*?)\s*\)")
+MCP_STAMP = re.compile(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),(\d{3})")
+
+
+def read_tail(path, limit):
+    """The end of a text file, at most `limit` bytes of it, without a partial line.
+
+    The gateway's log is appended to forever, so only its end is read, and the
+    line the window opens inside is dropped rather than half parsed.
+    """
+    def window(handle):
+        handle.seek(0, os.SEEK_END)
+        start = max(0, handle.tell() - limit)
+        handle.seek(start)
+        return start, handle.read(limit)
+
+    read = read_safely(path, window)
+    if read is None:
+        return ""
+    start, raw = read
+    text = raw.decode("utf-8", errors="replace")
+    return text.partition("\n")[2] if start else text
+
+
+def logged_at(line):
+    """The UTC moment a log line was stamped with, or None when it carries none.
+
+    The container runs on UTC and the gateway's logger writes a naive stamp, so
+    the moment is read as UTC and returned aware.
+    """
+    stamp = MCP_STAMP.match(line)
+    if stamp is None:
+        return None
+    try:
+        moment = dt.datetime.strptime(stamp.group(1), "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
+    return moment.replace(microsecond=int(stamp.group(2)) * 1000, tzinfo=dt.timezone.utc)
+
+
+def mcp_status(path=MCP_LOG, server=MCP_SERVER, tail=MCP_TAIL_BYTES):
+    """(state, since) for the MCP session the agent reaches the owner's Mac through.
+
+    Nothing records this session in gateway_state.json, so the last line that
+    reports a state change for the server names both its state and when it
+    changed. The real log writes the arrow as U+2192; a plain -> reads the same.
+    (None, None) means there is no such line to read.
+    """
+    named = f"MCP server '{server}'"
+    for line in reversed(read_tail(path, tail).splitlines()):
+        if named not in line:
+            continue
+        change = MCP_CHANGE.search(line)
+        if change is None:
+            continue
+        state = change.group("now").lower()
+        if state:
+            return state, logged_at(line)
+    return None, None
 
 
 RESTART_COOLDOWN_SECONDS = 600
