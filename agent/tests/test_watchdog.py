@@ -120,6 +120,15 @@ class HealthRule(unittest.TestCase):
                     self.assertIsNone(watchdog.load_state(path))
             self.assertEqual(watchdog.load_state(real)["pid"], PID)
 
+    def test_a_directory_at_the_state_path_loads_as_none_without_leaking_descriptors(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "gateway_state.json"
+            path.mkdir()
+            before = len(os.listdir("/dev/fd"))
+            for _ in range(50):
+                self.assertIsNone(watchdog.load_state(path))
+            self.assertEqual(len(os.listdir("/dev/fd")), before)
+
 
 class ProcessStartTime(unittest.TestCase):
     def write_stat(self, folder, pid, line):
@@ -446,6 +455,26 @@ class Loop(unittest.TestCase):
                 self.assertEqual(len(lines), 1)
                 self.assertIn(missing, lines[0])
                 self.assertNotIn("tok_secret", lines[0])
+
+    def test_main_hands_base_token_and_chat_to_the_alert_in_that_order(self):
+        class Stop(Exception):
+            pass
+
+        made = []
+
+        def fake_make_alert(base, token, chat_uid, send=None):
+            made.append((base, token, chat_uid))
+            return lambda: "sent"
+
+        def stop(seconds):
+            raise Stop
+
+        with unittest.mock.patch.object(watchdog, "make_alert", fake_make_alert), \
+                unittest.mock.patch.object(watchdog, "load_state", lambda: None):
+            with self.assertRaises(Stop):
+                watchdog.main(configured=lambda: ("https://api.plow.co", "tok", "cht_owner"),
+                              sleep=stop, log=lambda message: None)
+        self.assertEqual(made, [("https://api.plow.co", "tok", "cht_owner")])
 
 
 if __name__ == "__main__":
