@@ -58,6 +58,21 @@ def choose_line(lines, ask):
     return ask(free)
 
 
+def existing_line(path, identity):
+    """The line an existing credential answers on, as Plow reports it. The file is only ever read."""
+    reason = ''
+    try:
+        found = identity(path)
+    except AgentError as error:
+        found, reason = None, f' {error}'
+    line = found.get('line') if isinstance(found, dict) else None
+    if not isinstance(line, dict) or not line.get('uid'):
+        raise AgentError(f'The existing credential {path} could not be verified with Plow.{reason} It was left untouched. '
+                         'Check the connection and run ./relay agent again; if that agent was retired, '
+                         'remove the file yourself first.')
+    return line
+
+
 def ensure_credential(path, line, identity, mint):
     """Reuse a credential that belongs to this line; never overwrite another one."""
     if path.exists():
@@ -148,9 +163,13 @@ def compose(*arguments, capture=False):
 
 
 def identity(path):
+    """Who a credential answers as, according to Plow. When Plow cannot say, an AgentError says why."""
     sys.path.insert(0, str(ROOT / 'integrations/plow'))
     import bridge
-    return bridge.JsonHTTP(ORIGIN, bridge.private_credentials(path)).call('GET', '/v1/agents/cloud/me')[1]
+    try:
+        return bridge.JsonHTTP(ORIGIN, bridge.private_credentials(path)).call('GET', '/v1/agents/cloud/me')[1]
+    except bridge.BridgeError as error:
+        raise AgentError(str(error)) from None
 
 
 def reporter_state():
@@ -205,13 +224,12 @@ def speak(prompt):
     return '\n'.join(text for text in result.stdout.splitlines() if not text.startswith('session_id:')).strip()
 
 
-def install(args):
-    missing = preflight()
-    if missing:
-        for item in missing:
-            print('Needed: ' + item, file=sys.stderr, flush=True)
-        return 1
-    print('Docker ............ ready', flush=True)
+def announce_line(line):
+    print(f'Line .............. {line.get("display_name") or line["uid"]} {line.get("provider_key") or ""}', flush=True)
+
+
+def credential_for_new_line(args):
+    """Sign in when needed, choose a free line and mint its credential. Returns the line."""
     client = official()
     try:
         token = client['account_token'](SimpleNamespace(token_file=None))
@@ -222,9 +240,26 @@ def install(args):
         client['login'](SimpleNamespace(api_base=ORIGIN, token_file=None, new_line=args.new_line))
         token = client['account_token'](SimpleNamespace(token_file=None))
     line = choose_line(client['account_lines'](ORIGIN, token), ask_for_line)
-    print(f'Line .............. {line.get("display_name") or line["uid"]} {line.get("provider_key") or ""}', flush=True)
+    announce_line(line)
     outcome = ensure_credential(CREDENTIAL, line, identity, lambda path, uid: mint_credential(client, path, uid))
     print(f'Credential ........ {outcome}', flush=True)
+    return line
+
+
+def install(args):
+    missing = preflight()
+    if missing:
+        for item in missing:
+            print('Needed: ' + item, file=sys.stderr, flush=True)
+        return 1
+    print('Docker ............ ready', flush=True)
+    if CREDENTIAL.exists():
+        # A rerun after minting continues with that agent's own line; no sign-in or line choice.
+        line = existing_line(CREDENTIAL, identity)
+        announce_line(line)
+        print('Credential ........ reused', flush=True)
+    else:
+        line = credential_for_new_line(args)
     print('Starting the agent (the first start downloads several GB) ...', flush=True)
     if compose('up', '-d', '--build').returncode:
         raise AgentError('Docker could not start the agent. The output above shows why.')

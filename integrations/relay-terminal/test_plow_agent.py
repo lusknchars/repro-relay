@@ -8,6 +8,7 @@ import io
 import os
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 import urllib.parse
@@ -69,6 +70,123 @@ class OfficialClientContractTests(unittest.TestCase):
         self.assertIn('# plow-agent-uid: ag_new', text)
         self.assertIn(('POST', '/v1/agents'), plow.sent)
         self.assertNotIn('DELETE', [method for method, _ in plow.sent])
+
+
+class Installation:
+    """run_agent() in a temporary checkout, with Docker, Plow, the official client and the terminal faked."""
+
+    def __init__(self, directory):
+        self.root = Path(directory)
+        self.agent = self.root / 'agent'
+        self.agent.mkdir()
+        self.credential = self.agent / 'plow-credentials'
+        self.signin = self.root / 'config/plow/token'
+        self.lines = [line('ln_1')]
+        self.verified = {'line': line('ln_1')}  # identity() of an existing credential, or an exception to raise
+        self.up = SimpleNamespace(returncode=0)  # `compose up` result, or an exception to raise
+        self.calls = []
+        self.out, self.err = io.StringIO(), io.StringIO()
+
+    def official(self):
+        self.calls.append('official')
+        return {'account_token': self.account_token, 'login': self.login,
+                'account_lines': self.account_lines, 'mint': self.mint}
+
+    def account_token(self, args):
+        self.calls.append('account_token')
+        if not self.signin.exists():
+            raise SystemExit('plow-agents: no account token')
+        return self.signin.read_text().strip()
+
+    def login(self, args):
+        self.calls.append('login')
+        self.signin.parent.mkdir(parents=True, exist_ok=True)
+        self.signin.write_text('acct_fixture_token\n')
+
+    def account_lines(self, base, token):
+        self.calls.append('account_lines')
+        return self.lines
+
+    def mint(self, args):
+        self.calls.append('mint')
+        Path(args.credential_file).write_text('PLOW_API_BASE=https://api.plow.co\nPLOW_AGENT_TOKEN=agt_fixture_token\n')
+
+    def identity(self, path):
+        self.calls.append('identity')
+        if isinstance(self.verified, BaseException):
+            raise self.verified
+        return self.verified
+
+    def compose(self, *arguments, capture=False):
+        self.calls.append(' '.join(('compose',) + arguments))
+        if arguments[0] == 'up':
+            if isinstance(self.up, BaseException):
+                raise self.up
+            return self.up
+        return SimpleNamespace(returncode=0, stdout='plow-init: configured from /var/lib/plow as cht_1\n')
+
+    def run(self, **options):
+        fakes = {'ROOT': self.root, 'AGENT': self.agent, 'CREDENTIAL': self.credential, 'preflight': lambda: [],
+                 'official': self.official, 'identity': self.identity, 'compose': self.compose,
+                 'speak': lambda prompt: 'I am Reach.'}
+        with contextlib.ExitStack() as stack:
+            for name, value in fakes.items():
+                stack.enter_context(patch.object(plow_agent, name, value))
+            stack.enter_context(patch.dict(os.environ, {'XDG_CONFIG_HOME': str(self.root / 'config')}))
+            stack.enter_context(patch('builtins.input', side_effect=AssertionError('The installer asked a question.')))
+            stack.enter_context(contextlib.redirect_stdout(self.out))
+            stack.enter_context(contextlib.redirect_stderr(self.err))
+            arguments = dict(agent_action=None, new_line=False, line=None)
+            arguments.update(options)
+            return plow_agent.run_agent(SimpleNamespace(**arguments))
+
+    def plow_calls(self):
+        return [call for call in self.calls if not call.startswith('compose')]
+
+
+class ResumeTests(unittest.TestCase):
+    def test_an_existing_credential_resumes_without_signing_in_or_choosing_a_line(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.credential.write_text('PLOW_AGENT_TOKEN=agt_existing\n')
+            install.lines = [line('ln_1'), line('ln_2')]
+            install.verified = {'line': line('ln_2', number='+15551234567', name='Birch')}
+            self.assertEqual(install.run(), 0)
+        self.assertEqual(install.plow_calls(), ['identity'])
+        self.assertIn('compose up -d --build', install.calls)
+        self.assertIn('Credential ........ reused', install.out.getvalue())
+        self.assertIn('Text +15551234567 to talk to your agent.', install.out.getvalue())
+
+    def test_without_a_credential_it_signs_in_chooses_a_line_and_mints(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            self.assertEqual(install.run(), 0)
+            self.assertTrue(install.credential.exists())
+        self.assertEqual(install.plow_calls(), ['official', 'account_token', 'login', 'account_token', 'account_lines', 'mint'])
+        self.assertIn('Credential ........ minted', install.out.getvalue())
+
+    def test_a_credential_plow_cannot_verify_stops_and_is_left_byte_identical(self):
+        original = b'PLOW_API_BASE=https://api.plow.co\nPLOW_AGENT_TOKEN=agt_existing\n# plow-agent-uid: ag_old\n'
+        for verified in (plow_agent.AgentError('API returned HTTP 401; no automatic retry was made.'), {}, {'line': {}}):
+            with self.subTest(verified=verified), tempfile.TemporaryDirectory() as directory:
+                install = Installation(directory)
+                install.credential.write_bytes(original)
+                install.verified = verified
+                self.assertEqual(install.run(), 1)
+                self.assertEqual(install.credential.read_bytes(), original)
+                self.assertEqual(install.calls, ['identity'])
+                self.assertIn('could not be verified', install.err.getvalue())
+                self.assertIn('left untouched', install.err.getvalue())
+
+    def test_identity_reports_an_unusable_credential_as_an_agent_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            credential = Path(directory) / 'plow-credentials'
+            credential.write_text('PLOW_AGENT_TOKEN=agt_existing\n')
+            credential.chmod(0o644)
+            with patch.object(urllib.request.OpenerDirector, 'open', side_effect=AssertionError('network')), \
+                    self.assertRaises(plow_agent.AgentError) as error:
+                plow_agent.identity(credential)
+        self.assertIn('chmod 600', str(error.exception))
 
 
 class LineSelectionTests(unittest.TestCase):
