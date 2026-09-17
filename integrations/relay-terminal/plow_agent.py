@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import runpy
 import shutil
+import signal
 import ssl
 import stat
 import subprocess
@@ -272,17 +273,62 @@ def wait_ready(read_logs, sleep=time.sleep, timeout=600, step=2):
 
 
 @contextlib.contextmanager
-def installation_lock(path):
-    """One install at a time. The lock clears on failure and interruption."""
+def installation_lock(path, alive=None):
+    """One install at a time. The lock names the installer's process and clears on failure and interruption.
+
+    A lock whose process no longer exists was left by a killed installer, and is removed.
+    """
+    busy = f'An install is already running. If it was interrupted, delete {path} and retry.'
+    for attempt in (1, 2):
+        try:
+            descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            break
+        except FileExistsError:
+            holder = lock_holder(path)
+            if attempt == 2 or holder is None or (alive or process_alive)(holder):
+                raise AgentError(busy) from None
+            Path(path).unlink(missing_ok=True)
+            print(f'Removed a stale install lock left by process {holder}.', flush=True)
     try:
-        descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-    except FileExistsError:
-        raise AgentError(f'An install is already running. If it was interrupted, delete {path} and retry.') from None
-    try:
+        os.write(descriptor, f'{os.getpid()}\n'.encode())
         os.close(descriptor)
         yield
     finally:
         Path(path).unlink(missing_ok=True)
+
+
+def lock_holder(path):
+    """The process id a lock file names, or None when it names none."""
+    try:
+        text = Path(path).read_text().strip()
+    except (OSError, UnicodeError):
+        return None
+    return int(text) if text.isdecimal() and 0 < int(text) < 2 ** 31 else None
+
+
+def process_alive(pid):
+    """Whether a process with this id exists. Where that cannot be asked safely, assume it does."""
+    if os.name != 'posix':
+        return True  # on Windows os.kill(pid, 0) would terminate the process
+    try:
+        os.kill(pid, 0)  # signal 0 only checks
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True  # it exists but belongs to someone else
+    return True
+
+
+@contextlib.contextmanager
+def exit_on_sigterm():
+    """Turn SIGTERM (a tool timeout, `kill`) into SystemExit(143), so finally blocks such as the lock's still run."""
+    def stop(signum, frame):
+        raise SystemExit(143)
+    previous = signal.signal(signal.SIGTERM, stop)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGTERM, signal.SIG_DFL if previous is None else previous)
 
 
 def status_report(running, line, configured, reporter, usage):
@@ -581,7 +627,7 @@ def run_agent(args):
             return 0
         state = ROOT / '.data/agent'
         state.mkdir(parents=True, exist_ok=True)
-        with installation_lock(state / 'install.lock'):
+        with exit_on_sigterm(), installation_lock(state / 'install.lock'):
             return install(args)
     except AgentError as error:
         print(str(error), file=sys.stderr, flush=True)

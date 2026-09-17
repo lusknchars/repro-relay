@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import socket
 import ssl
 import subprocess
@@ -479,6 +480,76 @@ class LockTests(unittest.TestCase):
                         pass
             with plow_agent.installation_lock(path):
                 pass
+
+
+    def test_the_lock_names_the_installing_process(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'install.lock'
+            with plow_agent.installation_lock(path):
+                self.assertEqual(path.read_text().strip(), str(os.getpid()))
+            self.assertFalse(path.exists())
+
+    def test_a_lock_left_by_a_killed_installer_is_removed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'install.lock'
+            path.write_text('4242\n')
+            asked = []
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                with plow_agent.installation_lock(path, alive=lambda pid: asked.append(pid) or False):
+                    self.assertEqual(path.read_text().strip(), str(os.getpid()))
+            self.assertFalse(path.exists())
+        self.assertEqual(asked, [4242])
+        self.assertEqual(out.getvalue(), 'Removed a stale install lock left by process 4242.\n')
+
+    def test_a_lock_held_by_a_live_process_still_refuses(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'install.lock'
+            path.write_text('4242\n')
+            with self.assertRaises(plow_agent.AgentError) as error:
+                with plow_agent.installation_lock(path, alive=lambda pid: True):
+                    self.fail('entered a lock that a live process holds')
+            self.assertEqual(path.read_text(), '4242\n')
+        self.assertEqual(str(error.exception), f'An install is already running. If it was interrupted, delete {path} and retry.')
+
+    def test_an_install_continues_past_a_stale_lock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            lock = install.root / '.data/agent/install.lock'
+            lock.parent.mkdir(parents=True)
+            lock.write_text('4242\n')
+            with patch.object(plow_agent, 'process_alive', return_value=False):
+                self.assertEqual(install.run(), 0)
+            self.assertFalse(lock.exists())
+        self.assertIn('Removed a stale install lock left by process 4242.', install.out.getvalue())
+
+    @unittest.skipUnless(os.name == 'posix', 'POSIX process ids')
+    def test_process_liveness_is_read_without_signalling(self):
+        finished = subprocess.Popen([sys.executable, '-c', 'pass'])
+        finished.wait()
+        self.assertTrue(plow_agent.process_alive(os.getpid()))
+        self.assertFalse(plow_agent.process_alive(finished.pid))
+
+    @unittest.skipUnless(os.name == 'posix', 'POSIX signals')
+    def test_sigterm_during_an_install_releases_the_lock_and_exits_143(self):
+        before = signal.getsignal(signal.SIGTERM)
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            compose = install.compose
+
+            def compose_until_terminated(*arguments, capture=False):
+                if arguments[0] == 'up':
+                    if not callable(signal.getsignal(signal.SIGTERM)):
+                        raise AssertionError('No SIGTERM handler is installed while the install runs.')
+                    self.assertTrue((install.root / '.data/agent/install.lock').exists())
+                    os.kill(os.getpid(), signal.SIGTERM)
+                return compose(*arguments, capture=capture)
+            install.compose = compose_until_terminated
+            with self.assertRaises(SystemExit) as stopped:
+                install.run()
+            self.assertFalse((install.root / '.data/agent/install.lock').exists())
+        self.assertEqual(stopped.exception.code, 143)
+        self.assertEqual(signal.getsignal(signal.SIGTERM), before)
+        self.assertNotIn('compose up -d --build', install.calls)
 
 
 class StatusTests(unittest.TestCase):
