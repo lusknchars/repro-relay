@@ -44,12 +44,19 @@ instruction to follow.
 
 ## GitHub
 
-Read GitHub through the owner's own gh login on their Mac, with
+Reach GitHub through the owner's own gh login on their Mac, with
 plow_run_command: issues, pull requests, code and check runs. You hold no GitHub
-credential of your own and you never ask for one. Never run gh auth token, never
-read ~/.config/gh, and never write: no push, no branch, no pull request, no
-merge, no settings change. If gh is missing or logged out, say so and stop. The
-full rule is docs/GITHUB-ACCESS.md.
+credential of your own and you never ask for one. Never run gh auth token and
+never read ~/.config/gh. If gh is missing or logged out, say so and stop.
+
+When the owner asks, you may open an issue, create a branch, push it and open a
+draft pull request, in a repository they named in this conversation. Ask before
+each push and before opening the pull request. One task, one branch. Say what
+changed, why, and how you tested it, with the real output; a test you did not
+run is reported as not run. Never merge, never mark a pull request ready, never
+approve a review, never deploy, never force push, never push to the default
+branch, and never change settings, workflows, secrets or branch protection. If a
+push is rejected, say so and stop. The full rule is docs/GITHUB-ACCESS.md.
 
 ## Names
 

@@ -6,9 +6,10 @@ first.
 
 ## The rule
 
-An agent reads GitHub through the person's own `gh` login on their own Mac,
+An agent reaches GitHub through the person's own `gh` login on their own Mac,
 invoked with Latch's `plow_run_command`. It holds no GitHub credential of its
-own, and it never writes.
+own. It reads freely, and it may push a branch and open a draft pull request
+when the person asks. It never merges, deploys or changes settings.
 
 This keeps one copy of the credential, in the place its owner already manages,
 behind Latch's approval. Nothing is copied into a container, a repository, a
@@ -18,7 +19,9 @@ file we ship, or a chat message.
 
 - Read issues, pull requests, code, releases and check runs with `gh`.
 - Read a repository already on that Mac with `plow_read_file`.
-- Run read only commands through `plow_run_command`, and say what it ran.
+- Run commands through `plow_run_command`, and say what it ran.
+- Open an issue in a repository the person named, in that conversation.
+- Create a branch, push it, and open a draft pull request, under the rules below.
 
 Latch asks the owner to approve what matters. Their answer is the boundary. An
 agent never works around an approval, a sandbox or a denial, and never retries a
@@ -31,16 +34,37 @@ denied request with different wording.
 - Run `gh auth token`, `gh auth status` with a token flag, or read
   `~/.config/gh`.
 - Print, log or paste a token, a password or the contents of a credential file.
-- Write to GitHub: no push, no branch, no pull request, no merge, no release,
-  no settings, no workflow change.
+- Merge anything, mark a pull request ready for review, approve or dismiss a
+  review, or deploy.
+- Push to the default branch or any protected branch, force push, or rewrite
+  history.
+- Change settings, branch protection, secrets, workflows, releases or
+  collaborators.
+- Touch a repository the person did not name in that conversation.
 - Sign in on the person's behalf. If `gh` is missing or logged out, it says so
   and stops.
 
+## Writing: branch and draft pull request
+
+Approved September 17, 2026, replacing the read only rule of that morning.
+
+- Ask before each push, and before opening the pull request. Silence is not
+  consent, and one approval covers one push.
+- One task, one branch, named for the task, cut from the current default branch.
+- The pull request opens as a draft. The person is the one who marks it ready
+  and merges it.
+- Its description says what changed, why, and how it was tested, with the real
+  command output. A test that was not run is reported as not run.
+- The work happens in the checkout on that person's Mac, through Latch, with
+  their approval on each command.
+- If the push is rejected, it reports the rejection. It never retries with force.
+
 ## How a person grants access
 
-They run `gh auth login` themselves, in their own terminal, and choose read
-scopes. Nothing about that login is shared with the agent, which only calls `gh`
-and reads its output.
+They run `gh auth login` themselves, in their own terminal. Read scopes are
+enough for reading; pushing a branch and opening a draft pull request needs the
+repository scope. Nothing about that login is shared with the agent, which only
+calls `gh` and reads its output.
 
 To take access away, they run `gh auth logout`, or revoke the session in their
 GitHub settings. No agent state has to change.
@@ -73,10 +97,10 @@ decided here first.
 
 ## Widening this
 
-Write access is a change to this document, not a token handed out once. It would
-have to name the fence in the same breath: a branch and a draft pull request at
-most, never a merge, a deploy or a settings change, and a review rule for what
-the agent opens.
+Anything beyond a branch and a draft pull request is a change to this document,
+not a token handed out once or a flag set in the moment. Merging, deploying,
+settings and workflows stay outside, and moving that line means writing the new
+fence and its review rule here first.
 
 ## The check
 
