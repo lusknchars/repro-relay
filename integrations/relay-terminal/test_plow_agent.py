@@ -210,7 +210,8 @@ class InstallFlowTests(unittest.TestCase):
 
     def test_a_credential_plow_cannot_verify_stops_and_is_left_byte_identical(self):
         original = b'PLOW_API_BASE=https://api.plow.co\nPLOW_AGENT_TOKEN=agt_existing\n# plow-agent-uid: ag_old\n'
-        for verified in (plow_agent.AgentError('API returned HTTP 401; no automatic retry was made.'), {}, {'line': {}}):
+        rejected = plow_agent.CredentialRejected('API returned HTTP 401; no automatic retry was made.')
+        for verified in (rejected, plow_agent.PlowUnreachable('timed out'), {}, {'line': {}}):
             with self.subTest(verified=verified), tempfile.TemporaryDirectory() as directory:
                 install = Installation(directory)
                 install.credential.write_bytes(original)
@@ -218,8 +219,8 @@ class InstallFlowTests(unittest.TestCase):
                 self.assertEqual(install.run(), 1)
                 self.assertEqual(install.credential.read_bytes(), original)
                 self.assertEqual(install.calls, ['identity'])
-                self.assertIn('could not be verified', install.err.getvalue())
                 self.assertIn('left untouched', install.err.getvalue())
+                self.assertEqual('remove the file yourself' in install.err.getvalue(), verified is rejected)
 
     def test_several_free_lines_without_a_terminal_exit_2_before_minting(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -292,11 +293,32 @@ class CredentialVerificationTests(unittest.TestCase):
             with self.subTest(opener=opener):
                 self.assertEqual(self.verify(**opener), self.UNREACHABLE)
 
-    def test_a_credential_plow_rejects_still_names_the_reason(self):
-        failure = urllib.error.HTTPError('https://api.plow.co/v1/agents/cloud/me', 401, 'Unauthorized', {}, None)
-        message = self.verify(side_effect=failure)
-        self.assertIn('could not be verified with Plow. API returned HTTP 401', message)
-        self.assertNotIn('reconcile', message)
+    def test_only_a_definitive_rejection_suggests_removing_the_credential(self):
+        for code in (401, 403, 404):
+            with self.subTest(code=code):
+                failure = urllib.error.HTTPError('https://api.plow.co/v1/agents/cloud/me', code, 'Rejected', {}, None)
+                message = self.verify(side_effect=failure)
+                self.assertTrue(message.endswith(f'could not be verified with Plow. API returned HTTP {code}; no automatic '
+                                                 'retry was made. It was left untouched. If that agent was retired, remove '
+                                                 'the file yourself first, then run ./relay agent again.'), message)
+                self.assertNotIn('reconcile', message)
+
+    def test_a_busy_or_failing_plow_never_suggests_removing_the_credential(self):
+        for code in (500, 502, 429):
+            with self.subTest(code=code):
+                failure = urllib.error.HTTPError('https://api.plow.co/v1/agents/cloud/me', code, 'Busy', {}, None)
+                self.assertEqual(self.verify(side_effect=failure), self.UNREACHABLE)
+
+    def test_a_credential_file_problem_is_named_without_suggesting_removal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            credential = Path(directory) / 'plow-credentials'
+            credential.write_text('PLOW_AGENT_TOKEN=agt_fixture_token\n')
+            credential.chmod(0o644)
+            with patch.object(urllib.request.OpenerDirector, 'open', side_effect=AssertionError('network')), \
+                    self.assertRaises(plow_agent.AgentError) as error:
+                plow_agent.existing_line(credential, plow_agent.identity)
+        self.assertEqual(str(error.exception), f'The existing credential {credential} could not be used: Plow credentials '
+                                               'must be an owner-only regular file. Use chmod 600. It was left untouched.')
 
 
 class ResumeFlagTests(unittest.TestCase):

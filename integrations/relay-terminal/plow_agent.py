@@ -49,7 +49,11 @@ class DecisionNeeded(AgentError):
 
 
 class PlowUnreachable(AgentError):
-    """Plow gave no usable answer (network, timeout or unreadable reply), so nothing was learned about a credential."""
+    """Plow gave no usable answer (network, timeout, a busy or failing service, an unreadable reply)."""
+
+
+class CredentialRejected(AgentError):
+    """Plow answered definitively (401, 403 or 404) that a credential, or the agent it belonged to, is gone."""
 
 
 def preflight(run=None):
@@ -269,20 +273,21 @@ def choose_later(reason, free):
 
 
 def existing_line(path, identity):
-    """The line an existing credential answers on, as Plow reports it. The file is only ever read."""
-    reason = ''
+    """The line an existing credential answers on, as Plow reports it. The file is only ever read. Removing it is
+    suggested only when Plow answered definitively; anything short of that asks for a later run."""
     try:
         found = identity(path)
     except PlowUnreachable:
-        raise AgentError('Could not verify the existing credential with Plow right now. It was left untouched; '
-                         'run ./relay agent again later.') from None
+        found = None
+    except CredentialRejected as error:
+        raise AgentError(f'The existing credential {path} could not be verified with Plow. {error} It was left untouched. '
+                         'If that agent was retired, remove the file yourself first, then run ./relay agent again.') from None
     except AgentError as error:
-        found, reason = None, f' {error}'
+        raise AgentError(f'The existing credential {path} could not be used: {error} It was left untouched.') from None
     line = found.get('line') if isinstance(found, dict) else None
     if not isinstance(line, dict) or not line.get('uid'):
-        raise AgentError(f'The existing credential {path} could not be verified with Plow.{reason} It was left untouched. '
-                         'Check the connection and run ./relay agent again; if that agent was retired, '
-                         'remove the file yourself first.')
+        raise AgentError('Could not verify the existing credential with Plow right now. It was left untouched; '
+                         'run ./relay agent again later.')
     return line
 
 
@@ -464,10 +469,9 @@ def compose(*arguments, capture=False):
 
 
 def identity(path):
-    """Who a credential answers as, according to Plow. When Plow cannot say, an AgentError says why.
-
-    PlowUnreachable means no usable answer arrived: the bridge raised for a network error, a timeout or a reply
-    that is not JSON, rather than for an HTTP status or its own checks.
+    """Who a credential answers as, according to Plow. When Plow cannot say, an AgentError says why:
+    CredentialRejected for a definitive 401, 403 or 404, PlowUnreachable for any other failed request,
+    and a plain AgentError when the local file cannot be used.
     """
     sys.path.insert(0, str(ROOT / 'integrations/plow'))
     import bridge
@@ -479,9 +483,9 @@ def identity(path):
         return bridge.JsonHTTP(ORIGIN, token).call('GET', '/v1/agents/cloud/me')[1]
     except bridge.BridgeError as error:
         cause = error.__context__  # the bridge raises "from None", which keeps the original as context
-        if isinstance(cause, (OSError, ValueError)) and not isinstance(cause, urllib.error.HTTPError):
-            raise PlowUnreachable(str(error)) from None
-        raise AgentError(str(error)) from None
+        if isinstance(cause, urllib.error.HTTPError) and cause.code in (401, 403, 404):
+            raise CredentialRejected(str(error)) from None
+        raise PlowUnreachable(str(error)) from None
 
 
 def reporter_state():
