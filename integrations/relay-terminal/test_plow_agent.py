@@ -254,7 +254,48 @@ class InstallFlowTests(unittest.TestCase):
             with patch.object(urllib.request.OpenerDirector, 'open', side_effect=AssertionError('network')), \
                     self.assertRaises(plow_agent.AgentError) as error:
                 plow_agent.identity(credential)
+            with self.assertRaises(plow_agent.AgentError) as missing:
+                plow_agent.identity(Path(directory) / 'absent')
         self.assertIn('chmod 600', str(error.exception))
+        for local in (error.exception, missing.exception):
+            self.assertNotIsInstance(local, plow_agent.PlowUnreachable)
+
+
+class CredentialVerificationTests(unittest.TestCase):
+    """existing_line() with the real identity() and bridge; only the HTTP opener is faked."""
+    UNREACHABLE = 'Could not verify the existing credential with Plow right now. It was left untouched; run ./relay agent again later.'
+
+    def verify(self, **opener):
+        with tempfile.TemporaryDirectory() as directory:
+            credential = Path(directory) / 'plow-credentials'
+            credential.write_text('PLOW_API_BASE=https://api.plow.co\nPLOW_AGENT_TOKEN=agt_fixture_token\n')
+            credential.chmod(0o600)
+            original = credential.read_bytes()
+            with patch.object(urllib.request.OpenerDirector, 'open', **opener), \
+                    self.assertRaises(plow_agent.AgentError) as error:
+                plow_agent.existing_line(credential, plow_agent.identity)
+            self.assertEqual(credential.read_bytes(), original)
+        self.assertEqual(error.exception.code, 1)
+        return str(error.exception)
+
+    def test_plow_out_of_reach_leaves_the_credential_for_a_later_run(self):
+        class Garbled:
+            status = 200
+            def __enter__(self): return self
+            def __exit__(self, *details): return False
+            def read(self, size): return b'<html>not json</html>'
+        for opener in ({'side_effect': urllib.error.URLError(socket.gaierror(8, 'nodename nor servname provided, or not known'))},
+                       {'side_effect': TimeoutError('The read operation timed out')},
+                       {'side_effect': ConnectionResetError(54, 'Connection reset by peer')},
+                       {'return_value': Garbled()}):
+            with self.subTest(opener=opener):
+                self.assertEqual(self.verify(**opener), self.UNREACHABLE)
+
+    def test_a_credential_plow_rejects_still_names_the_reason(self):
+        failure = urllib.error.HTTPError('https://api.plow.co/v1/agents/cloud/me', 401, 'Unauthorized', {}, None)
+        message = self.verify(side_effect=failure)
+        self.assertIn('could not be verified with Plow. API returned HTTP 401', message)
+        self.assertNotIn('reconcile', message)
 
 
 class ResumeFlagTests(unittest.TestCase):

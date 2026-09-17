@@ -46,6 +46,10 @@ class DecisionNeeded(AgentError):
     code = 2
 
 
+class PlowUnreachable(AgentError):
+    """Plow gave no usable answer (network, timeout or unreadable reply), so nothing was learned about a credential."""
+
+
 def preflight(run=None):
     """Return the missing prerequisites, each with the action that fixes it."""
     run = run or (lambda command: subprocess.run(command, capture_output=True, timeout=20).returncode)
@@ -208,6 +212,9 @@ def existing_line(path, identity):
     reason = ''
     try:
         found = identity(path)
+    except PlowUnreachable:
+        raise AgentError('Could not verify the existing credential with Plow right now. It was left untouched; '
+                         'run ./relay agent again later.') from None
     except AgentError as error:
         found, reason = None, f' {error}'
     line = found.get('line') if isinstance(found, dict) else None
@@ -351,12 +358,23 @@ def compose(*arguments, capture=False):
 
 
 def identity(path):
-    """Who a credential answers as, according to Plow. When Plow cannot say, an AgentError says why."""
+    """Who a credential answers as, according to Plow. When Plow cannot say, an AgentError says why.
+
+    PlowUnreachable means no usable answer arrived: the bridge raised for a network error, a timeout or a reply
+    that is not JSON, rather than for an HTTP status or its own checks.
+    """
     sys.path.insert(0, str(ROOT / 'integrations/plow'))
     import bridge
     try:
-        return bridge.JsonHTTP(ORIGIN, bridge.private_credentials(path)).call('GET', '/v1/agents/cloud/me')[1]
+        token = bridge.private_credentials(path)
     except bridge.BridgeError as error:
+        raise AgentError(str(error)) from None
+    try:
+        return bridge.JsonHTTP(ORIGIN, token).call('GET', '/v1/agents/cloud/me')[1]
+    except bridge.BridgeError as error:
+        cause = error.__context__  # the bridge raises "from None", which keeps the original as context
+        if isinstance(cause, (OSError, ValueError)) and not isinstance(cause, urllib.error.HTTPError):
+            raise PlowUnreachable(str(error)) from None
         raise AgentError(str(error)) from None
 
 
