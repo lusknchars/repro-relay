@@ -10,6 +10,7 @@ import http.client
 import json
 import os
 from pathlib import Path
+import re
 import runpy
 import shutil
 import signal
@@ -578,12 +579,26 @@ def noting_signin(path, marker):
             remember_signin(marker, after)
 
 
+def marker_digest(marker):
+    """The digest a sign-in marker holds: None when there is no marker, '' when it is unreadable or not a digest."""
+    try:
+        text = marker.read_bytes().decode('ascii').strip()
+    except FileNotFoundError:
+        return None
+    except (OSError, UnicodeError):
+        return ''
+    return text.lower() if re.fullmatch(r'[0-9a-fA-F]{64}', text) else ''
+
+
 def settle_signin(path, marker, minted):
     """After a successful run, fresh or resumed: remove the sign-in this installer created, and only that one."""
     kept = 'Sign-in ........... kept; revoke the plow-agents session in Plow Latch if you no longer need it'
-    try:
-        recorded = marker.read_text().strip()
-    except OSError:
+    recorded = marker_digest(marker)
+    if recorded == '':  # unreadable or not a digest: stale, so it never decides anything
+        with contextlib.suppress(OSError):
+            marker.unlink()
+        recorded = None
+    if recorded is None:
         if minted and path.exists():
             print(kept, flush=True)
         return

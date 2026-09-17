@@ -1132,6 +1132,26 @@ class SignInTests(unittest.TestCase):
                     install.run(new_line=True)
                 self.assertFalse(self.marker(install).exists())
 
+    def test_a_marker_that_is_not_a_digest_is_dropped_without_touching_the_sign_in(self):
+        cases = [b'\xff\xfe\x00 not utf-8', b'not a digest\n', b'0' * 63 + b'\n', b'g' * 64 + b'\n']
+        if os.geteuid() != 0:
+            cases.append(None)  # a marker its owner cannot read
+        for content in cases:
+            with self.subTest(content=content), tempfile.TemporaryDirectory() as directory:
+                install = Installation(directory)
+                install.credential.write_text('PLOW_AGENT_TOKEN=agt_existing\n')
+                install.signin.parent.mkdir(parents=True)
+                install.signin.write_text('acct_owner_token\n')
+                marker = self.marker(install)
+                marker.parent.mkdir(parents=True)
+                marker.write_bytes(b'0' * 64 if content is None else content)
+                if content is None:
+                    marker.chmod(0)
+                self.assertEqual(install.run(), 0)
+                self.assertEqual(install.signin.read_text(), 'acct_owner_token\n')
+                self.assertFalse(marker.exists())
+                self.assertNotIn('Sign-in .....', install.out.getvalue())
+
     def test_a_rerun_after_choosing_a_line_removes_the_sign_in_the_first_run_created(self):
         with tempfile.TemporaryDirectory() as directory:
             install = Installation(directory)
