@@ -48,7 +48,7 @@ def connect(line_id=None):
             raise BridgeError('This line already has an agent. Relay will not replace it. Choose a free line or configure its existing credential.')
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             try:
-                official['mint'](SimpleNamespace(line=line['uid'],credential_file=str(credential),token_file=None,api_base=ORIGIN,agent_api_base=None))
+                official['mint'](SimpleNamespace(line=line['uid'],credential_file=str(credential),token_file=None,api_base=ORIGIN,agent_api_base=ORIGIN))
             except SystemExit:
                 raise BridgeError('Plow could not provision a credential. Inspect account lines before retrying.') from None
     client = JsonHTTP(ORIGIN, private_credentials(credential))

@@ -22,6 +22,7 @@ It checks Docker, signs you in to Plow, selects a free assistant line, starts th
 Needs Docker Desktop running, Python 3, and the phone that owns the Plow account. The pinned upstream image is Linux amd64; Docker Desktop emulates it on Apple Silicon, so the first start downloads several GB.
 
 ```sh
+./relay agent --line 2            # use a free line by list position, number or uid, without being asked
 ./relay agent status              # agent, line, Plow setup and reported usage
 ./relay agent test "prompt"       # one prompt, printed with its token usage
 ./relay agent stop                # stop it, keeping memory and identity
@@ -105,7 +106,8 @@ docker compose logs agent | grep transport-watchdog:
 
 To build without it, delete `image/s6-overlay/s6-rc.d/transport-watchdog`, its
 entry in `image/s6-overlay/s6-rc.d/user/contents.d/`, its path in the
-Dockerfile's `chmod` line, and the image check in `.github/workflows/agent.yml`.
+Dockerfile's `chmod` line, the image check in `.github/workflows/agent.yml`, and
+`tests/test_watchdog.py`.
 
 ## Restart and update
 

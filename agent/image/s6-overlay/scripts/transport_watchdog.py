@@ -35,12 +35,20 @@ def load_state(path=STATE_PATH):
     """
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
-        with os.fdopen(os.open(path, flags), "rb") as handle:
-            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
-                return None
+        descriptor = os.open(path, flags)
+    except OSError:
+        return None
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            return None
+        with os.fdopen(descriptor, "rb") as handle:
+            descriptor = None
             raw = handle.read(STATE_LIMIT + 1)
     except OSError:
         return None
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
     if len(raw) > STATE_LIMIT:
         return None
     try:
