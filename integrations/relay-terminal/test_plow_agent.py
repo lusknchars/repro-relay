@@ -100,6 +100,8 @@ class Installation:
         self.lines = [line('ln_1')]
         self.verified = {'line': line('ln_1')}  # identity() of an existing credential, or an exception to raise
         self.up = SimpleNamespace(returncode=0)  # `compose up` result, or an exception to raise
+        self.running = ''  # working directories `docker ps` reports for the Compose project
+        self.docker = []  # read-only docker commands the installer ran
         self.calls = []
         self.out, self.err = io.StringIO(), io.StringIO()
 
@@ -142,6 +144,12 @@ class Installation:
             return self.up
         return SimpleNamespace(returncode=0, stdout='plow-init: configured from /var/lib/plow as cht_1\n')
 
+    def subprocess_run(self, command, **options):
+        if command[:2] != ['docker', 'ps']:
+            raise AssertionError(f'A test tried to run {command}')
+        self.docker.append(command)
+        return SimpleNamespace(returncode=0, stdout=self.running)
+
     def run(self, **options):
         fakes = {'ROOT': self.root, 'AGENT': self.agent, 'CREDENTIAL': self.credential, 'preflight': lambda: [],
                  'official': self.official, 'identity': self.identity, 'compose': self.compose,
@@ -149,6 +157,7 @@ class Installation:
         with contextlib.ExitStack() as stack:
             for name, value in fakes.items():
                 stack.enter_context(patch.object(plow_agent, name, value))
+            stack.enter_context(patch.object(subprocess, 'run', self.subprocess_run))
             stack.enter_context(patch.dict(os.environ, {'XDG_CONFIG_HOME': str(self.root / 'config')}))
             stack.enter_context(patch('builtins.input', side_effect=AssertionError('The installer asked a question.')))
             stack.enter_context(patch('sys.stdin', SimpleNamespace(isatty=lambda: False)))
@@ -473,6 +482,67 @@ class FailureTests(unittest.TestCase):
             self.assertFalse((install.root / '.data/agent/install.log').exists())
         self.assertEqual(install.err.getvalue(),
                          'Stopped before finishing. Nothing was left half-created; run it again to continue.\n')
+
+
+class ComposeProjectTests(unittest.TestCase):
+    LISTING = ['docker', 'ps', '--filter', 'label=com.docker.compose.project=agent',
+               '--format', '{{.Label "com.docker.compose.project.working_dir"}}']
+
+    def runner(self, stdout, returncode=0):
+        commands = []
+        return commands, lambda command: commands.append(command) or SimpleNamespace(returncode=returncode, stdout=stdout)
+
+    def test_an_agent_from_another_folder_stops_the_install(self):
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Path(directory) / 'agent'
+            agent.mkdir()
+            commands, run = self.runner('/Users/someone/repro-relay/agent\n')
+            with self.assertRaises(plow_agent.AgentError) as error:
+                plow_agent.refuse_other_agent(run=run, folder=agent, environ={})
+        self.assertEqual(error.exception.code, 1)
+        self.assertEqual(str(error.exception), "An agent from /Users/someone/repro-relay/agent already runs under the Docker "
+                                               "project 'agent'. Stop it there, or set COMPOSE_PROJECT_NAME to install alongside it.")
+        self.assertEqual(commands, [self.LISTING])
+
+    def test_no_agent_or_this_checkouts_own_agent_lets_the_install_continue(self):
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Path(directory) / 'agent'
+            agent.mkdir()
+            alias = Path(directory) / 'alias'
+            alias.symlink_to(directory, target_is_directory=True)
+            for listing in ('', f'{agent}\n', f'{alias}/agent\n', f'{agent}/\n\n'):
+                with self.subTest(listing=listing):
+                    commands, run = self.runner(listing)
+                    plow_agent.refuse_other_agent(run=run, folder=agent, environ={})
+                    self.assertEqual(commands, [self.LISTING])
+
+    def test_the_project_name_comes_from_compose_project_name(self):
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Path(directory) / 'agent'
+            agent.mkdir()
+            commands, run = self.runner('/Users/someone/other/agent\n')
+            with self.assertRaises(plow_agent.AgentError) as error:
+                plow_agent.refuse_other_agent(run=run, folder=agent, environ={'COMPOSE_PROJECT_NAME': 'relay-two'})
+        self.assertIn('label=com.docker.compose.project=relay-two', commands[0])
+        self.assertIn("under the Docker project 'relay-two'", str(error.exception))
+
+    def test_a_failed_docker_listing_stops_instead_of_assuming_nothing_runs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            commands, run = self.runner('', returncode=1)
+            with self.assertRaises(plow_agent.AgentError) as error:
+                plow_agent.refuse_other_agent(run=run, folder=Path(directory), environ={})
+        self.assertIn('did not list its running containers', str(error.exception))
+
+    def test_install_checks_before_signing_in_or_starting_anything(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.running = '/Users/someone/repro-relay/agent\n'
+            self.assertEqual(install.run(), 1)
+            self.assertFalse(install.credential.exists())
+        self.assertEqual(install.docker, [self.LISTING])
+        self.assertEqual(install.calls, [])
+        self.assertIn("An agent from /Users/someone/repro-relay/agent already runs under the Docker project 'agent'.",
+                      install.err.getvalue())
 
 
 class ClientDownloadTests(unittest.TestCase):

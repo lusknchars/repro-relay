@@ -56,6 +56,29 @@ def preflight(run=None):
     return []
 
 
+def refuse_other_agent(run=None, folder=None, environ=None):
+    """Stop when this Compose project already runs an agent from another folder. Only reads Docker's state."""
+    run = run or (lambda command: subprocess.run(command, capture_output=True, text=True, timeout=20))
+    name = (os.environ if environ is None else environ).get('COMPOSE_PROJECT_NAME') or 'agent'
+    result = run(['docker', 'ps', '--filter', f'label=com.docker.compose.project={name}',
+                  '--format', '{{.Label "com.docker.compose.project.working_dir"}}'])
+    if result.returncode:
+        raise AgentError('Docker did not list its running containers, so the install stopped before changing anything. '
+                         'Run ./relay agent again.')
+    for other in filter(None, (text.strip() for text in result.stdout.splitlines())):
+        if not same_folder(other, folder or AGENT):
+            raise AgentError(f"An agent from {other} already runs under the Docker project '{name}'. "
+                             'Stop it there, or set COMPOSE_PROJECT_NAME to install alongside it.')
+
+
+def same_folder(one, other):
+    """Compare the folders themselves when both exist (symlinks, letter case); otherwise their resolved paths."""
+    try:
+        return os.path.samefile(one, other)
+    except OSError:
+        return Path(one).resolve() == Path(other).resolve()
+
+
 def choose_line(lines, ask, wanted=None, interactive=True):
     """Select a free line. Occupied lines are never taken from their agent.
 
@@ -353,6 +376,7 @@ def install(args):
             print('Needed: ' + item, file=sys.stderr, flush=True)
         return 1
     print('Docker ............ ready', flush=True)
+    refuse_other_agent()  # before signing in, minting or starting anything
     signin = signin_path()
     signed_in_before = signin.exists()
     resuming = CREDENTIAL.exists()
