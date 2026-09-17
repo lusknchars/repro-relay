@@ -34,7 +34,7 @@ docker compose exec agent /command/with-contenv /bin/sh -c '
   exec /command/s6-setuidgid hermes env HOME=/var/lib/hermes \
     /opt/hermes/.venv/bin/python3 /opt/plow/agent-index-client.py \
     --register --agent repro-relay --name "Repro Relay" \
-    --blurb "Turns meeting notes and todos into saved team action items with owners, deadlines and source quotes." \
+    --blurb "An engineering agent on your own Plow line: saves tasks with owners and source quotes from meeting notes, and digests technical talks in your browser." \
     --repo https://github.com/lusknchars/repro-relay --runtime Hermes \
     --install-url https://github.com/lusknchars/repro-relay/tree/main/agent
 '

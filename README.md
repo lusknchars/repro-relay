@@ -4,7 +4,7 @@
 
 <h1 align="center">Repro Relay</h1>
 
-<p align="center">Investigate together. Keep the evidence. Decide what happens next.</p>
+<p align="center">Your engineering agent, a text away.</p>
 
 <p align="center">
   <img src="docs/assets/plow-hackathon.png" alt="Plow hackathon artwork featuring the Plow logo and a Mac Studio" width="120" height="120" />
@@ -19,7 +19,7 @@
   <a href="docs/STATUS.md">Project status</a>
 </p>
 
-Repro Relay brings agent investigations, code review, and team follow-ups into one workspace. See the conversation beside findings, changes, tests, and activity. Use Reach to organize recorded meeting actions and todos. Review the evidence before approving the next action.
+Repro Relay is an engineering agent you reach from your phone. Text it on your own Plow line to save tasks from meeting notes, or to get a digest of a technical talk read in your own browser. On your Mac, the Relay app holds the deeper work: bug investigations with evidence, reviewed memory, memory layers and harnesses. Today those are set in the app; changing them from your phone is the next step.
 
 ## Quick start
 
