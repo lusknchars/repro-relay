@@ -11,26 +11,20 @@ and verified repository fixes are not included in this edition.
 
 ## Install
 
-From a copy of this repository, in its top folder:
+Needs Docker running, Python 3, git, and the phone that owns the Plow account.
+The pinned upstream image is Linux amd64; Docker Desktop emulates it on Apple
+Silicon, so the first start downloads several GB.
+
+Clone this repository and the official
+[plow-agents](https://github.com/plow-pbc/plow-agents) client side by side:
 
 ```sh
-./relay agent
+git clone https://github.com/lusknchars/repro-relay
+git clone https://github.com/plow-pbc/plow-agents
+cd repro-relay/agent
 ```
 
-It checks Docker, signs you in to Plow, selects a free assistant line, starts this agent, waits until Plow reports it configured, prints a first Hermes reply, and shows the number to text. Repeating it continues an interrupted install. It never takes a line that already answers as an agent, and never overwrites an existing credential.
-
-Needs Docker Desktop running, Python 3, and the phone that owns the Plow account. The pinned upstream image is Linux amd64; Docker Desktop emulates it on Apple Silicon, so the first start downloads several GB.
-
-```sh
-./relay agent status              # agent, line, Plow setup and reported usage
-./relay agent test "prompt"       # one prompt, printed with its token usage
-./relay agent stop                # stop it, keeping memory and identity
-```
-
-### The same steps by hand
-
-The command wraps the official Plow client. To run the steps yourself, clone
-[plow-agents](https://github.com/plow-pbc/plow-agents), then from `repro-relay/agent`:
+Then, from `repro-relay/agent`:
 
 ```sh
 python3 ../../plow-agents/bin/plow-agents login
@@ -39,6 +33,9 @@ python3 ../../plow-agents/bin/plow-agents mint ln_xxx
 docker compose up --build -d
 docker compose logs -f agent
 ```
+
+`login` prints an activation text: send it from the phone that owns the Plow
+account. `mint` writes the credential to `agent/plow-credentials`.
 
 Select a **free** line from the list and replace `ln_xxx`. An occupied line already has an
 agent: keep it running and use a different free line. With none, run `login --new-line`,

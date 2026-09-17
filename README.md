@@ -28,16 +28,16 @@ Two ways to run Repro Relay. Both need Docker Desktop installed and open. Copy t
 ### A text agent on your own Plow line
 
 ```sh
-./relay agent
+git clone https://github.com/lusknchars/repro-relay
+git clone https://github.com/plow-pbc/plow-agents
+cd repro-relay/agent
+python3 ../../plow-agents/bin/plow-agents login
+python3 ../../plow-agents/bin/plow-agents lines
+python3 ../../plow-agents/bin/plow-agents mint ln_xxx
+docker compose up --build -d
 ```
 
-One command: it checks Docker, signs you in to Plow (you send one activation text from the phone that owns the account), selects a free assistant line, starts the agent, waits until it is ready, prints a first Hermes reply, and shows the number to text. Run it again at any time; it continues from wherever it stopped and never takes a line that already has an agent.
-
-```sh
-./relay agent status              # agent, line, Plow setup and reported usage
-./relay agent test "Summarise my open work"
-./relay agent stop                # stop it, keeping memory and identity
-```
+`login` prints an activation text to send from the phone that owns your Plow account. Replace `ln_xxx` with a **free** line from `lines`. Wait for `plow-init: configured` in `docker compose logs -f agent`, then text that line. Full steps: [agent/README.md](agent/README.md).
 
 Needs Docker Desktop running, Python 3, and the phone that owns your Plow account. The agent's model access comes from Plow, so no provider key is required.
 
