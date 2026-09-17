@@ -182,6 +182,17 @@ def status_report(running, line, configured, reporter, usage):
     return '\n'.join(rows)
 
 
+def trust_certifi():
+    """Give HTTPS calls a certificate bundle; python.org's Python on macOS has none until one is installed."""
+    if 'SSL_CERT_FILE' in os.environ:
+        return
+    try:
+        import certifi
+    except ImportError:
+        return
+    os.environ['SSL_CERT_FILE'] = certifi.where()
+
+
 def official():
     """The pinned official client, verified before use."""
     if not CLIENT.is_file():
@@ -330,6 +341,7 @@ def install(args):
 def run_agent(args):
     action = getattr(args, 'agent_action', None)
     try:
+        trust_certifi()  # before the client download and every Plow call
         if action == 'status':
             running = compose('ps', '--status', 'running', '--quiet', capture=True).stdout.strip() != ''
             configured = READY in (compose('logs', '--no-color', 'agent', capture=True).stdout or '')

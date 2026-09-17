@@ -7,8 +7,9 @@ import contextlib
 import io
 import os
 from pathlib import Path
+import sys
 import tempfile
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 import unittest
 from unittest.mock import patch
 import urllib.parse
@@ -399,6 +400,41 @@ class ReportedUsageTests(unittest.TestCase):
                 'agent-1  |   agent=repro-relay days=0 tokens=0\n'
                 'agent-1  |   a collector failed - NOT reporting a partial total\n')
         self.assertEqual(plow_agent.parse_usage(logs), {})
+
+
+class CertificateTests(unittest.TestCase):
+    def certifi(self):
+        module = ModuleType('certifi')
+        module.where = lambda: '/fixture/certifi/cacert.pem'
+        return module
+
+    def test_certifi_supplies_the_bundle_when_none_is_set(self):
+        with patch.dict(sys.modules, {'certifi': self.certifi()}), patch.dict(os.environ):
+            os.environ.pop('SSL_CERT_FILE', None)
+            plow_agent.trust_certifi()
+            self.assertEqual(os.environ.get('SSL_CERT_FILE'), '/fixture/certifi/cacert.pem')
+
+    def test_a_bundle_the_owner_set_is_kept(self):
+        with patch.dict(sys.modules, {'certifi': self.certifi()}), patch.dict(os.environ, {'SSL_CERT_FILE': '/owner/bundle.pem'}):
+            plow_agent.trust_certifi()
+            self.assertEqual(os.environ['SSL_CERT_FILE'], '/owner/bundle.pem')
+
+    def test_nothing_changes_without_certifi(self):
+        with patch.dict(sys.modules, {'certifi': None}), patch.dict(os.environ):
+            os.environ.pop('SSL_CERT_FILE', None)
+            plow_agent.trust_certifi()
+            self.assertNotIn('SSL_CERT_FILE', os.environ)
+
+    def test_the_bundle_is_set_before_the_install_reaches_the_network(self):
+        seen = []
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            load = install.official
+            install.official = lambda: seen.append(os.environ.get('SSL_CERT_FILE')) or load()
+            with patch.dict(sys.modules, {'certifi': self.certifi()}), patch.dict(os.environ):
+                os.environ.pop('SSL_CERT_FILE', None)
+                self.assertEqual(install.run(), 0)
+        self.assertEqual(seen, ['/fixture/certifi/cacert.pem'])
 
 
 class CommandLineTests(unittest.TestCase):
