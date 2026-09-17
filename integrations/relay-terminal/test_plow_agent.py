@@ -102,6 +102,9 @@ class Installation:
         self.up = SimpleNamespace(returncode=0)  # `compose up` result, or an exception to raise
         self.running = ''  # working directories `docker ps` reports for the Compose project
         self.docker = []  # read-only docker commands the installer ran
+        self.terminal = False  # whether stdin is a terminal the installer may ask on
+        self.logs = 'plow-init: configured from /var/lib/plow as cht_1\n'  # what `compose logs` shows
+        self.reply = 'I am Reach.'  # speak()'s answer, or an exception to raise
         self.calls = []
         self.out, self.err = io.StringIO(), io.StringIO()
 
@@ -127,6 +130,8 @@ class Installation:
 
     def mint(self, args):
         self.calls.append('mint')
+        if args.agent_api_base != plow_agent.ORIGIN:
+            raise AssertionError(f'mint was called with agent_api_base={args.agent_api_base!r}')
         self.minted = args.line
         Path(args.credential_file).write_text('PLOW_API_BASE=https://api.plow.co\nPLOW_AGENT_TOKEN=agt_fixture_token\n')
 
@@ -142,7 +147,12 @@ class Installation:
             if isinstance(self.up, BaseException):
                 raise self.up
             return self.up
-        return SimpleNamespace(returncode=0, stdout='plow-init: configured from /var/lib/plow as cht_1\n')
+        return SimpleNamespace(returncode=0, stdout=self.logs)
+
+    def speak(self, prompt):
+        if isinstance(self.reply, BaseException):
+            raise self.reply
+        return self.reply
 
     def subprocess_run(self, command, **options):
         if command[:2] != ['docker', 'ps']:
@@ -150,17 +160,24 @@ class Installation:
         self.docker.append(command)
         return SimpleNamespace(returncode=0, stdout=self.running)
 
+    @staticmethod
+    def record_failure(error, path, record=plow_agent.record_failure):
+        """run_agent logs unexpected errors; a tripwire (AssertionError) must reach the test instead."""
+        if isinstance(error, AssertionError):
+            raise error
+        return record(error, path)
+
     def run(self, **options):
         fakes = {'ROOT': self.root, 'AGENT': self.agent, 'CREDENTIAL': self.credential, 'preflight': lambda: [],
                  'official': self.official, 'identity': self.identity, 'compose': self.compose,
-                 'speak': lambda prompt: 'I am Reach.'}
+                 'speak': self.speak, 'record_failure': self.record_failure}
         with contextlib.ExitStack() as stack:
             for name, value in fakes.items():
                 stack.enter_context(patch.object(plow_agent, name, value))
             stack.enter_context(patch.object(subprocess, 'run', self.subprocess_run))
             stack.enter_context(patch.dict(os.environ, {'XDG_CONFIG_HOME': str(self.root / 'config')}))
             stack.enter_context(patch('builtins.input', side_effect=AssertionError('The installer asked a question.')))
-            stack.enter_context(patch('sys.stdin', SimpleNamespace(isatty=lambda: False)))
+            stack.enter_context(patch('sys.stdin', SimpleNamespace(isatty=lambda: self.terminal)))
             stack.enter_context(contextlib.redirect_stdout(self.out))
             stack.enter_context(contextlib.redirect_stderr(self.err))
             arguments = dict(agent_action=None, new_line=False, line=None)
@@ -222,6 +239,14 @@ class InstallFlowTests(unittest.TestCase):
             self.assertEqual(install.run(line='+1 555 000 0002'), 0)
         self.assertEqual(install.minted, 'ln_b')
         self.assertIn('Line .............. Birch +15550000002', install.out.getvalue())
+
+    def test_a_tripwire_inside_the_installer_reaches_the_test(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.terminal = True
+            install.lines = [line('ln_a', name='Alder'), line('ln_b', name='Birch')]
+            with self.assertRaisesRegex(AssertionError, 'The installer asked a question.'):
+                install.run()
 
     def test_identity_reports_an_unusable_credential_as_an_agent_error(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -606,6 +631,26 @@ class SignInTests(unittest.TestCase):
             self.assertEqual(install.run(), 1)
             self.assertIn('login', install.calls)
             self.assertTrue(install.signin.exists())
+        self.assertNotIn('Sign-in .....', install.out.getvalue())
+
+    def test_a_sign_in_is_kept_when_the_agent_never_reports_ready(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.logs = 'plow-init: credential rejected -- parking; no gateway will start\n'
+            self.assertEqual(install.run(), 1)
+            self.assertIn('login', install.calls)
+            self.assertTrue(install.signin.exists())
+        self.assertIn('parking; no gateway will start', install.err.getvalue())
+        self.assertNotIn('Sign-in .....', install.out.getvalue())
+
+    def test_a_sign_in_is_kept_when_hermes_does_not_answer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.reply = plow_agent.AgentError('The agent is running but did not answer.')
+            self.assertEqual(install.run(), 1)
+            self.assertIn('login', install.calls)
+            self.assertTrue(install.signin.exists())
+        self.assertIn('did not answer', install.err.getvalue())
         self.assertNotIn('Sign-in .....', install.out.getvalue())
 
     def test_resuming_says_nothing_about_the_sign_in(self):
