@@ -56,19 +56,56 @@ def preflight(run=None):
     return []
 
 
-def refuse_other_agent(run=None, folder=None, environ=None):
-    """Stop when this Compose project already runs an agent from another folder. Only reads Docker's state."""
-    run = run or (lambda command: subprocess.run(command, capture_output=True, text=True, timeout=20))
-    name = (os.environ if environ is None else environ).get('COMPOSE_PROJECT_NAME') or 'agent'
-    result = run(['docker', 'ps', '--filter', f'label=com.docker.compose.project={name}',
-                  '--format', '{{.Label "com.docker.compose.project.working_dir"}}'])
-    if result.returncode:
-        raise AgentError('Docker did not list its running containers, so the install stopped before changing anything. '
-                         'Run ./relay agent again.')
-    for other in filter(None, (text.strip() for text in result.stdout.splitlines())):
-        if not same_folder(other, folder or AGENT):
-            raise AgentError(f"An agent from {other} already runs under the Docker project '{name}'. "
+ACTIVE_STATES = {'running', 'restarting', 'paused'}
+
+
+def refuse_other_install(fresh, run=None, folder=None, environ=None):
+    """Stop before Compose could take over another install's agent or memory. Only reads Docker's state.
+
+    fresh means this run started without a credential, so any existing memory volume belongs to someone else.
+    """
+    run = run or (lambda command, cwd=None: subprocess.run(command, cwd=cwd, capture_output=True, text=True, timeout=20))
+    folder = folder or AGENT
+    name = compose_project(run, folder, os.environ if environ is None else environ)
+    for working_dir, state in docker_rows(run, ['docker', 'ps', '-a', '--filter', f'label=com.docker.compose.project={name}',
+                                                '--format', '{{.Label "com.docker.compose.project.working_dir"}}\t{{.State}}'],
+                                          'containers', fields=2):
+        if working_dir and same_folder(working_dir, folder):
+            continue
+        origin = working_dir or 'an unknown folder'
+        if state in ACTIVE_STATES:
+            raise AgentError(f"An agent from {origin} already runs under the Docker project '{name}'. "
                              'Stop it there, or set COMPOSE_PROJECT_NAME to install alongside it.')
+        raise AgentError(f"A stopped agent from {origin} exists under the Docker project '{name}'. "
+                         'Start it there with ./relay agent, or set COMPOSE_PROJECT_NAME to install alongside it.')
+    volume = f'{name}_agent-home'
+    if fresh and [volume] in docker_rows(run, ['docker', 'volume', 'ls', '--filter', f'name=^{volume}$',
+                                               '--format', '{{.Name}}'], 'volumes', fields=1):
+        raise AgentError(f"A memory volume for the Docker project '{name}' already exists from another install. "
+                         "Set COMPOSE_PROJECT_NAME to keep this new agent's memory separate.")
+
+
+def compose_project(run, folder, environ):
+    """The project name Compose itself resolves (COMPOSE_PROJECT_NAME, agent/.env, the folder); the plain rule otherwise."""
+    try:
+        result = run(['docker', 'compose', 'config', '--format', 'json'], cwd=folder)
+        name = json.loads(result.stdout).get('name') if result.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError, ValueError, AttributeError):
+        name = None
+    return name if isinstance(name, str) and name else (environ.get('COMPOSE_PROJECT_NAME') or 'agent')
+
+
+def docker_rows(run, command, what, fields):
+    """A read-only docker listing as rows of tab-separated fields. A listing Docker cannot give stops the install."""
+    try:
+        result = run(command)
+    except (OSError, subprocess.SubprocessError):
+        result = None
+    if result is None or result.returncode:
+        raise AgentError(f'Docker did not list its {what}, so the install stopped before starting the agent. '
+                         'Run ./relay agent again.')
+    return [([part.strip() for part in text.split('\t')] + [''] * fields)[:fields]
+            for text in result.stdout.splitlines() if text.strip()]
 
 
 def same_folder(one, other):
@@ -376,10 +413,10 @@ def install(args):
             print('Needed: ' + item, file=sys.stderr, flush=True)
         return 1
     print('Docker ............ ready', flush=True)
-    refuse_other_agent()  # before signing in, minting or starting anything
+    resuming = CREDENTIAL.exists()
+    refuse_other_install(fresh=not resuming)  # before signing in, minting or starting anything
     signin = signin_path()
     signed_in_before = signin.exists()
-    resuming = CREDENTIAL.exists()
     if resuming:
         # A rerun after minting continues with that agent's own line; no sign-in or line choice.
         line = existing_line(CREDENTIAL, identity)
@@ -387,6 +424,7 @@ def install(args):
         print('Credential ........ reused', flush=True)
     else:
         line = credential_for_new_line(args)
+    refuse_other_install(fresh=not resuming)  # again: signing in can take minutes
     print('Starting the agent (the first start downloads several GB) ...', flush=True)
     try:
         started = compose('up', '-d', '--build')
