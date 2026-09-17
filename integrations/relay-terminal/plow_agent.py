@@ -4,16 +4,21 @@ Wraps the pinned official plow-agents client. It never selects an occupied line,
 never overwrites a credential, and never deletes the agent's data volume.
 """
 import contextlib
+from datetime import datetime, timezone
 import hashlib
+import http.client
 import json
 import os
 from pathlib import Path
 import runpy
 import shutil
+import ssl
 import subprocess
 import sys
 import time
+import traceback
 from types import SimpleNamespace
+import urllib.error
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -197,8 +202,12 @@ def official():
     """The pinned official client, verified before use."""
     if not CLIENT.is_file():
         CLIENT.parent.mkdir(parents=True, exist_ok=True)
-        with urllib.request.urlopen(CLIENT_URL, timeout=60) as response:
-            data = response.read(2_000_001)
+        try:
+            with urllib.request.urlopen(CLIENT_URL, timeout=60) as response:
+                data = response.read(2_000_001)
+        except (OSError, http.client.HTTPException, ValueError) as error:
+            raise AgentError(f'The official Plow client could not be downloaded from GitHub: {download_problem(error)}. '
+                             'Nothing was installed; run ./relay agent again once that is fixed.') from None
         if hashlib.sha256(data).hexdigest() != CLIENT_SHA256:
             raise AgentError('The official Plow client did not match its pinned checksum. Nothing was installed.')
         CLIENT.write_bytes(data)
@@ -206,6 +215,17 @@ def official():
     elif hashlib.sha256(CLIENT.read_bytes()).hexdigest() != CLIENT_SHA256:
         raise AgentError(f'{CLIENT} differs from the pinned official client. Inspect it before continuing.')
     return runpy.run_path(str(CLIENT))
+
+
+def download_problem(error):
+    """Why a download failed, in words the owner can act on."""
+    if isinstance(error, urllib.error.HTTPError):
+        return f'GitHub answered HTTP {error.code}'
+    reason = getattr(error, 'reason', None) or error
+    if isinstance(reason, ssl.SSLError):
+        return (f'the secure connection could not be verified ({reason}); if this Python has no certificates, '
+                'python3 -m pip install certifi provides them')
+    return f'the network request failed ({reason})'
 
 
 def mint_credential(client, path, uid):
@@ -344,7 +364,12 @@ def install(args):
     else:
         line = credential_for_new_line(args)
     print('Starting the agent (the first start downloads several GB) ...', flush=True)
-    if compose('up', '-d', '--build').returncode:
+    try:
+        started = compose('up', '-d', '--build')
+    except subprocess.TimeoutExpired:
+        raise AgentError('The first download is still running or stalled. Run ./relay agent again to continue; '
+                         'Docker keeps what it already downloaded.') from None
+    if started.returncode:
         raise AgentError('Docker could not start the agent. The output above shows why.')
     state, detail = wait_ready(lambda: compose('logs', '--no-color', '--since', '15m', 'agent', capture=True).stdout)
     if state != 'ready':
@@ -356,6 +381,30 @@ def install(args):
     print(f'\nDone. Text {line.get("provider_key") or "your line"} to talk to your agent.', flush=True)
     print('Next: ./relay agent status, ./relay agent test "prompt", ./relay agent stop', flush=True)
     return 0
+
+
+def plow_tokens():
+    """The account sign-in and agent credential tokens on this Mac, read only to keep them out of the log."""
+    tokens = []
+    with contextlib.suppress(OSError, UnicodeError):
+        tokens.append(signin_path().read_text().strip())
+    with contextlib.suppress(OSError, UnicodeError):
+        tokens += [text.partition('=')[2].strip() for text in CREDENTIAL.read_text().splitlines()
+                   if text.startswith('PLOW_AGENT_TOKEN=')]
+    return [token for token in tokens if token]
+
+
+def record_failure(error, path):
+    """Append the full traceback to the install log under a UTC timestamp, with any Plow token removed.
+
+    A traceback holds code and exception text only: no environment, locals or file contents.
+    """
+    text = ''.join(traceback.format_exception(type(error), error, error.__traceback__))
+    for token in plow_tokens():
+        text = text.replace(token, '[token removed]')
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, 'a', encoding='utf-8') as log:
+        log.write(f'=== {datetime.now(timezone.utc):%Y-%m-%dT%H:%M:%SZ} ===\n{text}\n')
 
 
 def run_agent(args):
@@ -388,4 +437,14 @@ def run_agent(args):
     except KeyboardInterrupt:
         print('Stopped before finishing. Nothing was left half-created; run it again to continue.',
               file=sys.stderr, flush=True)
+        return 1
+    except Exception as error:
+        log = ROOT / '.data/agent/install.log'
+        record_failure(error, log)
+        if action is None:
+            print(f'The install stopped unexpectedly. Details: {log}. Running ./relay agent again is safe.',
+                  file=sys.stderr, flush=True)
+        else:
+            print(f'./relay agent {action} stopped unexpectedly. Details: {log}. Running it again is safe.',
+                  file=sys.stderr, flush=True)
         return 1

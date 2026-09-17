@@ -7,11 +7,16 @@ import contextlib
 import io
 import os
 from pathlib import Path
+import re
+import socket
+import ssl
+import subprocess
 import sys
 import tempfile
 from types import ModuleType, SimpleNamespace
 import unittest
 from unittest.mock import patch
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -409,6 +414,95 @@ class ReportedUsageTests(unittest.TestCase):
                 'agent-1  |   agent=repro-relay days=0 tokens=0\n'
                 'agent-1  |   a collector failed - NOT reporting a partial total\n')
         self.assertEqual(plow_agent.parse_usage(logs), {})
+
+
+class FailureTests(unittest.TestCase):
+    def test_a_stalled_first_download_explains_how_to_continue(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.up = subprocess.TimeoutExpired(['docker', 'compose', 'up', '-d', '--build'], 1800)
+            self.assertEqual(install.run(), 1)
+        self.assertEqual(install.err.getvalue(), 'The first download is still running or stalled. Run ./relay agent again '
+                                                 'to continue; Docker keeps what it already downloaded.\n')
+
+    def test_an_unexpected_failure_is_logged_and_explained_in_one_sentence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.up = RuntimeError('compose failed in an unforeseen way')
+            with patch.dict(os.environ, {'RELAY_FIXTURE_SETTING': 'environment-marker'}):
+                self.assertEqual(install.run(), 1)
+                self.assertEqual(install.run(), 1)
+            log = install.root / '.data/agent/install.log'
+            text = log.read_text()
+            self.assertFalse((install.root / '.data/agent/install.lock').exists())
+        sentence = f'The install stopped unexpectedly. Details: {log}. Running ./relay agent again is safe.'
+        self.assertEqual(install.err.getvalue().splitlines(), [sentence, sentence])
+        self.assertEqual(len(re.findall(r'^=== \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ ===$', text, re.MULTILINE)), 2)
+        self.assertEqual(text.count('Traceback (most recent call last):'), 2)
+        self.assertIn('RuntimeError: compose failed in an unforeseen way', text)
+        self.assertNotIn('environment-marker', text)
+
+    def test_the_log_leaves_out_the_credential_and_sign_in_tokens(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.up = RuntimeError('agt_fixture_token and acct_fixture_token')
+            self.assertEqual(install.run(), 1)
+            self.assertTrue(install.credential.exists() and install.signin.exists())
+            text = (install.root / '.data/agent/install.log').read_text()
+        self.assertIn('RuntimeError:', text)
+        self.assertNotIn('agt_fixture_token', text)
+        self.assertNotIn('acct_fixture_token', text)
+
+    def test_an_unexpected_failure_in_another_action_names_that_action(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch.object(plow_agent, 'ROOT', root), patch.object(plow_agent, 'CREDENTIAL', root / 'agent/plow-credentials'), \
+                    patch.object(plow_agent, 'compose', side_effect=FileNotFoundError('docker')), \
+                    patch.dict(os.environ, {'XDG_CONFIG_HOME': str(root / 'config')}), \
+                    contextlib.redirect_stderr(io.StringIO()) as err:
+                self.assertEqual(plow_agent.run_agent(SimpleNamespace(agent_action='status')), 1)
+            log = root / '.data/agent/install.log'
+            self.assertIn('FileNotFoundError: docker', log.read_text())
+        self.assertEqual(err.getvalue(), f'./relay agent status stopped unexpectedly. Details: {log}. Running it again is safe.\n')
+
+    def test_an_interruption_keeps_its_message_and_writes_no_log(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.up = KeyboardInterrupt()
+            self.assertEqual(install.run(), 1)
+            self.assertFalse((install.root / '.data/agent/install.log').exists())
+        self.assertEqual(install.err.getvalue(),
+                         'Stopped before finishing. Nothing was left half-created; run it again to continue.\n')
+
+
+class ClientDownloadTests(unittest.TestCase):
+    def refused(self, **download):
+        with tempfile.TemporaryDirectory() as directory:
+            client = Path(directory) / 'tools/plow-agents'
+            with patch.object(plow_agent, 'CLIENT', client), patch.object(urllib.request, 'urlopen', **download), \
+                    self.assertRaises(plow_agent.AgentError) as error:
+                plow_agent.official()
+            self.assertFalse(client.exists())
+        return str(error.exception)
+
+    def test_network_failures_are_named(self):
+        for failure, named in [
+                (urllib.error.URLError(socket.gaierror(8, 'nodename nor servname provided, or not known')), 'nodename nor servname'),
+                (TimeoutError('The read operation timed out'), 'timed out'),
+                (urllib.error.HTTPError(plow_agent.CLIENT_URL, 404, 'Not Found', {}, None), 'HTTP 404')]:
+            with self.subTest(failure=failure):
+                message = self.refused(side_effect=failure)
+                self.assertIn('could not be downloaded', message)
+                self.assertIn(named, message)
+
+    def test_a_certificate_failure_is_named(self):
+        failure = urllib.error.URLError(ssl.SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed'))
+        message = self.refused(side_effect=failure)
+        self.assertIn('could not be verified', message)
+        self.assertIn('CERTIFICATE_VERIFY_FAILED', message)
+
+    def test_a_download_that_does_not_match_the_pin_is_refused(self):
+        self.assertIn('checksum', self.refused(return_value=io.BytesIO(b'not the official client')))
 
 
 class SignInTests(unittest.TestCase):
