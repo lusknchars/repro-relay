@@ -171,7 +171,7 @@ class Installation:
         return [call for call in self.calls if not call.startswith('compose')]
 
 
-class ResumeTests(unittest.TestCase):
+class InstallFlowTests(unittest.TestCase):
     def test_an_existing_credential_resumes_without_signing_in_or_choosing_a_line(self):
         with tempfile.TemporaryDirectory() as directory:
             install = Installation(directory)
