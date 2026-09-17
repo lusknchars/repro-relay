@@ -288,6 +288,21 @@ def speak(prompt):
     return '\n'.join(text for text in result.stdout.splitlines() if not text.startswith('session_id:')).strip()
 
 
+def signin_path():
+    """The full-access account sign-in, resolved exactly as the pinned client's account_token resolves it."""
+    config = os.environ.get('XDG_CONFIG_HOME') or os.path.join(os.path.expanduser('~'), '.config')
+    return Path(os.path.join(config, 'plow', 'token'))
+
+
+def settle_signin(path, existed):
+    """After a successful install: remove a sign-in this run created, keep one the owner already had."""
+    if existed:
+        print('Sign-in ........... kept; revoke the plow-agents session in Plow Latch if you no longer need it', flush=True)
+    elif path.exists():
+        path.unlink()
+        print('Sign-in ........... removed from this Mac; the agent keeps its own credential', flush=True)
+
+
 def announce_line(line):
     print(f'Line .............. {line.get("display_name") or line["uid"]} {line.get("provider_key") or ""}', flush=True)
 
@@ -318,7 +333,10 @@ def install(args):
             print('Needed: ' + item, file=sys.stderr, flush=True)
         return 1
     print('Docker ............ ready', flush=True)
-    if CREDENTIAL.exists():
+    signin = signin_path()
+    signed_in_before = signin.exists()
+    resuming = CREDENTIAL.exists()
+    if resuming:
         # A rerun after minting continues with that agent's own line; no sign-in or line choice.
         line = existing_line(CREDENTIAL, identity)
         announce_line(line)
@@ -333,6 +351,8 @@ def install(args):
         raise AgentError(detail)
     print('Agent ready ....... ' + detail.split(READY)[-1].strip(), flush=True)
     print('Testing Hermes .... ' + speak(FIRST_PROMPT), flush=True)
+    if not resuming:
+        settle_signin(signin, signed_in_before)
     print(f'\nDone. Text {line.get("provider_key") or "your line"} to talk to your agent.', flush=True)
     print('Next: ./relay agent status, ./relay agent test "prompt", ./relay agent stop', flush=True)
     return 0

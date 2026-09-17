@@ -73,6 +73,15 @@ class OfficialClientContractTests(unittest.TestCase):
         self.assertIn(('POST', '/v1/agents'), plow.sent)
         self.assertNotIn('DELETE', [method for method, _ in plow.sent])
 
+    def test_sign_in_is_found_where_the_client_itself_keeps_it(self):
+        client = plow_agent.official()
+        for config in ('/fixture/config', '', None):
+            with self.subTest(XDG_CONFIG_HOME=config), patch.dict(os.environ, {'HOME': '/fixture/home'}):
+                os.environ.pop('XDG_CONFIG_HOME', None)
+                if config is not None:
+                    os.environ['XDG_CONFIG_HOME'] = config
+                self.assertEqual(plow_agent.signin_path(), Path(client['token_path'](None)))
+
 
 class Installation:
     """run_agent() in a temporary checkout, with Docker, Plow, the official client and the terminal faked."""
@@ -400,6 +409,58 @@ class ReportedUsageTests(unittest.TestCase):
                 'agent-1  |   agent=repro-relay days=0 tokens=0\n'
                 'agent-1  |   a collector failed - NOT reporting a partial total\n')
         self.assertEqual(plow_agent.parse_usage(logs), {})
+
+
+class SignInTests(unittest.TestCase):
+    REMOVED = 'Sign-in ........... removed from this Mac; the agent keeps its own credential'
+    KEPT = 'Sign-in ........... kept; revoke the plow-agents session in Plow Latch if you no longer need it'
+
+    def test_a_sign_in_this_install_created_is_removed_after_it_succeeds(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            self.assertEqual(install.run(), 0)
+            self.assertIn('login', install.calls)
+            self.assertFalse(install.signin.exists())
+        self.assertIn(self.REMOVED, install.out.getvalue())
+        self.assertNotIn(self.KEPT, install.out.getvalue())
+
+    def test_a_sign_in_that_existed_before_the_install_is_kept(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.signin.parent.mkdir(parents=True)
+            install.signin.write_text('acct_owner_token\n')
+            self.assertEqual(install.run(), 0)
+            self.assertNotIn('login', install.calls)
+            self.assertEqual(install.signin.read_text(), 'acct_owner_token\n')
+        self.assertIn(self.KEPT, install.out.getvalue())
+        self.assertNotIn(self.REMOVED, install.out.getvalue())
+
+    def test_a_failed_install_keeps_the_sign_in_it_created(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.up = SimpleNamespace(returncode=1)
+            self.assertEqual(install.run(), 1)
+            self.assertIn('login', install.calls)
+            self.assertTrue(install.signin.exists())
+        self.assertNotIn('Sign-in .....', install.out.getvalue())
+
+    def test_resuming_says_nothing_about_the_sign_in(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.credential.write_text('PLOW_AGENT_TOKEN=agt_existing\n')
+            install.signin.parent.mkdir(parents=True)
+            install.signin.write_text('acct_owner_token\n')
+            self.assertEqual(install.run(), 0)
+            self.assertTrue(install.signin.exists())
+        self.assertNotIn('Sign-in .....', install.out.getvalue())
+
+    def test_the_sign_in_path_follows_xdg_config_home(self):
+        with patch.dict(os.environ, {'XDG_CONFIG_HOME': '/fixture/config', 'HOME': '/fixture/home'}):
+            self.assertEqual(plow_agent.signin_path(), Path('/fixture/config/plow/token'))
+            os.environ['XDG_CONFIG_HOME'] = ''
+            self.assertEqual(plow_agent.signin_path(), Path('/fixture/home/.config/plow/token'))
+            del os.environ['XDG_CONFIG_HOME']
+            self.assertEqual(plow_agent.signin_path(), Path('/fixture/home/.config/plow/token'))
 
 
 class CertificateTests(unittest.TestCase):
