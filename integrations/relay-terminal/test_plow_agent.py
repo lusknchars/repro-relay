@@ -1098,6 +1098,40 @@ class SignInTests(unittest.TestCase):
         self.assertEqual(mode, 0o600)
         self.assertNotIn('acct_fixture_token', recorded)
 
+    def test_a_sign_in_written_before_login_fails_is_removed_by_a_later_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            sign_in = install.login
+
+            def login_that_fails_after_writing(args):
+                sign_in(args)
+                raise SystemExit('plow-agents: cannot reach https://api.plow.co/v1/chats: timed out')
+            install.login = login_that_fails_after_writing
+            with self.assertRaises(SystemExit):
+                install.run()
+            self.assertTrue(install.signin.exists())
+            self.assertTrue(self.marker(install).exists())
+            install.login, install.out = sign_in, io.StringIO()
+            self.assertEqual(install.run(), 0)
+            self.assertFalse(install.signin.exists())
+            self.assertFalse(self.marker(install).exists())
+        self.assertIn(self.REMOVED, install.out.getvalue())
+
+    def test_a_login_that_fails_before_writing_leaves_no_marker(self):
+        for existing in (None, 'acct_owner_token\n'):
+            with self.subTest(existing=existing), tempfile.TemporaryDirectory() as directory:
+                install = Installation(directory)
+                if existing:
+                    install.signin.parent.mkdir(parents=True)
+                    install.signin.write_text(existing)
+
+                def login_that_fails_at_once(args):
+                    raise SystemExit('plow-agents: activation returned no code, secret or number')
+                install.login = login_that_fails_at_once
+                with self.assertRaises(SystemExit):
+                    install.run(new_line=True)
+                self.assertFalse(self.marker(install).exists())
+
     def test_a_rerun_after_choosing_a_line_removes_the_sign_in_the_first_run_created(self):
         with tempfile.TemporaryDirectory() as directory:
             install = Installation(directory)

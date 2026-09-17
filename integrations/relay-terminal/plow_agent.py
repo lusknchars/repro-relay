@@ -549,13 +549,33 @@ def signin_marker():
     return ROOT / '.data/agent/signin-created.sha256'
 
 
-def remember_signin(path, marker):
-    """Record the sign-in this run's activation just wrote, so a later successful run can remove exactly that file."""
-    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+def file_digest(path):
+    """The SHA-256 of a file's bytes, or None when there is no readable file."""
+    try:
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def remember_signin(marker, digest):
+    """Record a sign-in this run's activation wrote, so a later successful run can remove exactly that file."""
     marker.parent.mkdir(parents=True, exist_ok=True)
     with os.fdopen(os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w') as output:
         output.write(digest + '\n')
     os.chmod(marker, 0o600)
+
+
+@contextlib.contextmanager
+def noting_signin(path, marker):
+    """Around the client's login: whether it finishes, fails or is interrupted after writing the sign-in,
+    note a sign-in file that is new or changed."""
+    before = file_digest(path)
+    try:
+        yield
+    finally:
+        after = file_digest(path)
+        if after is not None and after != before:
+            remember_signin(marker, after)
 
 
 def settle_signin(path, marker, minted):
@@ -567,10 +587,7 @@ def settle_signin(path, marker, minted):
         if minted and path.exists():
             print(kept, flush=True)
         return
-    try:
-        current = hashlib.sha256(path.read_bytes()).hexdigest()
-    except OSError:
-        current = None
+    current = file_digest(path)
     if current == recorded:
         path.unlink()
         print('Sign-in ........... removed from this Mac; the agent keeps its own credential', flush=True)
@@ -592,8 +609,8 @@ def credential_for_new_line(args):
         token = None
     if token is None or args.new_line:
         print('Plow sign-in ...... follow the activation text below', flush=True)
-        client['login'](SimpleNamespace(api_base=ORIGIN, token_file=None, new_line=args.new_line))
-        remember_signin(signin_path(), signin_marker())
+        with noting_signin(signin_path(), signin_marker()):
+            client['login'](SimpleNamespace(api_base=ORIGIN, token_file=None, new_line=args.new_line))
         token = client['account_token'](SimpleNamespace(token_file=None))
     line = choose_line(client['account_lines'](ORIGIN, token), ask_for_line, getattr(args, 'line', None),
                        interactive=bool(sys.stdin and sys.stdin.isatty()))
