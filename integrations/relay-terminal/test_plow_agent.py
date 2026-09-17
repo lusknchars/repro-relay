@@ -717,105 +717,214 @@ def volume_listing(name='agent'):
     return ['docker', 'volume', 'ls', '--filter', f'name=^{name}_agent-home$', '--format', '{{.Name}}']
 
 
-class ComposeProjectTests(unittest.TestCase):
+OTHER_CREDENTIAL = 'PLOW_AGENT_TOKEN=agt_other\n# plow-agent-uid: ag_other\n'
+ALONGSIDE = 'Put a different COMPOSE_PROJECT_NAME in agent/.env to install alongside it.'
+
+
+class DockerGuardTests(unittest.TestCase):
+    """guard_docker() against FakeDocker: which containers, credentials and volumes stop an install."""
+
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        self.agent = Path(directory.name) / 'agent'
-        self.agent.mkdir()
+        self.root = Path(directory.name)
+        self.agent = self.root / 'here/agent'
+        self.agent.mkdir(parents=True)
+        self.record = self.root / 'here/.data/agent/install.json'
+        self.other = self.root / 'other/agent'
+        self.other.mkdir(parents=True)
+        (self.other / 'plow-credentials').write_text(OTHER_CREDENTIAL)
+
+    def guard(self, docker, fresh=True, environ=None):
+        return plow_agent.guard_docker(fresh, run=docker, folder=self.agent, environ=environ or {}, record=self.record)
 
     def refused(self, docker, fresh=True, environ=None):
         with self.assertRaises(plow_agent.AgentError) as error:
-            plow_agent.refuse_other_install(fresh, run=docker, folder=self.agent, environ=environ or {})
+            self.guard(docker, fresh, environ)
         self.assertEqual(error.exception.code, 1)
         return str(error.exception)
 
-    def test_a_running_agent_from_another_folder_stops_the_install(self):
-        docker = FakeDocker(containers='/Users/someone/repro-relay/agent\trunning\n')
-        self.assertEqual(self.refused(docker), "An agent from /Users/someone/repro-relay/agent already runs under the Docker "
-                                               "project 'agent'. Stop it there, or set COMPOSE_PROJECT_NAME to install alongside it.")
-        self.assertEqual(docker.commands, [FakeDocker.CONFIG, listing()])
+    def test_an_empty_docker_lets_the_install_continue(self):
+        docker = FakeDocker()
+        self.assertEqual(self.guard(docker), ('agent', False))
+        self.assertEqual(docker.commands, [FakeDocker.CONFIG, SERVICES, listing(), volume_listing()])
         self.assertEqual(docker.folders, [self.agent])
+
+    def test_this_folders_own_containers_let_the_install_continue(self):
+        alias = self.root / 'alias'
+        alias.symlink_to(self.root / 'here', target_is_directory=True)
+        for folder, state in ((self.agent, 'running'), (f'{alias}/agent', 'exited'), (f'{self.agent}/', 'running')):
+            with self.subTest(folder=folder):
+                docker = FakeDocker(containers=f'{folder}\t{state}\n', services=f'{folder}\tagent\t{state}\n')
+                self.assertEqual(self.guard(docker), ('agent', False))
+
+    def test_another_folders_agent_is_joined_only_under_a_lasting_project_name(self):
+        for state, opening in (('running', f'An agent from {self.other} already runs under'),
+                               ('exited', f'A stopped agent from {self.other} exists under')):
+            with self.subTest(state=state):
+                docker = FakeDocker(containers=f'{self.other}\t{state}\n', services=f'{self.other}\tagent\t{state}\n')
+                self.assertEqual(self.refused(docker), f"{opening} the Docker project 'agent'. {ALONGSIDE}")
 
     def test_a_restarting_or_paused_agent_counts_as_running(self):
         for state in ('restarting', 'paused'):
             with self.subTest(state=state):
-                message = self.refused(FakeDocker(containers=f'/Users/someone/repro-relay/agent\t{state}\n'))
-                self.assertIn('already runs under', message)
+                self.assertIn('already runs under', self.refused(FakeDocker(containers=f'{self.other}\t{state}\n')))
 
-    def test_a_stopped_agent_from_another_folder_stops_the_install(self):
-        docker = FakeDocker(containers='/Users/someone/repro-relay/agent\texited\n')
-        self.assertEqual(self.refused(docker), "A stopped agent from /Users/someone/repro-relay/agent exists under the Docker "
-                                               "project 'agent'. Start it there with ./relay agent, or set COMPOSE_PROJECT_NAME "
-                                               "to install alongside it.")
+    def test_an_agent_whose_credential_cannot_be_checked_is_never_joined(self):
+        moved = self.root / 'moved-away/agent'
+        for folder, named in ((moved, str(moved)), ('', 'an unknown folder')):
+            with self.subTest(folder=folder):
+                self.assertEqual(self.refused(FakeDocker(containers=f'{folder}\texited\n')),
+                                 f"An agent from {named} already uses the Docker project 'agent' and its credential could "
+                                 "not be checked. Confirm it is not this same agent before installing alongside it.")
 
-    def test_a_container_without_a_working_directory_is_from_an_unknown_folder(self):
-        self.assertIn('An agent from an unknown folder already runs', self.refused(FakeDocker(containers='\trunning\n')))
-        self.assertIn('A stopped agent from an unknown folder exists', self.refused(FakeDocker(containers='\tcreated\n')))
+    def test_this_folders_agent_under_another_project_names_that_project(self):
+        for fresh in (True, False):
+            with self.subTest(fresh=fresh):
+                message = self.refused(FakeDocker(services=f'{self.agent}\trelay-two\texited\n'), fresh)
+                self.assertEqual(message, "This folder's agent already runs under the Docker project 'relay-two'. Put "
+                                          "COMPOSE_PROJECT_NAME=relay-two in agent/.env so every ./relay agent command uses it.")
+
+    def test_this_folders_agent_under_two_projects_asks_to_keep_one(self):
+        docker = FakeDocker(containers=f'{self.agent}\trunning\n',
+                            services=f'{self.agent}\tagent\trunning\n{self.agent}\trelay-two\texited\n')
+        message = self.refused(docker)
+        self.assertIn("This folder's agent exists under more than one Docker project ('agent', 'relay-two').", message)
+        self.assertNotIn('COMPOSE_PROJECT_NAME', message)
 
     def test_the_project_name_comes_from_compose_config(self):
-        docker = FakeDocker(project='relay-two', containers='/Users/someone/other/agent\trunning\n')
+        docker = FakeDocker(project='relay-two', containers=f'{self.other}\trunning\n')
         message = self.refused(docker, environ={'COMPOSE_PROJECT_NAME': 'not-this-one'})
         self.assertIn("under the Docker project 'relay-two'", message)
-        self.assertEqual(docker.commands, [FakeDocker.CONFIG, listing('relay-two')])
+        self.assertEqual(docker.commands, [FakeDocker.CONFIG, SERVICES, listing('relay-two')])
 
     def test_without_compose_config_the_name_is_compose_project_name_or_agent(self):
         for environ, name in (({'COMPOSE_PROJECT_NAME': 'relay-three'}, 'relay-three'), ({}, 'agent')):
             with self.subTest(name=name):
                 docker = FakeDocker(project=None)
-                plow_agent.refuse_other_install(True, run=docker, folder=self.agent, environ=environ)
-                self.assertEqual(docker.commands, [FakeDocker.CONFIG, listing(name), volume_listing(name)])
+                self.assertEqual(self.guard(docker, environ=environ), (name, False))
+                self.assertEqual(docker.commands, [FakeDocker.CONFIG, SERVICES, listing(name), volume_listing(name)])
 
-    def test_this_checkouts_own_containers_or_none_let_the_install_continue(self):
-        alias = self.agent.parent / 'alias'
-        alias.symlink_to(self.agent.parent, target_is_directory=True)
-        for rows in ('', f'{self.agent}\trunning\n', f'{alias}/agent\texited\n', f'{self.agent}/\trunning\n\n'):
-            with self.subTest(rows=rows):
-                docker = FakeDocker(containers=rows)
-                plow_agent.refuse_other_install(True, run=docker, folder=self.agent, environ={})
-                self.assertEqual(docker.commands, [FakeDocker.CONFIG, listing(), volume_listing()])
+    def test_a_memory_volume_this_folder_did_not_create_is_refused(self):
+        refusal = ("A memory volume for the Docker project 'agent' already exists and this folder did not create it. "
+                   "Put a different COMPOSE_PROJECT_NAME in agent/.env to keep this agent's memory separate.")
+        self.assertEqual(self.refused(FakeDocker(volumes='agent_agent-home\n')), refusal)
+        self.record.parent.mkdir(parents=True)
+        for saved in ({'project': 'relay-two', 'agent_dir': str(self.agent.resolve())},
+                      {'project': 'agent', 'agent_dir': str(self.other.resolve())}, ['not', 'a', 'record']):
+            with self.subTest(saved=saved):
+                self.record.write_text(json.dumps(saved))
+                self.assertEqual(self.refused(FakeDocker(volumes='agent_agent-home\n')), refusal)
 
-    def test_a_new_install_never_attaches_an_existing_memory_volume(self):
+    def test_this_folders_own_earlier_memory_volume_is_reused(self):
+        self.record.parent.mkdir(parents=True)
+        self.record.write_text(json.dumps({'project': 'agent', 'agent_dir': str(self.agent.resolve())}))
+        self.assertEqual(self.guard(FakeDocker(volumes='agent_agent-home\n')), ('agent', True))
+
+    def test_a_resume_keeps_its_own_memory_volume_without_asking(self):
         docker = FakeDocker(volumes='agent_agent-home\n')
-        self.assertEqual(self.refused(docker), "A memory volume for the Docker project 'agent' already exists from another "
-                                               "install. Set COMPOSE_PROJECT_NAME to keep this new agent's memory separate.")
-        resuming = FakeDocker(volumes='agent_agent-home\n')
-        plow_agent.refuse_other_install(False, run=resuming, folder=self.agent, environ={})
-        self.assertEqual(resuming.commands, [FakeDocker.CONFIG, listing()])
+        self.assertEqual(self.guard(docker, fresh=False), ('agent', False))
+        self.assertEqual(docker.commands, [FakeDocker.CONFIG, SERVICES, listing()])
 
     def test_a_failed_docker_listing_stops_instead_of_assuming_nothing_is_there(self):
         docker = FakeDocker()
+
         def failing(command, cwd=None):
             return docker(command, cwd) if command == FakeDocker.CONFIG else SimpleNamespace(returncode=1, stdout='')
         self.assertIn('Docker did not list its containers', self.refused(failing))
 
 
 class InstallGuardTests(unittest.TestCase):
+    def other_folder(self, install):
+        other = install.root / 'other/agent'
+        other.mkdir(parents=True)
+        (other / 'plow-credentials').write_text(OTHER_CREDENTIAL)
+        return other
+
     def test_install_checks_before_signing_in_or_starting_anything(self):
         with tempfile.TemporaryDirectory() as directory:
             install = Installation(directory)
-            install.docker.containers = '/Users/someone/repro-relay/agent\trunning\n'
+            other = self.other_folder(install)
+            install.docker.containers = f'{other}\trunning\n'
             self.assertEqual(install.run(), 1)
             self.assertFalse(install.credential.exists())
-        self.assertEqual(install.docker.commands, [FakeDocker.CONFIG, listing()])
+        self.assertEqual(install.docker.commands, [FakeDocker.CONFIG, SERVICES, listing()])
         self.assertEqual(install.calls, [])
-        self.assertIn("An agent from /Users/someone/repro-relay/agent already runs under the Docker project 'agent'.",
-                      install.err.getvalue())
+        self.assertEqual(install.err.getvalue(), f"An agent from {other} already runs under the Docker project 'agent'. {ALONGSIDE}\n")
 
     def test_install_checks_again_immediately_before_starting_the_agent(self):
         with tempfile.TemporaryDirectory() as directory:
             install = Installation(directory)
+            other = self.other_folder(install)
             sign_in = install.login
 
             def login_while_another_agent_appears(args):
                 sign_in(args)
-                install.docker.containers = '/Users/someone/other/agent\texited\n'
+                install.docker.containers = f'{other}\texited\n'
             install.login = login_while_another_agent_appears
             self.assertEqual(install.run(), 1)
-        self.assertEqual(install.docker.commands,
-                         [FakeDocker.CONFIG, listing(), volume_listing(), FakeDocker.CONFIG, listing()])
+        self.assertEqual(install.docker.commands, [FakeDocker.CONFIG, SERVICES, listing(), volume_listing(),
+                                                   FakeDocker.CONFIG, SERVICES, listing()])
         self.assertNotIn('compose up -d --build', install.calls)
-        self.assertIn('A stopped agent from /Users/someone/other/agent exists', install.err.getvalue())
+        self.assertIn(f'A stopped agent from {other} exists', install.err.getvalue())
+
+    def test_a_started_agent_records_its_project_and_folder_privately(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.docker.project = 'relay-two'
+            self.assertEqual(install.run(), 0)
+            record = install.root / '.data/agent/install.json'
+            saved, mode = json.loads(record.read_text()), record.stat().st_mode & 0o777
+        self.assertEqual(saved, {'project': 'relay-two', 'agent_dir': str(install.agent.resolve())})
+        self.assertEqual(mode, 0o600)
+
+    def test_an_agent_docker_could_not_start_records_nothing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.up = SimpleNamespace(returncode=1)
+            self.assertEqual(install.run(), 1)
+            self.assertFalse((install.root / '.data/agent/install.json').exists())
+
+    def test_reinstalling_after_a_revoke_reuses_this_folders_memory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            self.assertEqual(install.run(), 0)
+            install.credential.unlink()  # plow-agents revoke removes the credential; the container and volume remain
+            install.docker.containers = f'{install.agent}\texited\n'
+            install.docker.services = f'{install.agent}\tagent\texited\n'
+            install.docker.volumes = 'agent_agent-home\n'
+            install.out = io.StringIO()
+            self.assertEqual(install.run(), 0)
+            self.assertTrue(install.credential.exists())
+        self.assertIn("Memory ............ reused from this folder's earlier install", install.out.getvalue())
+        self.assertEqual(install.calls.count('mint'), 2)
+
+    def test_a_copied_folder_never_attaches_the_originals_memory(self):
+        with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
+            original = Installation(first)
+            self.assertEqual(original.run(), 0)
+            copy = Installation(second)
+            (copy.root / '.data/agent').mkdir(parents=True)
+            (copy.root / '.data/agent/install.json').write_bytes((original.root / '.data/agent/install.json').read_bytes())
+            copy.docker.volumes = 'agent_agent-home\n'
+            self.assertEqual(copy.run(), 1)
+        self.assertEqual(copy.calls, [])
+        self.assertEqual(copy.err.getvalue(), "A memory volume for the Docker project 'agent' already exists and this folder "
+                                              "did not create it. Put a different COMPOSE_PROJECT_NAME in agent/.env to keep "
+                                              "this agent's memory separate.\n")
+
+    def test_this_folders_agent_under_another_project_stops_install_and_resume(self):
+        for resuming in (False, True):
+            with self.subTest(resuming=resuming), tempfile.TemporaryDirectory() as directory:
+                install = Installation(directory)
+                if resuming:
+                    install.credential.write_text('PLOW_AGENT_TOKEN=agt_existing\n# plow-agent-uid: ag_1\n')
+                install.docker.services = f'{install.agent}\trelay-two\trunning\n'
+                self.assertEqual(install.run(), 1)
+                self.assertEqual(install.calls, [])
+                self.assertEqual(install.err.getvalue(), "This folder's agent already runs under the Docker project "
+                                                         "'relay-two'. Put COMPOSE_PROJECT_NAME=relay-two in agent/.env so "
+                                                         "every ./relay agent command uses it.\n")
 
 
 class CopiedCredentialTests(unittest.TestCase):
@@ -831,25 +940,28 @@ class CopiedCredentialTests(unittest.TestCase):
         self.other = self.root / 'original/agent'
         self.other.mkdir(parents=True)
 
+    def resume(self, docker):
+        return plow_agent.guard_docker(False, run=docker, folder=self.agent, environ={}, record=self.root / 'install.json')
+
     def test_a_credential_another_folder_already_runs_stops_the_resume(self):
         (self.other / 'plow-credentials').write_text(self.CREDENTIAL)
         docker = FakeDocker(services=f'{self.other}\trelay-two\texited\n')
         with self.assertRaises(plow_agent.AgentError) as error:
-            plow_agent.refuse_copied_credential(docker, self.agent)
+            self.resume(docker)
         self.assertEqual(error.exception.code, 1)
         self.assertEqual(str(error.exception), f'This credential already belongs to the agent in {self.other}. One credential '
-                                               'runs in one place: stop that agent first, or install this folder with its own '
-                                               'new credential.')
-        self.assertEqual(docker.commands, [SERVICES])
+                                               f'runs in one place: remove that agent with docker compose down in {self.other}, '
+                                               'or delete agent/plow-credentials here so ./relay agent mints this folder its own.')
+        self.assertEqual(docker.commands, [FakeDocker.CONFIG, SERVICES])
 
     def test_other_credentials_unreadable_ones_and_this_folder_are_ignored(self):
         (self.other / 'plow-credentials').write_text('PLOW_AGENT_TOKEN=agt_other\n# plow-agent-uid: ag_other\n')
         (self.root / 'folder/agent/plow-credentials').mkdir(parents=True)
-        rows = (f'{self.other}\tagent\trunning\n{self.root}/gone/agent\tagent-two\texited\n'
+        rows = (f'{self.other}\tagent-one\trunning\n{self.root}/gone/agent\tagent-two\texited\n'
                 f'{self.root}/folder/agent\tagent-three\trunning\n\tagent-four\trunning\n{self.agent}\tagent\trunning\n')
         docker = FakeDocker(services=rows)
-        plow_agent.refuse_copied_credential(docker, self.agent)
-        self.assertEqual(docker.commands, [SERVICES])
+        self.assertEqual(self.resume(docker), ('agent', False))
+        self.assertEqual(docker.commands, [FakeDocker.CONFIG, SERVICES, listing()])
 
     def test_only_the_uid_is_taken_from_a_credential(self):
         self.assertEqual(plow_agent.agent_uid(self.agent / 'plow-credentials'), 'ag_shared')

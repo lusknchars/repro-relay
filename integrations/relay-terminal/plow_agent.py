@@ -63,47 +63,106 @@ def preflight(run=None):
 
 
 ACTIVE_STATES = {'running', 'restarting', 'paused'}
+AGENT_CONTAINERS = ['docker', 'ps', '-a', '--filter', 'label=com.docker.compose.service=agent', '--format',
+                    '{{.Label "com.docker.compose.project.working_dir"}}\t{{.Label "com.docker.compose.project"}}\t{{.State}}']
+ALONGSIDE = 'Put a different COMPOSE_PROJECT_NAME in agent/.env to install alongside it.'
 
 
-def refuse_other_install(fresh, run=None, folder=None, environ=None):
-    """Stop before Compose could take over another install's agent or memory. Only reads Docker's state.
+def guard_docker(fresh, run=None, folder=None, environ=None, record=None):
+    """Stop before Compose could reach another install's agent, memory or credential. Only reads Docker's state.
 
-    fresh means this run started without a credential, so any existing memory volume belongs to someone else.
+    fresh means this run started without a credential. Returns the Compose project name, and whether an existing
+    memory volume is this folder's own from its earlier install.
     """
     run = run or (lambda command, cwd=None: subprocess.run(command, cwd=cwd, capture_output=True, text=True, timeout=20))
     folder = folder or AGENT
-    if not fresh:
-        refuse_copied_credential(run, folder)  # first: that stop must not suggest COMPOSE_PROJECT_NAME
     name = compose_project(run, folder, os.environ if environ is None else environ)
+    agents = docker_rows(run, AGENT_CONTAINERS, 'containers', fields=3)
+    if not fresh:
+        refuse_copied_credential(agents, folder)  # first: that stop must not suggest a project name
+    refuse_split_agent(agents, folder, name)
+    refuse_other_agents(run, folder, name)
+    return name, fresh and own_memory(run, folder, name, record or install_record())
+
+
+def refuse_split_agent(agents, folder, name):
+    """Stop when this folder's own agent was started under a project other than the one Compose resolves now.
+    Starting here would give the same folder, and the same credential, a second agent."""
+    projects = sorted({project for working_dir, project, _ in agents
+                       if project and working_dir and same_folder(working_dir, folder)})
+    others = [project for project in projects if project != name]
+    if len(projects) > 1:
+        listed = ', '.join(f"'{project}'" for project in projects)
+        raise AgentError(f"This folder's agent exists under more than one Docker project ({listed}). Remove the one you "
+                         'do not use with docker compose -p <project> down in agent/, which keeps its memory volume, '
+                         'then run ./relay agent again.')
+    if others:
+        raise AgentError(f"This folder's agent already runs under the Docker project '{others[0]}'. "
+                         f'Put COMPOSE_PROJECT_NAME={others[0]} in agent/.env so every ./relay agent command uses it.')
+
+
+def refuse_other_agents(run, folder, name):
+    """Stop when a container from another folder already uses this project. Joining is advised only when that
+    folder's own credential shows it is a different agent; otherwise it could be this same agent, moved."""
     for working_dir, state in docker_rows(run, ['docker', 'ps', '-a', '--filter', f'label=com.docker.compose.project={name}',
                                                 '--format', '{{.Label "com.docker.compose.project.working_dir"}}\t{{.State}}'],
                                           'containers', fields=2):
         if working_dir and same_folder(working_dir, folder):
             continue
         origin = working_dir or 'an unknown folder'
+        if not working_dir or not agent_uid(Path(working_dir) / 'plow-credentials'):
+            raise AgentError(f"An agent from {origin} already uses the Docker project '{name}' and its credential could not "
+                             'be checked. Confirm it is not this same agent before installing alongside it.')
         if state in ACTIVE_STATES:
-            raise AgentError(f"An agent from {origin} already runs under the Docker project '{name}'. "
-                             'Stop it there, or set COMPOSE_PROJECT_NAME to install alongside it.')
-        raise AgentError(f"A stopped agent from {origin} exists under the Docker project '{name}'. "
-                         'Start it there with ./relay agent, or set COMPOSE_PROJECT_NAME to install alongside it.')
+            raise AgentError(f"An agent from {origin} already runs under the Docker project '{name}'. {ALONGSIDE}")
+        raise AgentError(f"A stopped agent from {origin} exists under the Docker project '{name}'. {ALONGSIDE}")
+
+
+def own_memory(run, folder, name, record):
+    """Whether this project's memory volume exists as this folder's own; one this folder did not create stops."""
     volume = f'{name}_agent-home'
-    if fresh and [volume] in docker_rows(run, ['docker', 'volume', 'ls', '--filter', f'name=^{volume}$',
-                                               '--format', '{{.Name}}'], 'volumes', fields=1):
-        raise AgentError(f"A memory volume for the Docker project '{name}' already exists from another install. "
-                         "Set COMPOSE_PROJECT_NAME to keep this new agent's memory separate.")
+    if [volume] not in docker_rows(run, ['docker', 'volume', 'ls', '--filter', f'name=^{volume}$', '--format', '{{.Name}}'],
+                                   'volumes', fields=1):
+        return False
+    if installed_here(record, name, folder):
+        return True
+    raise AgentError(f"A memory volume for the Docker project '{name}' already exists and this folder did not create it. "
+                     "Put a different COMPOSE_PROJECT_NAME in agent/.env to keep this agent's memory separate.")
 
 
-def refuse_copied_credential(run, folder):
+def install_record():
+    """Where a successful start notes this folder's Compose project, so a reinstall here can reuse its memory."""
+    return ROOT / '.data/agent/install.json'
+
+
+def installed_here(record, name, folder):
+    """Whether the install record names this project and this agent/ folder. A copied folder records another path."""
+    try:
+        saved = json.loads(Path(record).read_text())
+    except (OSError, ValueError):
+        return False
+    return (isinstance(saved, dict) and saved.get('project') == name and isinstance(saved.get('agent_dir'), str)
+            and bool(saved['agent_dir']) and same_folder(saved['agent_dir'], folder))
+
+
+def remember_install(record, name, folder):
+    """Record, owner-only, the project and resolved agent/ folder a successful `compose up` used."""
+    record.parent.mkdir(parents=True, exist_ok=True)
+    with os.fdopen(os.open(record, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w') as output:
+        json.dump({'project': name, 'agent_dir': str(Path(folder).resolve())}, output)
+    os.chmod(record, 0o600)
+
+
+def refuse_copied_credential(agents, folder):
     """Stop when an agent in another folder, in any Compose project, was installed with this folder's credential."""
     uid = agent_uid(folder / 'plow-credentials')
     if not uid:
         return
-    for working_dir, _, _ in docker_rows(run, ['docker', 'ps', '-a', '--filter', 'label=com.docker.compose.service=agent',
-                                               '--format', '{{.Label "com.docker.compose.project.working_dir"}}\t'
-                                               '{{.Label "com.docker.compose.project"}}\t{{.State}}'], 'containers', fields=3):
+    for working_dir, _, _ in agents:
         if working_dir and not same_folder(working_dir, folder) and agent_uid(Path(working_dir) / 'plow-credentials') == uid:
             raise AgentError(f'This credential already belongs to the agent in {working_dir}. One credential runs in one '
-                             'place: stop that agent first, or install this folder with its own new credential.')
+                             f'place: remove that agent with docker compose down in {working_dir}, or delete '
+                             'agent/plow-credentials here so ./relay agent mints this folder its own.')
 
 
 def agent_uid(path):
@@ -552,7 +611,9 @@ def install(args):
         return 1
     print('Docker ............ ready', flush=True)
     resuming = CREDENTIAL.exists()
-    refuse_other_install(fresh=not resuming)  # before signing in, minting or starting anything
+    project, reused = guard_docker(fresh=not resuming)  # before signing in, minting or starting anything
+    if reused:
+        print("Memory ............ reused from this folder's earlier install", flush=True)
     if resuming:
         # A rerun after minting continues with that agent's own line; no sign-in or line choice.
         line = existing_line(CREDENTIAL, identity)
@@ -561,7 +622,7 @@ def install(args):
         print('Credential ........ reused', flush=True)
     else:
         line = credential_for_new_line(args)
-    refuse_other_install(fresh=not resuming)  # again: signing in can take minutes
+    project, _ = guard_docker(fresh=not resuming)  # again: signing in can take minutes
     print('Starting the agent (the first start downloads several GB) ...', flush=True)
     try:
         started = compose('up', '-d', '--build')
@@ -570,6 +631,7 @@ def install(args):
                          'Docker keeps what it already downloaded.') from None
     if started.returncode:
         raise AgentError('Docker could not start the agent. The output above shows why.')
+    remember_install(install_record(), project, AGENT)
     state, detail = wait_ready(lambda: compose('logs', '--no-color', '--since', '15m', 'agent', capture=True).stdout)
     if state != 'ready':
         raise AgentError(detail)
