@@ -309,6 +309,15 @@ class CredentialVerificationTests(unittest.TestCase):
                 failure = urllib.error.HTTPError('https://api.plow.co/v1/agents/cloud/me', code, 'Busy', {}, None)
                 self.assertEqual(self.verify(side_effect=failure), self.UNREACHABLE)
 
+    def test_a_certificate_failure_gets_the_certificate_hint_not_a_later_run(self):
+        reason = '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate'
+        for failure in (urllib.error.URLError(ssl.SSLCertVerificationError(1, reason)), ssl.SSLCertVerificationError(1, reason)):
+            with self.subTest(failure=failure):
+                self.assertEqual(self.verify(side_effect=failure),
+                                 f'Could not verify the existing credential with Plow: the secure connection could not be '
+                                 f'verified ({reason}); if this Python has no certificates, python3 -m pip install certifi '
+                                 'provides them. It was left untouched; run ./relay agent again once that is fixed.')
+
     def test_a_credential_file_problem_is_named_without_suggesting_removal(self):
         with tempfile.TemporaryDirectory() as directory:
             credential = Path(directory) / 'plow-credentials'

@@ -56,6 +56,10 @@ class CredentialRejected(AgentError):
     """Plow answered definitively (401, 403 or 404) that a credential, or the agent it belonged to, is gone."""
 
 
+class CertificateUnverified(AgentError):
+    """This Python could not verify Plow's certificate, usually because it has no certificate bundle."""
+
+
 def preflight(run=None):
     """Return the missing prerequisites, each with the action that fixes it."""
     run = run or (lambda command: subprocess.run(command, capture_output=True, timeout=20).returncode)
@@ -279,6 +283,9 @@ def existing_line(path, identity):
         found = identity(path)
     except PlowUnreachable:
         found = None
+    except CertificateUnverified as error:
+        raise AgentError(f'Could not verify the existing credential with Plow: {error}. It was left untouched; '
+                         'run ./relay agent again once that is fixed.') from None
     except CredentialRejected as error:
         raise AgentError(f'The existing credential {path} could not be verified with Plow. {error} It was left untouched. '
                          'If that agent was retired, remove the file yourself first, then run ./relay agent again.') from None
@@ -448,9 +455,14 @@ def download_problem(error):
         return f'GitHub answered HTTP {error.code}'
     reason = getattr(error, 'reason', None) or error
     if isinstance(reason, ssl.SSLError):
-        return (f'the secure connection could not be verified ({reason}); if this Python has no certificates, '
-                'python3 -m pip install certifi provides them')
+        return certificate_hint(reason)
     return f'the network request failed ({reason})'
+
+
+def certificate_hint(reason):
+    """The one explanation for a secure connection this Python could not verify, for the download and for Plow."""
+    return (f'the secure connection could not be verified ({reason}); if this Python has no certificates, '
+            'python3 -m pip install certifi provides them')
 
 
 def mint_credential(client, path, uid):
@@ -470,8 +482,9 @@ def compose(*arguments, capture=False):
 
 def identity(path):
     """Who a credential answers as, according to Plow. When Plow cannot say, an AgentError says why:
-    CredentialRejected for a definitive 401, 403 or 404, PlowUnreachable for any other failed request,
-    and a plain AgentError when the local file cannot be used.
+    CredentialRejected for a definitive 401, 403 or 404, CertificateUnverified when this Python cannot verify
+    Plow's certificate, PlowUnreachable for any other failed request, and a plain AgentError when the local
+    file cannot be used.
     """
     sys.path.insert(0, str(ROOT / 'integrations/plow'))
     import bridge
@@ -485,6 +498,9 @@ def identity(path):
         cause = error.__context__  # the bridge raises "from None", which keeps the original as context
         if isinstance(cause, urllib.error.HTTPError) and cause.code in (401, 403, 404):
             raise CredentialRejected(str(error)) from None
+        for failure in (cause, getattr(cause, 'reason', None)):  # raised directly, or as URLError.reason
+            if isinstance(failure, ssl.SSLCertVerificationError):
+                raise CertificateUnverified(certificate_hint(failure)) from None
         raise PlowUnreachable(str(error)) from None
 
 
