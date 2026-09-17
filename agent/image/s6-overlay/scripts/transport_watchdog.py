@@ -205,6 +205,21 @@ def mcp_status(path=MCP_LOG, server=MCP_SERVER, tail=MCP_TAIL_BYTES):
     return None, None
 
 
+def mcp_problem(state, since, now):
+    """When the Mac session's trouble started, or None while there is none.
+
+    Only connected is healthy. degraded and parked are what the log writes, and
+    any other state is read the same way rather than assumed benign. A change the
+    log left unstamped is dated from this sighting, so it waits out the grace
+    from here instead of being acted on at once. The caller applies that grace
+    with unhealthy, which gives the Mac session the MCP_GRACE_SECONDS the
+    transport gets: a parked session self probes only every five minutes.
+    """
+    if state is None or state == "connected":
+        return None
+    return since if since is not None else now
+
+
 RESTART_COOLDOWN_SECONDS = 600
 VERIFY_SECONDS = 180
 MAX_FAILED_RECOVERIES = 3

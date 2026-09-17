@@ -216,6 +216,26 @@ def down_since(minutes):
     return NOW - dt.timedelta(minutes=minutes)
 
 
+class MacSessionRule(unittest.TestCase):
+    def test_connected_or_nothing_read_is_no_problem(self):
+        self.assertIsNone(watchdog.mcp_problem("connected", at(18, 36, 29, 267), NOW))
+        self.assertIsNone(watchdog.mcp_problem(None, None, NOW))
+
+    def test_every_other_state_dates_the_problem_from_the_change(self):
+        since = at(18, 27, 49, 111)
+        for state in ("degraded", "parked", "reconnecting"):
+            with self.subTest(state=state):
+                self.assertEqual(watchdog.mcp_problem(state, since, NOW), since)
+
+    def test_an_unstamped_change_dates_from_this_sighting(self):
+        self.assertEqual(watchdog.mcp_problem("parked", None, NOW), NOW)
+
+    def test_the_mac_session_waits_out_the_grace_the_transport_gets(self):
+        self.assertEqual(watchdog.MCP_GRACE_SECONDS, watchdog.GRACE_SECONDS)
+        self.assertFalse(watchdog.unhealthy(watchdog.mcp_problem("parked", down_since(5), NOW), NOW))
+        self.assertTrue(watchdog.unhealthy(watchdog.mcp_problem("parked", down_since(6), NOW), NOW))
+
+
 def later(minutes):
     return NOW + dt.timedelta(minutes=minutes)
 
