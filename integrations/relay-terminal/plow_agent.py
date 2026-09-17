@@ -558,12 +558,21 @@ def file_digest(path):
         return None
 
 
-def remember_signin(marker, digest):
+def replaced_flag(marker):
+    """Beside the marker, an empty file saying the noted sign-in replaced an earlier one."""
+    return marker.with_name('signin-replaced')
+
+
+def remember_signin(marker, digest, replaced):
     """Record a sign-in this run's activation wrote, so a later successful run can remove exactly that file."""
     marker.parent.mkdir(parents=True, exist_ok=True)
     with os.fdopen(os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w') as output:
         output.write(digest + '\n')
     os.chmod(marker, 0o600)
+    if replaced:
+        os.close(os.open(replaced_flag(marker), os.O_WRONLY | os.O_CREAT, 0o600))
+    else:
+        replaced_flag(marker).unlink(missing_ok=True)
 
 
 @contextlib.contextmanager
@@ -576,7 +585,7 @@ def noting_signin(path, marker):
     finally:
         after = file_digest(path)
         if after is not None and after != before:
-            remember_signin(marker, after)
+            remember_signin(marker, after, replaced=before is not None)
 
 
 def marker_digest(marker):
@@ -592,23 +601,20 @@ def marker_digest(marker):
 
 def settle_signin(path, marker, minted):
     """After a successful run, fresh or resumed: remove the sign-in this installer created, and only that one."""
-    kept = 'Sign-in ........... kept; revoke the plow-agents session in Plow Latch if you no longer need it'
-    recorded = marker_digest(marker)
-    if recorded == '':  # unreadable or not a digest: stale, so it never decides anything
-        with contextlib.suppress(OSError):
-            marker.unlink()
-        recorded = None
-    if recorded is None:
-        if minted and path.exists():
-            print(kept, flush=True)
-        return
-    current = file_digest(path)
-    if current == recorded:
+    recorded, flag = marker_digest(marker), replaced_flag(marker)
+    if recorded and file_digest(path) == recorded:
         path.unlink()
-        print('Sign-in ........... removed from this Mac; the agent keeps its own credential', flush=True)
-    elif path.exists():
-        print(kept, flush=True)  # someone signed in again since; that sign-in is theirs
-    marker.unlink(missing_ok=True)
+        if flag.exists():
+            print('Sign-in ........... removed from this Mac; it replaced an earlier sign-in, so run plow-agents login '
+                  'again if you still need one', flush=True)
+        else:
+            print('Sign-in ........... removed from this Mac; the agent keeps its own credential', flush=True)
+    elif path.exists() and (recorded or minted):
+        # A sign-in someone made after this installer's, or one this run minted with but did not create.
+        print('Sign-in ........... kept; revoke the plow-agents session in Plow Latch if you no longer need it', flush=True)
+    for note in (marker, flag):  # every outcome retires the notes; a stale marker never decides anything
+        with contextlib.suppress(OSError):
+            note.unlink(missing_ok=True)
 
 
 def announce_line(line):

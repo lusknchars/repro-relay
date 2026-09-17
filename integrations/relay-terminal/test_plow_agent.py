@@ -1152,6 +1152,34 @@ class SignInTests(unittest.TestCase):
                 self.assertFalse(marker.exists())
                 self.assertNotIn('Sign-in .....', install.out.getvalue())
 
+    REPLACED = ('Sign-in ........... removed from this Mac; it replaced an earlier sign-in, so run plow-agents login again '
+                'if you still need one')
+
+    def test_removing_a_sign_in_that_replaced_an_earlier_one_says_so(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.signin.parent.mkdir(parents=True)
+            install.signin.write_text('acct_earlier_token\n')
+            self.assertEqual(install.run(new_line=True), 0)
+            self.assertIn('login', install.calls)
+            self.assertFalse(install.signin.exists())
+            left = sorted(entry.name for entry in (install.root / '.data/agent').iterdir())
+        self.assertIn(self.REPLACED, install.out.getvalue())
+        self.assertNotIn(self.REMOVED, install.out.getvalue())
+        self.assertEqual(left, ['install.json'])
+
+    def test_a_replacement_is_still_named_when_a_later_run_removes_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.signin.parent.mkdir(parents=True)
+            install.signin.write_text('acct_earlier_token\n')
+            install.lines = [line('ln_a'), line('ln_b')]
+            self.assertEqual(install.run(new_line=True), 2)
+            install.out = io.StringIO()
+            self.assertEqual(install.run(line='1'), 0)
+            self.assertFalse(install.signin.exists())
+        self.assertIn(self.REPLACED, install.out.getvalue())
+
     def test_a_rerun_after_choosing_a_line_removes_the_sign_in_the_first_run_created(self):
         with tempfile.TemporaryDirectory() as directory:
             install = Installation(directory)
