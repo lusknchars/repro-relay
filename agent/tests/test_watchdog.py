@@ -913,7 +913,7 @@ class Loop(unittest.TestCase):
         dog, mac = watchdog.watchers(reading("parked", 7), lambda: True)
         self.assertIs(dog.limiter, mac.dog.limiter)
         self.assertIsNot(dog, mac.dog)
-        self.assertEqual(watchdog.watchers()[1], None)
+        self.assertIsNone(watchdog.watchers()[1])
 
     def test_main_hands_base_token_and_chat_to_the_alert_in_that_order(self):
         class Stop(Exception):
