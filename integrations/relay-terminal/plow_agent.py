@@ -13,6 +13,7 @@ from pathlib import Path
 import runpy
 import shutil
 import ssl
+import stat
 import subprocess
 import sys
 import time
@@ -66,6 +67,8 @@ def refuse_other_install(fresh, run=None, folder=None, environ=None):
     """
     run = run or (lambda command, cwd=None: subprocess.run(command, cwd=cwd, capture_output=True, text=True, timeout=20))
     folder = folder or AGENT
+    if not fresh:
+        refuse_copied_credential(run, folder)  # first: that stop must not suggest COMPOSE_PROJECT_NAME
     name = compose_project(run, folder, os.environ if environ is None else environ)
     for working_dir, state in docker_rows(run, ['docker', 'ps', '-a', '--filter', f'label=com.docker.compose.project={name}',
                                                 '--format', '{{.Label "com.docker.compose.project.working_dir"}}\t{{.State}}'],
@@ -83,6 +86,33 @@ def refuse_other_install(fresh, run=None, folder=None, environ=None):
                                                '--format', '{{.Name}}'], 'volumes', fields=1):
         raise AgentError(f"A memory volume for the Docker project '{name}' already exists from another install. "
                          "Set COMPOSE_PROJECT_NAME to keep this new agent's memory separate.")
+
+
+def refuse_copied_credential(run, folder):
+    """Stop when an agent in another folder, in any Compose project, was installed with this folder's credential."""
+    uid = agent_uid(folder / 'plow-credentials')
+    if not uid:
+        return
+    for working_dir, _, _ in docker_rows(run, ['docker', 'ps', '-a', '--filter', 'label=com.docker.compose.service=agent',
+                                               '--format', '{{.Label "com.docker.compose.project.working_dir"}}\t'
+                                               '{{.Label "com.docker.compose.project"}}\t{{.State}}'], 'containers', fields=3):
+        if working_dir and not same_folder(working_dir, folder) and agent_uid(Path(working_dir) / 'plow-credentials') == uid:
+            raise AgentError(f'This credential already belongs to the agent in {working_dir}. One credential runs in one '
+                             'place: stop that agent first, or install this folder with its own new credential.')
+
+
+def agent_uid(path):
+    """A credential's '# plow-agent-uid:' value, or None. Only that comment is used; token lines are never kept."""
+    try:
+        if not stat.S_ISREG(os.stat(path).st_mode):
+            return None
+        with open(path, encoding='utf-8') as source:
+            for text in source.read(65536).splitlines():
+                if text.strip().startswith('# plow-agent-uid:'):
+                    return text.partition(':')[2].strip() or None
+    except (OSError, UnicodeError):
+        return None
+    return None
 
 
 def compose_project(run, folder, environ):

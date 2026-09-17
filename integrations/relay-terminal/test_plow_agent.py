@@ -511,9 +511,10 @@ class FakeDocker:
 
     CONFIG = ['docker', 'compose', 'config', '--format', 'json']
 
-    def __init__(self, project='agent', containers='', volumes=''):
+    def __init__(self, project='agent', containers='', volumes='', services=''):
         self.project = project  # the name `docker compose config` reports, or None when that command fails
         self.containers = containers  # `working_dir<TAB>state` rows for the Compose project
+        self.services = services  # `working_dir<TAB>project<TAB>state` rows for every project's agent service
         self.volumes = volumes  # volume names `docker volume ls` reports
         self.commands, self.folders = [], []
 
@@ -526,9 +527,15 @@ class FakeDocker:
             return SimpleNamespace(returncode=0, stdout=json.dumps({'name': self.project, 'services': {}}))
         if command[:4] == ['docker', 'ps', '-a', '--filter'] and command[4].startswith('label=com.docker.compose.project='):
             return SimpleNamespace(returncode=0, stdout=self.containers)
+        if command[:5] == SERVICES[:5]:
+            return SimpleNamespace(returncode=0, stdout=self.services)
         if command[:3] == ['docker', 'volume', 'ls']:
             return SimpleNamespace(returncode=0, stdout=self.volumes)
         raise AssertionError(f'A test tried to run {command}')
+
+
+SERVICES = ['docker', 'ps', '-a', '--filter', 'label=com.docker.compose.service=agent', '--format',
+            '{{.Label "com.docker.compose.project.working_dir"}}\t{{.Label "com.docker.compose.project"}}\t{{.State}}']
 
 
 def listing(name='agent'):
@@ -639,6 +646,72 @@ class InstallGuardTests(unittest.TestCase):
                          [FakeDocker.CONFIG, listing(), volume_listing(), FakeDocker.CONFIG, listing()])
         self.assertNotIn('compose up -d --build', install.calls)
         self.assertIn('A stopped agent from /Users/someone/other/agent exists', install.err.getvalue())
+
+
+class CopiedCredentialTests(unittest.TestCase):
+    CREDENTIAL = 'PLOW_API_BASE=https://api.plow.co\nPLOW_AGENT_TOKEN=agt_copied_secret\n# plow-agent-uid: ag_shared\n'
+
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.agent = self.root / 'copy/agent'
+        self.agent.mkdir(parents=True)
+        (self.agent / 'plow-credentials').write_text(self.CREDENTIAL)
+        self.other = self.root / 'original/agent'
+        self.other.mkdir(parents=True)
+
+    def test_a_credential_another_folder_already_runs_stops_the_resume(self):
+        (self.other / 'plow-credentials').write_text(self.CREDENTIAL)
+        docker = FakeDocker(services=f'{self.other}\trelay-two\texited\n')
+        with self.assertRaises(plow_agent.AgentError) as error:
+            plow_agent.refuse_copied_credential(docker, self.agent)
+        self.assertEqual(error.exception.code, 1)
+        self.assertEqual(str(error.exception), f'This credential already belongs to the agent in {self.other}. One credential '
+                                               'runs in one place: stop that agent first, or install this folder with its own '
+                                               'new credential.')
+        self.assertEqual(docker.commands, [SERVICES])
+
+    def test_other_credentials_unreadable_ones_and_this_folder_are_ignored(self):
+        (self.other / 'plow-credentials').write_text('PLOW_AGENT_TOKEN=agt_other\n# plow-agent-uid: ag_other\n')
+        (self.root / 'folder/agent/plow-credentials').mkdir(parents=True)
+        rows = (f'{self.other}\tagent\trunning\n{self.root}/gone/agent\tagent-two\texited\n'
+                f'{self.root}/folder/agent\tagent-three\trunning\n\tagent-four\trunning\n{self.agent}\tagent\trunning\n')
+        docker = FakeDocker(services=rows)
+        plow_agent.refuse_copied_credential(docker, self.agent)
+        self.assertEqual(docker.commands, [SERVICES])
+
+    def test_only_the_uid_is_taken_from_a_credential(self):
+        self.assertEqual(plow_agent.agent_uid(self.agent / 'plow-credentials'), 'ag_shared')
+        self.assertIsNone(plow_agent.agent_uid(self.root / 'missing'))
+
+    def test_resuming_a_copied_folder_names_the_original_and_not_compose_project_name(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.credential.write_text(self.CREDENTIAL)
+            (self.other / 'plow-credentials').write_text(self.CREDENTIAL)
+            install.docker.containers = f'{self.other}\trunning\n'
+            install.docker.services = f'{self.other}\tagent\trunning\n'
+            self.assertEqual(install.run(), 1)
+        self.assertEqual(install.calls, [])
+        self.assertIn(f'This credential already belongs to the agent in {self.other}.', install.err.getvalue())
+        self.assertNotIn('COMPOSE_PROJECT_NAME', install.err.getvalue())
+
+    def test_resuming_checks_the_credential_again_immediately_before_starting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.credential.write_text(self.CREDENTIAL)
+            (self.other / 'plow-credentials').write_text(self.CREDENTIAL)
+            verify = install.identity
+
+            def identity_while_the_copy_starts(path):
+                install.docker.services = f'{self.other}\tagent\trunning\n'
+                return verify(path)
+            install.identity = identity_while_the_copy_starts
+            self.assertEqual(install.run(), 1)
+        self.assertEqual(install.docker.commands.count(SERVICES), 2)
+        self.assertNotIn('compose up -d --build', install.calls)
+        self.assertIn(f'This credential already belongs to the agent in {self.other}.', install.err.getvalue())
 
 
 class ClientDownloadTests(unittest.TestCase):
