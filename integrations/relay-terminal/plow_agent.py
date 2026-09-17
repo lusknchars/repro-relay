@@ -132,6 +132,16 @@ def official():
     return runpy.run_path(str(CLIENT))
 
 
+def mint_credential(client, path, uid):
+    """Mint the line's agent credential with the official client.
+
+    Only the client's command line fills in agent_api_base; calling mint directly must name it,
+    or the client fails writing the credential and retires the agent it just created.
+    """
+    client['mint'](SimpleNamespace(line=uid, credential_file=str(path), token_file=None,
+                                   api_base=ORIGIN, agent_api_base=ORIGIN))
+
+
 def compose(*arguments, capture=False):
     return subprocess.run(['docker', 'compose', *arguments], cwd=AGENT,
                           capture_output=capture, text=True, timeout=1800)
@@ -213,12 +223,7 @@ def install(args):
         token = client['account_token'](SimpleNamespace(token_file=None))
     line = choose_line(client['account_lines'](ORIGIN, token), ask_for_line)
     print(f'Line .............. {line.get("display_name") or line["uid"]} {line.get("provider_key") or ""}', flush=True)
-
-    def mint(path, uid):
-        client['mint'](SimpleNamespace(line=uid, credential_file=str(path), token_file=None,
-                                       api_base=ORIGIN, agent_api_base=None))
-
-    outcome = ensure_credential(CREDENTIAL, line, identity, mint)
+    outcome = ensure_credential(CREDENTIAL, line, identity, lambda path, uid: mint_credential(client, path, uid))
     print(f'Credential ........ {outcome}', flush=True)
     print('Starting the agent (the first start downloads several GB) ...', flush=True)
     if compose('up', '-d', '--build').returncode:

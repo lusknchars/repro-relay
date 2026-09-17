@@ -1,14 +1,74 @@
-"""Unit tests for the one-command Plow agent install. No network, Docker or model calls."""
+"""Unit tests for the one-command Plow agent install. No Plow, Docker or model calls.
+
+The contract tests load the real pinned plow-agents client, downloading and verifying it
+from GitHub only when .data/tools/plow-agents is absent.
+"""
+import contextlib
+import io
+import os
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+import urllib.parse
+import urllib.request
 
 import plow_agent
 
 
 def line(uid, agent=None, number='+15550000000', name='Alder'):
     return {'uid': uid, 'agent_uid': agent, 'provider_key': number, 'display_name': name}
+
+
+class FakePlow:
+    """Plow's API behind the pinned client: one free line, and an agent created with its token."""
+
+    def __init__(self):
+        self.sent = []
+
+    def request(self, method, url, **options):
+        path = urllib.parse.urlsplit(url).path
+        self.sent.append((method, path))
+        if (method, path) == ('GET', '/v1/lines'):
+            return 200, {'data': [line('ln_free')]}
+        if (method, path) == ('POST', '/v1/agents'):
+            return 201, {'agent': {'uid': 'ag_new'}, 'token': 'agt_fixture_token'}
+        return 204, None
+
+    def call(self, method, base, path, **options):
+        return self.request(method, base + path, **options)[1]
+
+    @contextlib.contextmanager
+    def behind(self, client):
+        """Route the client's network functions here; anything else reaching for the network fails the test."""
+        def refuse(*arguments, **options):
+            raise AssertionError('A test tried to reach the network.')
+        # run_path returns a copy of the client's globals; its functions read the original dict.
+        with patch.dict(client['mint'].__globals__, {'call': self.call, 'request': self.request}), \
+                patch.object(urllib.request, 'urlopen', refuse), \
+                patch.object(urllib.request.OpenerDirector, 'open', refuse):
+            yield
+
+
+class OfficialClientContractTests(unittest.TestCase):
+    """The installer's mint path through the real pinned client. Only Plow's API is faked."""
+
+    def test_mint_writes_a_private_credential_and_keeps_the_new_agent(self):
+        client, plow = plow_agent.official(), FakePlow()
+        with tempfile.TemporaryDirectory() as directory, plow.behind(client):
+            config = Path(directory) / 'config'
+            (config / 'plow').mkdir(parents=True)
+            (config / 'plow/token').write_text('acct_fixture_token\n')
+            credential = Path(directory) / 'plow-credentials'
+            with patch.dict(os.environ, {'XDG_CONFIG_HOME': str(config)}), contextlib.redirect_stderr(io.StringIO()):
+                plow_agent.mint_credential(client, credential, 'ln_free')
+            mode, text = credential.stat().st_mode & 0o777, credential.read_text()
+        self.assertEqual(mode, 0o600)
+        self.assertIn('PLOW_API_BASE=https://api.plow.co\n', text)
+        self.assertIn('PLOW_AGENT_TOKEN=agt_fixture_token\n', text)
+        self.assertIn('# plow-agent-uid: ag_new', text)
+        self.assertIn(('POST', '/v1/agents'), plow.sent)
+        self.assertNotIn('DELETE', [method for method, _ in plow.sent])
 
 
 class LineSelectionTests(unittest.TestCase):
