@@ -257,6 +257,34 @@ class InstallFlowTests(unittest.TestCase):
         self.assertIn('chmod 600', str(error.exception))
 
 
+class ResumeFlagTests(unittest.TestCase):
+    def resume(self, **options):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        install = Installation(directory.name)
+        install.credential.write_text('PLOW_AGENT_TOKEN=agt_existing\n# plow-agent-uid: ag_2\n')
+        install.verified = {'line': line('ln_2', number='+1 (555) 000-0002', name='Birch')}
+        return install, install.run(**options)
+
+    def test_new_line_or_another_line_on_a_resume_needs_a_new_folder(self):
+        for options in ({'new_line': True}, {'line': 'ln_other'}, {'line': '+1 555 000 9999'}):
+            with self.subTest(**options):
+                install, code = self.resume(**options)
+                self.assertEqual(code, 2)
+                self.assertEqual(install.err.getvalue(), 'This folder already runs an agent on Birch +1 (555) 000-0002. '
+                                                         'To use another line, install in a new folder.\n')
+                self.assertEqual(install.plow_calls(), ['identity'])
+                self.assertNotIn('compose up -d --build', install.calls)
+
+    def test_a_line_flag_naming_this_folders_line_continues(self):
+        # A bare list position cannot be checked without signing in again, so a rerun of the same command continues.
+        for value in ('ln_2', '15550000002', '+1 (555) 000-0002', '2'):
+            with self.subTest(line=value):
+                install, code = self.resume(line=value)
+                self.assertEqual(code, 0)
+                self.assertIn('compose up -d --build', install.calls)
+
+
 class LineSelectionTests(unittest.TestCase):
     def test_single_free_line_is_selected_without_asking(self):
         asked = []

@@ -218,6 +218,23 @@ def existing_line(path, identity):
     return line
 
 
+def refuse_other_line(line, args):
+    """On a resume, --new-line or a --line naming another line cannot apply: this folder's agent keeps its line."""
+    wanted = getattr(args, 'line', None)
+    if getattr(args, 'new_line', False) or (wanted is not None and not names_line(line, wanted)):
+        label = ' '.join(part for part in (line.get('display_name') or line['uid'], line.get('provider_key')) if part)
+        raise DecisionNeeded(f'This folder already runs an agent on {label}. To use another line, install in a new folder.')
+
+
+def names_line(line, wanted):
+    """Whether --line names this line by uid or number. A bare list position cannot be checked without the account's
+    lines, so it passes: rerunning the same command after an interruption must continue."""
+    value = str(wanted).strip()
+    if value.isdecimal() and len(value) <= 3:
+        return True
+    return find_line([line], value) is not None
+
+
 def ensure_credential(path, line, identity, mint):
     """Reuse a credential that belongs to this line; never overwrite another one."""
     if path.exists():
@@ -475,6 +492,7 @@ def install(args):
     if resuming:
         # A rerun after minting continues with that agent's own line; no sign-in or line choice.
         line = existing_line(CREDENTIAL, identity)
+        refuse_other_line(line, args)
         announce_line(line)
         print('Credential ........ reused', flush=True)
     else:
