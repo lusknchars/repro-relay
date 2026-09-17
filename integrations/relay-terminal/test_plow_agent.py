@@ -525,6 +525,35 @@ class FailureTests(unittest.TestCase):
             self.assertIn('FileNotFoundError: docker', log.read_text())
         self.assertEqual(err.getvalue(), f'./relay agent status stopped unexpectedly. Details: {log}. Running it again is safe.\n')
 
+    def test_the_log_is_private_to_the_owner(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.up = RuntimeError('compose failed in an unforeseen way')
+            self.assertEqual(install.run(), 1)
+            mode = (install.root / '.data/agent/install.log').stat().st_mode & 0o777
+        self.assertEqual(mode, 0o600)
+
+    def test_a_log_that_cannot_be_saved_still_ends_in_one_sentence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            (install.root / '.data').mkdir()
+            (install.root / '.data/agent').write_text('a file where the folder should be')
+            self.assertEqual(install.run(), 1)
+        self.assertEqual(install.err.getvalue(), 'The install stopped unexpectedly and the details could not be saved. '
+                                                 'Running ./relay agent again is safe.\n')
+
+    def test_an_unsaved_log_in_another_action_names_that_action(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / '.data').write_text('a file where the folder should be')
+            with patch.object(plow_agent, 'ROOT', root), patch.object(plow_agent, 'CREDENTIAL', root / 'agent/plow-credentials'), \
+                    patch.object(plow_agent, 'compose', side_effect=FileNotFoundError('docker')), \
+                    patch.dict(os.environ, {'XDG_CONFIG_HOME': str(root / 'config')}), \
+                    contextlib.redirect_stderr(io.StringIO()) as err:
+                self.assertEqual(plow_agent.run_agent(SimpleNamespace(agent_action='stop')), 1)
+        self.assertEqual(err.getvalue(), './relay agent stop stopped unexpectedly and the details could not be saved. '
+                                         'Running it again is safe.\n')
+
     def test_an_interruption_keeps_its_message_and_writes_no_log(self):
         with tempfile.TemporaryDirectory() as directory:
             install = Installation(directory)

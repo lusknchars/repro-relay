@@ -537,7 +537,7 @@ def record_failure(error, path):
     for token in plow_tokens():
         text = text.replace(token, '[token removed]')
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, 'a', encoding='utf-8') as log:
+    with os.fdopen(os.open(path, os.O_CREAT | os.O_APPEND | os.O_WRONLY, 0o600), 'a', encoding='utf-8') as log:
         log.write(f'=== {datetime.now(timezone.utc):%Y-%m-%dT%H:%M:%SZ} ===\n{text}\n')
 
 
@@ -574,11 +574,11 @@ def run_agent(args):
         return 1
     except Exception as error:
         log = ROOT / '.data/agent/install.log'
-        record_failure(error, log)
-        if action is None:
-            print(f'The install stopped unexpectedly. Details: {log}. Running ./relay agent again is safe.',
-                  file=sys.stderr, flush=True)
-        else:
-            print(f'./relay agent {action} stopped unexpectedly. Details: {log}. Running it again is safe.',
-                  file=sys.stderr, flush=True)
+        try:
+            record_failure(error, log)
+            where = f'. Details: {log}.'
+        except OSError:
+            where = ' and the details could not be saved.'
+        what, again = ('The install', './relay agent') if action is None else (f'./relay agent {action}', 'it')
+        print(f'{what} stopped unexpectedly{where} Running {again} again is safe.', file=sys.stderr, flush=True)
         return 1
