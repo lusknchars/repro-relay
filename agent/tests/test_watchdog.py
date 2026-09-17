@@ -315,8 +315,9 @@ class RecoveryPolicy(unittest.TestCase):
 
 
 class FakeResponse:
-    def __init__(self, body):
+    def __init__(self, body, status=200):
         self.body = body
+        self.status = status
 
     def read(self):
         return self.body
@@ -410,6 +411,75 @@ class OwnerAlert(unittest.TestCase):
     def test_the_alert_text_has_no_hyphens_or_dashes(self):
         dashes = {"-", "‐", "‑", "‒", "–", "—", "―", "−"}
         self.assertFalse(dashes & set(watchdog.ALERT_TEXT))
+
+
+LATCH_URL = "https://api.plow.co/v1/mcp/dev_2f8a9c"
+HANDSHAKE = b'{"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2025-06-18", "serverInfo": {"name": "plow"}}}'
+
+
+def latch_with(opener, url=LATCH_URL):
+    return watchdog.latch_reachable(url, "tok", opener=opener)
+
+
+class LatchProbe(unittest.TestCase):
+    def test_the_handshake_has_the_shape_an_mcp_server_expects(self):
+        request = watchdog.build_handshake_request(LATCH_URL, "tok")
+        self.assertEqual(request.full_url, LATCH_URL)
+        self.assertEqual(request.get_method(), "POST")
+        self.assertEqual(request.get_header("Authorization"), "Bearer tok")
+        self.assertEqual(request.get_header("Content-type"), "application/json")
+        self.assertEqual(request.get_header("Accept"), "application/json, text/event-stream")
+        self.assertEqual(request.get_header("Mcp-protocol-version"), "2025-06-18")
+        self.assertEqual(json.loads(request.data), {
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {"protocolVersion": "2025-06-18", "capabilities": {},
+                       "clientInfo": {"name": "transport-watchdog", "version": "1"}}})
+
+    def test_latch_answering_the_handshake_means_the_mac_is_reachable(self):
+        asked = []
+
+        def opener(request, timeout):
+            asked.append((request.full_url, timeout))
+            return FakeResponse(HANDSHAKE)
+
+        self.assertTrue(watchdog.latch_reachable(LATCH_URL, "tok", opener=opener))
+        self.assertEqual(asked, [(LATCH_URL, 20)])
+
+    def test_an_event_stream_is_read_from_its_last_data_line(self):
+        stream = (b'event: message\ndata: {"jsonrpc": "2.0", "id": 0, "error": {"code": -32000}}\n'
+                  b"\nevent: message\ndata: " + HANDSHAKE + b"\n\n")
+        self.assertTrue(latch_with(answering(stream)))
+
+    def test_an_answer_without_a_result_is_not_an_answer(self):
+        for body in (b'{"jsonrpc": "2.0", "id": 1, "error": {"code": -32000, "message": "no device"}}',
+                     b"event: message\ndata: half a line\n\n", b"", b"not json", b"[]"):
+            with self.subTest(body=body):
+                self.assertFalse(latch_with(answering(body)))
+
+    def test_an_error_a_timeout_or_a_nonsense_url_is_not_an_answer_and_never_raises(self):
+        for error in (http_error(503), http_error(401), http_error(404),
+                      urllib.error.URLError(TimeoutError()), urllib.error.URLError(ConnectionRefusedError()),
+                      TimeoutError(), ConnectionResetError(), ValueError("unknown url type")):
+            with self.subTest(error=type(error).__name__):
+                self.assertFalse(latch_with(raising(error)))
+
+    def test_only_a_2xx_answer_counts(self):
+        for status in (302, 204):
+            with self.subTest(status=status):
+                self.assertEqual(latch_with(lambda request, timeout: FakeResponse(HANDSHAKE, status)),
+                                 status == 204)
+
+    def test_the_agent_token_never_leaves_over_plain_http(self):
+        sent = []
+
+        def opener(request, timeout):
+            sent.append(request)
+            return FakeResponse(HANDSHAKE)
+
+        for url in ("http://api.plow.co/v1/mcp/dev_2f8a9c", "/v1/mcp/dev_2f8a9c", ""):
+            with self.subTest(url=url):
+                self.assertFalse(latch_with(opener, url=url))
+        self.assertEqual(sent, [])
 
 
 def stalled():

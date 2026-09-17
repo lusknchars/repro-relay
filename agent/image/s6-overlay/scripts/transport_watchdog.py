@@ -364,6 +364,61 @@ def send_alert(base, token, chat_uid, opener=OPENER.open, text=ALERT_TEXT):
     return "sent" if isinstance(uid, str) and uid else "unknown"
 
 
+MCP_PROTOCOL = "2025-06-18"
+HANDSHAKE = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+             "params": {"protocolVersion": MCP_PROTOCOL, "capabilities": {},
+                        "clientInfo": {"name": "transport-watchdog", "version": "1"}}}
+
+
+def build_handshake_request(url, token):
+    """The one MCP initialize the watchdog sends Latch to ask whether the Mac answers."""
+    return urllib.request.Request(
+        url,
+        data=json.dumps(HANDSHAKE).encode("utf-8"),
+        method="POST",
+        headers={"Authorization": "Bearer " + token,
+                 "Content-Type": "application/json",
+                 "Accept": "application/json, text/event-stream",
+                 "MCP-Protocol-Version": MCP_PROTOCOL},
+    )
+
+
+def handshake_answered(raw):
+    """Whether an initialize answer carries a result.
+
+    A streamable MCP endpoint may answer either as JSON or as one event stream,
+    where the last data line holds the answer to this request.
+    """
+    text = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
+    events = [line for line in text.splitlines() if line.startswith("data:")]
+    try:
+        payload = json.loads(events[-1][len("data:"):] if events else text)
+    except ValueError:
+        return False
+    return isinstance(payload, dict) and "result" in payload
+
+
+def latch_reachable(url, token, opener=OPENER.open):
+    """Whether the owner's Mac answers one MCP handshake through Latch.
+
+    This tells a stuck session in the gateway, which a restart fixes, from a Mac
+    that is asleep, offline or without Latch, which a restart cannot. It never
+    raises and never reports the url, which names the device, or the token.
+    The bearer is the agent's broad Plow credential, so it goes only to an https
+    url, as the alert and the repository's own Latch setup require.
+    """
+    if not url.startswith("https://"):
+        return False
+    try:
+        with opener(build_handshake_request(url, token), timeout=20) as response:
+            if not 200 <= getattr(response, "status", 200) < 300:
+                return False
+            raw = response.read()
+    except Exception:  # an unanswered probe is an answer in itself, whatever went wrong
+        return False
+    return handshake_answered(raw)
+
+
 GATEWAY_SERVICE = "/run/service/hermes-gateway"
 ENV_DIR = "/run/s6/container_environment"
 CHECK_SECONDS = 60
