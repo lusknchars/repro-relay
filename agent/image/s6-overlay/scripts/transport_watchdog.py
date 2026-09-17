@@ -536,8 +536,8 @@ def once(dog, now, doc, restart, alert, log=log, start_time_of=process_start_tim
     elif action == "alert":
         # The owner is told about whichever of the two went first, which is the
         # one the restarts were trying to recover.
-        theirs = [moment for moment in (transport_since, dog.unseen_since) if moment is not None]
-        mac_first = mac_since is not None and (not theirs or mac_since < min(theirs))
+        transport = [moment for moment in (transport_since, dog.unseen_since) if moment is not None]
+        mac_first = mac_since is not None and (not transport or mac_since < min(transport))
         word = outcome(alert, MAC_ALERT_TEXT if mac_first else ALERT_TEXT)
         log(f"recovery failed {MAX_FAILED_RECOVERIES} times, owner alert {word}")
     elif action == "reconnected":
@@ -558,7 +558,7 @@ def main(configured=settings, sleep=time.sleep, log=log):
     alert = make_alert(base, token, chat)
     mcp = probe = None
     if mcp_url and mcp_token:
-        mcp = lambda: mcp_status()
+        mcp = mcp_status
         probe = lambda: latch_reachable(mcp_url, mcp_token)
     else:
         # Latch is what the Mac tools travel over. Without it there is no session

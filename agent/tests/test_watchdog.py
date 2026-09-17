@@ -617,6 +617,15 @@ class Loop(unittest.TestCase):
                                mcp=mac("parked", 7), probe=lambda: True)
         self.assertEqual((action, len(restarts)), ("restart", 1))
         self.assertEqual(dog.since, down_since(7))
+        self.assertEqual(lines, ["the Mac session has been parked since 11:53 UTC",
+                                 "transport not healthy since 11:53 UTC, restarting the gateway"])
+
+    def test_the_earlier_of_the_two_problems_dates_the_trouble(self):
+        dog = watchdog.Watchdog()
+        watchdog.once(dog, NOW, stalled(), restart=lambda: True, alert=lambda text: "sent",
+                      log=lambda line: None, start_time_of=running,
+                      mcp=mac("parked", 30), probe=lambda: True)
+        self.assertEqual(dog.since, down_since(30))
 
     def test_a_mac_session_inside_the_grace_is_left_alone_and_latch_is_not_asked(self):
         probes, restarts, lines = [], [], []
@@ -726,12 +735,12 @@ class Loop(unittest.TestCase):
                                   sleep=stop, log=lines.append)
             return lines
 
-        self.assertEqual(run(LATCH_URL), [])
-        read_session, probe = seen[-1]
         asked = []
         with unittest.mock.patch.object(watchdog, "mcp_status", lambda: ("parked", NOW)), \
                 unittest.mock.patch.object(watchdog, "latch_reachable",
                                            lambda url, token: asked.append((url, token)) or True):
+            self.assertEqual(run(LATCH_URL), [])
+            read_session, probe = seen[-1]
             self.assertEqual(read_session(), ("parked", NOW))
             self.assertTrue(probe())
         self.assertEqual(asked, [(LATCH_URL, "tok_secret")])
