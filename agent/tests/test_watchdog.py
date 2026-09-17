@@ -169,11 +169,15 @@ def mcp_line(at, body, server="plow"):
     return f"2026-09-17 {at} WARNING tools.mcp_tool: MCP server '{server}' {body}"
 
 
+class Blocked(BaseException):
+    """A read that must never block did. Not an Exception, so no except clause hides it."""
+
+
 @contextmanager
 def deadline(seconds=5):
     """Turn a read that blocks into a failure rather than a hung suite."""
     def ring(number, frame):
-        raise TimeoutError("the call blocked")
+        raise Blocked("the call blocked")
 
     previous = signal.signal(signal.SIGALRM, ring)
     signal.setitimer(signal.ITIMER_REAL, seconds)
@@ -248,7 +252,7 @@ class MacSessionLog(unittest.TestCase):
             quiet = Path(folder) / "quiet.log"
             quiet.write_text(UNKNOWN_TOOL + "\n", encoding="utf-8")
             for path in (link, fifo, directory, quiet):
-                with self.subTest(path=path.name):
+                with self.subTest(path=path.name), deadline(5):
                     self.assertEqual(watchdog.mcp_status(path), (None, None))
             self.assertEqual(watchdog.mcp_status(real)[0], "parked")
 
