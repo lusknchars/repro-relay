@@ -114,6 +114,18 @@ class OfficialClientContractTests(unittest.TestCase):
                     os.environ['XDG_CONFIG_HOME'] = config
                 self.assertEqual(plow_agent.signin_path(), Path(client['token_path'](None)))
 
+    def test_sign_in_is_found_where_the_client_keeps_it_on_windows_too(self):
+        # Both read XDG_CONFIG_HOME and then os.path.expanduser('~'), which Windows answers
+        # from USERPROFILE, so the installer removes the sign in the client actually wrote.
+        client = plow_agent.official()
+        with windows_host(), patch.dict(os.environ, {'HOME': '/fixture/home', 'USERPROFILE': '/fixture/home'}):
+            for config in ('/fixture/config', '', None):
+                with self.subTest(XDG_CONFIG_HOME=config):
+                    os.environ.pop('XDG_CONFIG_HOME', None)
+                    if config is not None:
+                        os.environ['XDG_CONFIG_HOME'] = config
+                    self.assertEqual(plow_agent.signin_path(), Path(client['token_path'](None)))
+
 
 class Installation:
     """run_agent() in a temporary checkout, with Docker, Plow, the official client and the terminal faked."""

@@ -108,20 +108,24 @@ class ReceiptStore:
         identifier(attempt)
         self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         info = self.directory.lstat()
-        if not stat.S_ISDIR(info.st_mode) or info.st_mode & 0o077 or info.st_uid != os.getuid():
-            raise BridgeError("Receipt directory must be owner-only and cannot be a symbolic link.")
+        if (self.directory.is_symlink() or not stat.S_ISDIR(info.st_mode)
+                or not private_files.is_private(self.directory, info)):
+            raise BridgeError("Receipt directory must be one only you can reach, and cannot be a link. Run "
+                              + private_files.how_to_protect(self.directory) + " and try again.")
         fd, name = tempfile.mkstemp(prefix=".receipt-", dir=self.directory)
         try:
             with os.fdopen(fd, "w") as target:
                 json.dump(value, target)
                 target.flush()
                 os.fsync(target.fileno())
-            os.replace(name, self.directory / f"{attempt}.json")
-            directory_fd = os.open(self.directory, os.O_RDONLY)
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
+            private_files.replace_atomically(name, self.directory / f"{attempt}.json")
+            if not private_files.windows():
+                # Windows cannot open a folder to flush it; the file's own fsync is what it offers.
+                directory_fd = os.open(self.directory, os.O_RDONLY)
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
         finally:
             if os.path.exists(name):
                 os.unlink(name)

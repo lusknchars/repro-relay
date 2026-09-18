@@ -253,6 +253,17 @@ class ParsingTests(unittest.TestCase):
         self.assertEqual(private_files.windows_principals(path, listing),
                          ['NT AUTHORITY\\SYSTEM', 'BUILTIN\\ADMINISTRATORS', 'OWNER RIGHTS'])
 
+    def test_a_folder_listing_keeps_its_inheritance_flags_out_of_the_account_name(self):
+        # A folder carries (I)(OI)(CI) as well as the rights, and an account is still
+        # everything before the first ':('.
+        path = r'C:\Users\runneradmin\repro-relay\.data\agent'
+        listing = (f'{path} runneradmin:(OI)(CI)(F)\n'
+                   f'{" " * (len(path) + 1)}NT AUTHORITY\\SYSTEM:(I)(OI)(CI)(F)\n'
+                   f'{" " * (len(path) + 1)}BUILTIN\\Administrators:(I)(OI)(CI)(F)\n'
+                   '\nSuccessfully processed 1 files; Failed processing 0 files\n')
+        self.assertEqual(private_files.windows_principals(path, listing),
+                         ['RUNNERADMIN', 'NT AUTHORITY\\SYSTEM', 'BUILTIN\\ADMINISTRATORS'])
+
     def test_the_reparse_bit_is_the_one_the_stat_module_names(self):
         self.assertEqual(stat.FILE_ATTRIBUTE_REPARSE_POINT, 0x400)
 

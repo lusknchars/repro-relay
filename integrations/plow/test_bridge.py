@@ -271,6 +271,17 @@ class WindowsBoundaryTests(unittest.TestCase):
             with self.assertRaises(BridgeError):
                 private_credentials(link)
 
+    def test_receipts_are_written_where_a_mode_check_and_a_folder_fsync_are_not_available(self):
+        store = ReceiptStore(Path(self.temporary.name) / "receipts")
+        with windows_host():
+            with self.assertRaises(BridgeError) as error:
+                store.write("att_1", {"ok": True})
+            self.assertIn("icacls", str(error.exception))
+            private_files.protect(store.directory)
+            store.write("att_1", {"ok": True})
+            self.assertEqual(store.read("att_1"), {"ok": True})
+            self.assertEqual(list(store.directory.glob(".receipt-*")), [])
+
 
 if __name__ == "__main__":
     unittest.main()
