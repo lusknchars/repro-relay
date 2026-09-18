@@ -9,6 +9,8 @@ from unittest.mock import patch
 
 import cli
 from execution_ledger import Ledger, MAX_FILE
+from fake_windows import reparse_point, windows_host
+import private_files
 
 
 class LedgerTests(unittest.TestCase):
@@ -63,7 +65,7 @@ class LedgerTests(unittest.TestCase):
         restarted = Ledger(self.root, self.database, self.anchor)
         self.assertEqual(restarted.read('code.txt')['decision'], 'allow')
         self.assertEqual(restarted.read('code.txt', visible=[first['receipt_id']])['decision'], 'reuse')
-        self.assertEqual(self.database.stat().st_mode & 0o777, 0o600)
+        self.assertTrue(private_files.is_private(self.database))
         with self.assertRaises(ValueError):
             Ledger(self.root, self.database, {'plan': 'FIX-other'})
         other = self.directory / 'other'; other.mkdir()
@@ -174,6 +176,70 @@ class LedgerTests(unittest.TestCase):
         self.assertEqual(json.loads(output.getvalue())['argv'], ['npm', 'test'])
         plan['status'] = 'revoked'
         with self.assertRaises(ValueError): cli.repair_ledger(plan, self.root)
+
+
+class WindowsLedgerTests(unittest.TestCase):
+    """The ledger used to refuse Windows outright. It now reads there, with the same refusals."""
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.directory = pathlib.Path(self.temporary.name).resolve()
+        self.root = self.directory / 'checkout'
+        self.root.mkdir()
+        (self.root / 'code.txt').write_text('first\nsecond\nthird\n')
+        (self.root / 'src').mkdir()
+        (self.root / 'src/deep.txt').write_text('deep\n')
+        self.database = self.directory / 'state' / 'ledger.sqlite3'
+        self.anchor = {'plan': 'FIX-1', 'base': 'observed-fixture-base'}
+
+    def test_a_windows_host_reads_the_ledger_instead_of_being_refused(self):
+        with windows_host():
+            ledger = Ledger(self.root, self.database, self.anchor)
+            self.assertTrue(private_files.is_private(self.database))
+            self.assertEqual(ledger.read('code.txt', 1, 2)['content'], 'first\nsecond\n')
+            self.assertEqual(ledger.read('src/deep.txt')['content'], 'deep\n')
+            self.assertEqual(ledger.inform()['observed_change_count'], 0)
+
+    def test_a_windows_read_never_reaches_for_a_flag_windows_does_not_have(self):
+        with windows_host():
+            self.assertFalse(hasattr(os, 'O_NOFOLLOW'))
+            self.assertNotIn(os.open, os.supports_dir_fd)
+            self.assertEqual(Ledger(self.root, self.database, self.anchor).read('code.txt')['decision'], 'allow')
+
+    def test_links_reparse_points_and_escapes_are_still_refused_on_windows(self):
+        outside = self.directory / 'outside'
+        outside.write_text('outside')
+        (self.root / 'link').symlink_to(outside)
+        (self.root / 'folder-link').symlink_to(self.directory, target_is_directory=True)
+        with windows_host():
+            ledger = Ledger(self.root, self.database, self.anchor)
+            for path in ('../outside', 'link', 'folder-link/outside', '.git/config', 'missing', '/etc/passwd'):
+                with self.subTest(path=path), self.assertRaises((ValueError, OSError)):
+                    ledger.read(path)
+            with reparse_point(self.root / 'code.txt'), self.assertRaises(private_files.PrivacyError):
+                ledger.read('code.txt')
+            with reparse_point(self.root / 'src'), self.assertRaises(private_files.PrivacyError):
+                ledger.read('src/deep.txt')
+            self.assertEqual(ledger.inform()['records'], 0)
+
+    def test_an_edit_during_a_windows_read_rejects_the_partial_observation(self):
+        real_read = os.read
+        changed = False
+
+        def concurrent_read(descriptor, count):
+            nonlocal changed
+            chunk = real_read(descriptor, count)
+            if not changed:
+                changed = True
+                (self.root / 'code.txt').write_text('updated while reading')
+            return chunk
+        with windows_host():
+            ledger = Ledger(self.root, self.database, self.anchor)
+            with patch('execution_ledger.os.read', side_effect=concurrent_read):
+                with self.assertRaisesRegex(ValueError, 'changed during observation'):
+                    ledger.read('code.txt')
+            self.assertEqual(ledger.inform()['records'], 0)
 
 
 if __name__ == '__main__':

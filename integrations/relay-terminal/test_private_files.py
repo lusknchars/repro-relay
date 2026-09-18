@@ -77,6 +77,15 @@ class PosixPrivacyTests(unittest.TestCase):
             private_files.protect(self.directory / 'absent')
         self.assertIn('absent', str(error.exception))
 
+    def test_a_drive_that_takes_the_change_and_does_nothing_is_caught(self):
+        # A memory stick or a network share accepts chmod and keeps the file open to everyone.
+        self.file.chmod(0o666)
+        with patch.object(private_files.os, 'chmod'):
+            with self.assertRaises(private_files.PrivacyError) as error:
+                private_files.protect(self.file)
+        self.assertIn(str(self.file), str(error.exception))
+        self.assertIn(f'chmod 600 {self.file}', str(error.exception))
+
     def test_a_stat_from_an_open_handle_is_used_instead_of_a_second_look(self):
         self.file.chmod(0o600)
         with private_files.open_private(self.file) as handle:
@@ -125,8 +134,9 @@ class WindowsPrivacyTests(unittest.TestCase):
                              ['NT AUTHORITY\\SYSTEM', 'BUILTIN\\Administrators', 'OWNER RIGHTS'])
             self.assertFalse(private_files.is_private(self.file))
             private_files.protect(self.file)
-            self.assertEqual(windows.calls[-1],
+            self.assertEqual(windows.calls[-2],
                              ['icacls', str(self.file), '/inheritance:r', '/grant:r', 'runneradmin:F'])
+            self.assertEqual(windows.calls[-1], ['icacls', str(self.file)])  # protect reads back what it did
             self.assertEqual(windows.principals(self.file),
                              ['runneradmin', 'NT AUTHORITY\\SYSTEM', 'BUILTIN\\Administrators'])
             self.assertTrue(private_files.is_private(self.file))
@@ -154,6 +164,18 @@ class WindowsPrivacyTests(unittest.TestCase):
                 with self.assertRaises(private_files.PrivacyError) as error:
                     private_files.protect(self.file)
         self.assertIn(str(self.file), str(error.exception))
+
+    def test_an_icacls_that_exits_zero_and_changes_nothing_is_not_taken_as_done(self):
+        # A network share or a memory stick takes the grant, reports success and keeps the
+        # file open. An exit code says the command ran; the listing says what is true.
+        with windows_host(FakeWindows(applies=False)) as windows:
+            with self.assertRaises(private_files.PrivacyError) as error:
+                private_files.protect(self.file)
+            self.assertEqual(windows.calls[0][2:], ['/inheritance:r', '/grant:r', 'runneradmin:F'])
+            self.assertEqual(windows.calls[1], ['icacls', str(self.file)])
+            self.assertFalse(private_files.is_private(self.file))
+        self.assertIn(str(self.file), str(error.exception))
+        self.assertIn('icacls', str(error.exception))
 
     def test_protect_raises_when_icacls_itself_cannot_be_run(self):
         with windows_host(), patch.object(subprocess, 'run', side_effect=FileNotFoundError(2, 'icacls')):

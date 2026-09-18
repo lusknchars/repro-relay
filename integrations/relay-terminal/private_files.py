@@ -104,7 +104,11 @@ def protect(path, executable=False):
 
     POSIX sets mode 0600, or 0700 for a directory or something meant to be run. Windows
     drops inherited access and grants this account alone, which is what 0600 means there.
-    Raises when it cannot: the caller decides what to do, and it is never nothing.
+
+    The result is then read back and checked, because a command that exits 0 has only said
+    it ran. A drive that cannot keep per account permissions, a memory stick or a network
+    share, takes the change and keeps the file open to everyone. Raises either way: the
+    caller decides what to do, and it is never nothing.
     """
     path = Path(path)
     if windows():
@@ -114,16 +118,33 @@ def protect(path, executable=False):
             raise PrivacyError(f'{path} could not be locked to your account: {detail or "icacls failed"}. '
                                'Check that you own it and that the folder it is in allows a permission '
                                'change, then run this again.')
-        return
-    if os.name != 'posix':
+    elif os.name != 'posix':
         raise PrivacyError(f'{path} cannot be made private on this computer, so nothing that depends on it '
                            'was written. Run this on macOS, Linux or Windows.')
-    mode = DIRECTORY_MODE if path.is_dir() else EXECUTABLE_MODE if executable else FILE_MODE
-    try:
-        os.chmod(path, mode)
-    except OSError as error:
-        raise PrivacyError(f'{path} could not be made private: {error.strerror or error}. '
-                           'Check that you own it, then run this again.') from error
+    else:
+        mode = DIRECTORY_MODE if path.is_dir() else EXECUTABLE_MODE if executable else FILE_MODE
+        try:
+            os.chmod(path, mode)
+        except OSError as error:
+            raise PrivacyError(f'{path} could not be made private: {error.strerror or error}. '
+                               'Check that you own it, then run this again.') from error
+    if not is_private(path):
+        raise PrivacyError(f'{path} is still reachable by more than your own account after it was made '
+                           'private, so nothing that depends on it was written. A drive that cannot keep '
+                           'one account apart from another does this, such as a memory stick or a network '
+                           f'share. Keep it on your own drive, or run {how_to_protect(path)} and check the '
+                           'result before running this again.')
+
+
+def how_to_protect(path):
+    """The command that makes a path private on this host, for a message someone can act on."""
+    if windows():
+        try:
+            account = account_name()
+        except PrivacyError:
+            account = '%USERNAME%'
+        return f'icacls "{path}" /inheritance:r /grant:r "{account}":F'
+    return f'chmod 600 {path}'
 
 
 def windows_principals(path, output):

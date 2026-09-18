@@ -330,7 +330,8 @@ class CredentialVerificationTests(unittest.TestCase):
                     self.assertRaises(plow_agent.AgentError) as error:
                 plow_agent.existing_line(credential, plow_agent.identity)
         self.assertEqual(str(error.exception), f'The existing credential {credential} could not be used: Plow credentials '
-                                               'must be an owner-only regular file. Use chmod 600. It was left untouched.')
+                                               f'must be a regular file only you can read. Run chmod 600 {credential} '
+                                               'and try again. It was left untouched.')
 
 
 class ResumeFlagTests(unittest.TestCase):

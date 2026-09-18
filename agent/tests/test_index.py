@@ -1,13 +1,18 @@
 import importlib.util
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT.parent / 'integrations/relay-terminal'))
 spec = importlib.util.spec_from_file_location('relay_index', ROOT / 'index.py')
 index = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(index)
+
+from fake_windows import windows_host  # noqa: E402  (the installer's own Windows fakes)
+import private_files  # noqa: E402
 
 
 class IndexWrapper(unittest.TestCase):
@@ -61,6 +66,39 @@ class IndexWrapper(unittest.TestCase):
                 env = run.call_args.kwargs['env']
                 self.assertNotIn('PLOW_AGENT_TOKEN', env)
                 self.assertEqual(env['HERMES_HOME'], str(home.resolve()))
+
+
+class WindowsCredentialTests(unittest.TestCase):
+    """The check used to demand a POSIX mode, which no file on Windows can have."""
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.path = Path(self.temporary.name) / 'plow-credentials'
+        self.path.write_text('PLOW_API_BASE=https://api.plow.co\nPLOW_AGENT_TOKEN=agt_fixture_token\n')
+
+    def test_a_credential_locked_to_this_account_is_read_where_a_mode_could_never_pass(self):
+        with windows_host():
+            self.path.chmod(0o600)  # what the old check asked for, and what Windows ignores
+            with self.assertRaises(ValueError) as error:
+                index.credentials(self.path)
+            self.assertIn('icacls', str(error.exception))
+            private_files.protect(self.path)
+            self.assertEqual(index.credentials(self.path)['PLOW_AGENT_TOKEN'], 'agt_fixture_token')
+
+    def test_a_credential_another_account_can_read_is_still_refused(self):
+        with windows_host() as windows:
+            windows.access[str(self.path)] = ['runneradmin', 'NT AUTHORITY\\SYSTEM', 'Everyone']
+            with self.assertRaises(ValueError):
+                index.credentials(self.path)
+
+    def test_a_link_where_the_credential_should_be_is_refused(self):
+        link = self.path.with_name('link')
+        link.symlink_to(self.path)
+        with windows_host():
+            private_files.protect(link)
+            with self.assertRaises(ValueError):
+                index.credentials(link)
 
 
 if __name__ == '__main__':

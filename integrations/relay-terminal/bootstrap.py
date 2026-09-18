@@ -13,6 +13,8 @@ import time
 import urllib.request
 import webbrowser
 
+import private_files
+
 ROOT = Path(__file__).resolve().parents[2]
 URL = 'http://127.0.0.1:8178'
 
@@ -44,7 +46,7 @@ def environment():
     if config.is_file():
         if config.stat().st_size > 65536:
             raise ValueError('The private .env file exceeds 64 KiB.')
-        for number, line in enumerate(config.read_text().splitlines(), 1):
+        for number, line in enumerate(config.read_text(encoding='utf-8').splitlines(), 1):
             line = line.strip()
             if not line or line.startswith('#'):
                 continue
@@ -62,8 +64,22 @@ def environment():
                 raise ValueError(f'Quote values containing spaces in private .env on line {number}.')
             # Parse data only: no shell commands or variable interpolation.
             env.setdefault(key, parts[0] if parts else '')
-    env['PATH'] = str(Path.home() / '.cargo/bin') + os.pathsep + env.get('PATH', '')
+    # A host that will not say where home is still gets a PATH; the missing cargo is then
+    # reported by the prerequisite check, with the action that fixes it.
+    home = private_files.home_directory()
+    cargo = [str(home / '.cargo/bin')] if home is not None else []
+    env['PATH'] = os.pathsep.join(cargo + [env.get('PATH', '')])
     return env
+
+
+def program(name, env):
+    """The file a command name actually resolves to on this host.
+
+    Windows ships npm as npm.cmd, and starting a process there only ever appends .exe, so
+    the plain name passes the prerequisite check and then fails to start. Resolving it the
+    same way the check does keeps the two answers the same.
+    """
+    return shutil.which(name, path=env.get('PATH')) or name
 
 
 def prerequisites(env, desktop):
@@ -72,7 +88,8 @@ def prerequisites(env, desktop):
         if not shutil.which(tool, path=env['PATH']):
             missing.append(hint)
     if shutil.which('node', path=env['PATH']):
-        result = subprocess.run(['node', '--version'], env=env, capture_output=True, text=True, timeout=10)
+        result = subprocess.run([program('node', env), '--version'], env=env, capture_output=True,
+                                text=True, encoding='utf-8', errors='replace', timeout=10)
         if result.returncode or int(result.stdout.strip().lstrip('v').split('.')[0]) < 24:
             missing.append('Node.js 24 or newer is required.')
     if not env.get('DATABASE_URL'):
@@ -97,7 +114,7 @@ def install_dependencies(root, env, run):
         if receipt.is_file() and receipt.read_text() == digest:
             print('Dependencies ready: ' + relative, flush=True)
             continue
-        run(['npm', 'ci', '--prefix', str(directory)], 'Installing ' + relative)
+        run([program('npm', env), 'ci', '--prefix', str(directory)], 'Installing ' + relative)
         receipt.write_text(digest)
 
 
@@ -121,8 +138,8 @@ def run_setup(args):
             print('Port 8178 is occupied by an unrecognized or unhealthy service. Resolve it before setup; no process was stopped.', file=sys.stderr)
             return 1
         state = ROOT / '.data/setup'
-        state.mkdir(parents=True, exist_ok=True, mode=0o700)
-        os.chmod(state, 0o700)
+        state.mkdir(parents=True, exist_ok=True)
+        private_files.protect(state)
         # Exclusive creation prevents simultaneous installs. The finally block
         # clears the lock on normal failures and keyboard interruption.
         lock = state / 'setup.lock'
@@ -142,9 +159,9 @@ def run_setup(args):
                 run(['docker', 'compose', 'up', '-d', '--wait', 'db'], 'Starting PostgreSQL')
             run(['cargo', 'build', '-p', 'relay-api', '--locked'], 'Building the local service')
             if desktop:
-                run(['npm', 'run', 'tauri', '--prefix', 'web', '--', 'build', '--debug'], 'Building Repro Relay')
+                run([program('npm', env), 'run', 'tauri', '--prefix', 'web', '--', 'build', '--debug'], 'Building Repro Relay')
             else:
-                run(['npm', 'run', 'build', '--prefix', 'web'], 'Building the interface')
+                run([program('npm', env), 'run', 'build', '--prefix', 'web'], 'Building the interface')
             if health():
                 print('Using the existing local service. Restart it separately to load backend source changes.', flush=True)
             else:
@@ -155,7 +172,7 @@ def run_setup(args):
                 binary = ROOT / ('target/debug/relay-api.exe' if os.name == 'nt' else 'target/debug/relay-api')
                 logfile = state / 'service.log'
                 fd = os.open(logfile, os.O_CREAT | os.O_APPEND | os.O_WRONLY, 0o600)
-                os.chmod(logfile, 0o600)
+                private_files.protect(logfile)
                 with os.fdopen(fd, 'ab') as output:
                     process = subprocess.Popen([str(binary)], cwd=ROOT, env=env, stdin=subprocess.DEVNULL, stdout=output, stderr=output, start_new_session=os.name != 'nt')
                 (state / 'service.pid').write_text(str(process.pid))
@@ -180,5 +197,7 @@ def run_setup(args):
             lock.unlink(missing_ok=True)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         # Do not echo subprocess environments, response bodies or credentials.
-        print('Setup failed: ' + (str(error) if isinstance(error, RuntimeError) else type(error).__name__) + '. Fix the failed step and run ./relay setup again.', file=sys.stderr)
+        spoken = isinstance(error, (RuntimeError, private_files.PrivacyError))
+        print('Setup failed: ' + (str(error) if spoken else type(error).__name__)
+              + f'. Fix the failed step and run {private_files.relay_command()} setup again.', file=sys.stderr)
         return 1

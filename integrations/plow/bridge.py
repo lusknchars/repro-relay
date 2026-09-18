@@ -11,6 +11,9 @@ import sys
 import tempfile
 from urllib import error, parse, request
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "relay-terminal"))
+import private_files  # noqa: E402  (found next door, the way plow_agent finds this file)
+
 ADAPTER = "repro-relay-plow-v1"
 PLOW_ORIGIN = "https://api.plow.co"
 LIMIT = 1_048_576
@@ -65,16 +68,21 @@ class JsonHTTP:
 
 
 def private_credentials(path):
+    """The line token, read only from a file this account alone can reach.
+
+    What owner-only means is asked of the host: mode bits on POSIX, the file's access list
+    on Windows, where every file keeps mode 0o666 and no mode check could ever pass.
+    """
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-        with os.fdopen(fd, "r", encoding="utf-8") as source:
+        with private_files.open_private(path) as source:
             info = os.fstat(source.fileno())
-            if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_uid != os.getuid():
-                raise BridgeError("Plow credentials must be an owner-only regular file. Use chmod 600.")
-            raw = source.read(16_385)
+            if not stat.S_ISREG(info.st_mode) or not private_files.is_private(path, info):
+                raise BridgeError("Plow credentials must be a regular file only you can read. Run "
+                                  + private_files.how_to_protect(path) + " and try again.")
+            raw = source.read(16_385).decode("utf-8")
         if len(raw) > 16_384:
             raise BridgeError("Plow credential file exceeds the size limit.")
-    except (OSError, UnicodeError):
+    except (OSError, UnicodeError, private_files.PrivacyError):
         raise BridgeError("Plow credential file is unavailable. Use plow-agents login, then mint a line credential.") from None
     values = {}
     for line in raw.splitlines():

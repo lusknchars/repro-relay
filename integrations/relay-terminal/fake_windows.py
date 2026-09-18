@@ -35,11 +35,14 @@ class FakeWindows:
 
     INHERITED = ('NT AUTHORITY\\SYSTEM', 'BUILTIN\\Administrators', 'OWNER RIGHTS')
 
-    def __init__(self, user='runneradmin', fallback=None):
+    def __init__(self, user='runneradmin', fallback=None, applies=True):
         self.user = user
         self.access = {}  # path -> the accounts icacls lists; absent means a file nobody locked down
         self.calls = []
         self.fallback = fallback  # anything that is not icacls, for a test that fakes other commands too
+        # A drive that cannot keep one account apart from another, a memory stick or a network
+        # share, takes the grant, reports success and leaves the file open to everyone.
+        self.applies = applies
 
     def principals(self, path):
         """The accounts that can reach a path right now."""
@@ -73,7 +76,8 @@ class FakeWindows:
             return subprocess.CompletedProcess(
                 command, 1332, 'Successfully processed 0 files; Failed processing 1 files\n',
                 f'{path}: No mapping between account names and security IDs was done.\n')
-        self.access[os.fspath(path)] = [granted, 'NT AUTHORITY\\SYSTEM', 'BUILTIN\\Administrators']
+        if self.applies:
+            self.access[os.fspath(path)] = [granted, 'NT AUTHORITY\\SYSTEM', 'BUILTIN\\Administrators']
         return subprocess.CompletedProcess(
             command, 0, f'processed file: {path}\nSuccessfully processed 1 files; Failed processing 0 files\n', '')
 
