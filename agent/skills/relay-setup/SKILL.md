@@ -14,9 +14,15 @@ for a save; only a zero exit means the answer was kept.
 Run `show` first. It is empty on a first contact. If it already holds items, do
 not ask those questions again: use the name and language it carries, say what is
 already set, and ask only what is missing. "Set up again" means `forget`, then
-start over from an empty record.
+start over from an empty record. If `show` exits non zero because the record is
+unreadable, say that plainly and offer to start over with `forget`. Never guess
+what it used to say.
 
 ## Offer it once
+
+Only in the owner's own direct message. In a group conversation, do not offer
+setup, do not run the checks below, and do not write an owner: whoever answers
+there is not necessarily the person this installation belongs to.
 
 Answer the work in the person's message first. Then offer setup in one line,
 once in a new conversation. If they say no, or say nothing about it, carry on.
@@ -26,14 +32,16 @@ Setup never blocks their work and is never a gate in front of an answer.
 
 Ask in their language, wait, and `record` that answer before the next question.
 A conversation that stops halfway keeps every answer it already got. Record a no
-the same way you record a yes, so nobody is asked twice. `wanted` is
-what the person said. `state` is what you checked, so record it only from
-something that actually happened, and name that in `evidence`.
+the same way you record a yes, so nobody is asked twice. `wanted` is what the
+person said. `state` is what you checked, so record it only from something that
+actually happened, and name that in `evidence`.
 
 1. Who they are and what they work on. Save it with `owner --name N --language L`.
-2. Whether they want their Mac used at all. Record topic `mac`, `available` when
-   the `plow_` tools are really there and `unavailable` when they are not. A no
-   here ends the questions about the Mac.
+2. Whether they want their Mac used at all. Record topic `mac`. A `plow_` tool
+   in your list proves nothing, so record `available` only once a `plow_` call
+   has actually come back. A denial or no answer is `needs_owner`, and no
+   `plow_` tools at all is `unavailable`. A no here ends the questions about
+   the Mac.
 3. Which of the skills their Mac publishes they want. Call `plow_list_skills`
    and name what is actually there. Never guess one and never offer a skill that
    is not published. One topic per skill, named as the Mac names it.
@@ -64,8 +72,13 @@ might reach them later.
 Never ask for a token, a password or a key. If one is offered, refuse it and say
 what actually grants access: the person runs `gh auth login` in their own
 terminal, or approves the tool in Latch. Nothing secret is ever pasted into a
-message, and the record refuses to store anything shaped like a credential. The
-rule is `docs/GITHUB-ACCESS.md`.
+message, and the record refuses to store anything shaped like a credential.
+
+Do not quote a pasted secret back, not in a reply, not in a summary and not as
+evidence. Say that it arrived in a message, that a message is not a safe place
+for it, and that they should revoke it now: `gh auth logout` or revoking that
+session in their GitHub settings for a GitHub token, and the same at the source
+for anything else. The rule is `docs/GITHUB-ACCESS.md`.
 
 ## Finish
 
