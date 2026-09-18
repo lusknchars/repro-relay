@@ -77,9 +77,41 @@ from the identifier before anything is stopped or deleted, and a record that doe
 refused rather than obeyed. Nothing hands a path out of a file to `rmtree` or a volume name out of
 a file to `docker volume rm`.
 
-Before running Compose in a person's folder, every command checks that Compose resolves the project
-it expects there. `COMPOSE_PROJECT_NAME` in your shell beats the one written in that folder, so
-without that check a `stop` or a `remove` would reach whatever your shell names.
+`list` and `status` report such a mismatch instead of refusing over it, because reading changes
+nothing and those are the commands that tell you what is going on. `start`, `stop` and `remove`
+refuse until it is corrected, and say what to correct.
+
+Moving this repository makes every record mismatch, since a record holds the folder's absolute path.
+Correcting the registry is not enough on its own: each generated `compose.yml` holds an absolute
+build context into this repository too. The refusal says so.
+
+Before running Compose in a person's folder, every command asks Compose which project it resolves
+there. `COMPOSE_PROJECT_NAME` in your shell beats the one written in that folder, so without that
+check a `stop` or a `remove` would reach whatever your shell names.
+
+There are three answers to that question and the tool keeps them apart. Compose naming the project
+recorded here is the only one that lets Compose be used. Compose naming what `COMPOSE_PROJECT_NAME`
+in your shell names is an override, seen in both places, and the command refuses so you can unset it.
+Anything else means Compose could not be asked or answered for a reason nobody here saw, and that is
+never described as an override: a Docker that is not running is the commonest failure there is, and
+naming a confident wrong cause for it is the thing this tool is least allowed to do.
+
+## A broken agent can always be removed
+
+An agent you are paying for must never become unremovable because a file next to it went missing. A
+guard that blocks cleanup is worse than the risk it was added for.
+
+So `stop` and `remove` use Compose only where Compose confirms the project. Everywhere else they ask
+Docker which containers carry that project's label and act on those by their own ids, which cannot
+reach another project whatever a compose file or a shell variable says. That covers a person with no
+container, with no `.env`, with no `compose.yml`, and with a folder half deleted by a `remove` that
+died partway. The command says which route it took and why before it takes it, and tells you that a
+Docker network may be left behind, because `docker compose down` would have removed one and
+`docker rm` does not.
+
+If Docker itself is not running, nothing is removed and nothing is forgotten. You are told that
+Docker would not answer. Forgetting a record while its volume still exists would leave you paying
+for something nothing here remembers.
 
 ## Limits
 

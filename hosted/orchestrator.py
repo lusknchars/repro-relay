@@ -14,6 +14,7 @@ Nothing here reports a container as running because a file says so. The registry
 what this tool did. Every statement about a container comes from asking Docker.
 """
 import contextlib
+import json
 from datetime import datetime, timezone
 import os
 from pathlib import Path
@@ -148,7 +149,7 @@ def create(host, args, person):
     if resuming:
         print('This folder already holds a credential from a run that did not finish. Continuing with that agent '
               'rather than minting a second one.', flush=True)
-    reused = guard(host, folder, project, fresh=not resuming)
+    reused = guard(host, folder, project, fresh=not resuming, person=person)
     if reused:
         print(status_line('Memory', "reused from this person's earlier agent"), flush=True)
     if resuming:
@@ -168,7 +169,7 @@ def create(host, args, person):
                                                     folder=folder, volume=volume, line=line, created=host.now()))
     print(status_line('Recorded', f'{person} in {host.registry()}'), flush=True)
 
-    guard(host, folder, project, fresh=not resuming)  # again: signing in can take minutes
+    guard(host, folder, project, fresh=not resuming, person=person)  # again: signing in can take minutes
     print('Starting the agent (the first start downloads several GB) ...', flush=True)
     try:
         started = host.compose('up', '-d', cwd=folder)
@@ -215,7 +216,7 @@ def start(host, args):
     if not (folder / 'plow-credentials').is_file():
         raise AgentError(f'The folder recorded for {entry["person"]}, {folder}, holds no credential, so there is no '
                          'agent to start there. ./relay hosted status ' + entry['person'] + ' shows what is left of it.')
-    guard(host, folder, entry['project'], fresh=False)
+    guard(host, folder, entry['project'], fresh=False, person=entry['person'])
     if host.compose('up', '-d', cwd=folder).returncode:
         raise AgentError('Docker could not start the agent. The output above shows why. Nothing was changed.')
     await_ready(host, folder)
@@ -278,19 +279,65 @@ def limit_lines(limits):
     return ''.join(f'    {text}\n' for text in lines)
 
 
-def guard(host, folder, project, fresh):
-    """The installer's own duplicate guards, applied to this person's folder, and the project Compose resolves.
+def named_project(host, folder):
+    """The project Compose reports for this folder, or None when Compose could not be asked at all.
+
+    plow_agent.compose_project answers with a plain rule when Compose cannot say, which is right for
+    the installer and wrong here. This has to tell a project Compose named from one nobody named,
+    because the second is about to be compared against a record and must never be called an override.
+    """
+    try:
+        result = host.run(['docker', 'compose', 'config', '--format', 'json'], cwd=folder)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode:
+        return None
+    try:
+        name = json.loads(result.stdout).get('name')
+    except (ValueError, AttributeError):
+        return None
+    return name if isinstance(name, str) and name else None
+
+
+def compose_route(host, folder, project):
+    """Whether Compose may be used in this folder, and when it may not, what was observed instead.
+
+    Three outcomes, and the difference between them is the whole point. Compose naming the project
+    recorded here is the only one that lets Compose be used. Compose naming what COMPOSE_PROJECT_NAME
+    in this shell names is an override, observed in both places, and worth refusing over. Anything
+    else is Compose not being askable or answering for a reason nobody here observed, and it is never
+    described as an override: a Docker that is not running is this tool's commonest failure, and
+    naming a confident wrong cause for it is the one thing this tool is least allowed to do.
+    """
+    if not folder.is_dir():
+        return False, 'is not there'
+    if not (folder / 'compose.yml').is_file():
+        return False, 'has no compose file'
+    named = named_project(host, folder)
+    if named == project:
+        return True, ''
+    if named is None:
+        return False, 'could not be read by Compose, which happens when Docker is not running'
+    if os.environ.get('COMPOSE_PROJECT_NAME') == named:
+        raise AgentError(f'Compose resolves the project in {folder} as {named!r}, not {project!r}. '
+                         'COMPOSE_PROJECT_NAME in this shell overrides the one written in that folder, so this '
+                         f'command would have reached {named!r} instead. Unset it, then run this command again.')
+    return False, f'is {named!r} to Compose, not {project!r}, so its .env is missing or names something else'
+
+
+def guard(host, folder, project, fresh, person):
+    """The installer's own duplicate guards, applied to this person's folder, and the project Compose confirms.
 
     Two agents under one Compose project would share one memory volume and one credential, which is
-    exactly what these guards exist to prevent.
+    exactly what these guards exist to prevent. Compose is asked first and on its own, because that is
+    the precise diagnosis: the installer's guards would refuse an override too, as somebody else's agent.
     """
-    # Asked first, and on its own, because it is the precise diagnosis. The installer's own guards
-    # would also refuse a shell override, but they would describe it as somebody else's agent.
-    resolved = plow_agent.compose_project(host.run, folder, os.environ)
-    if resolved != project:
-        raise AgentError(f'Compose resolves the project in {folder} as {resolved!r}, not {project!r}. '
-                         'COMPOSE_PROJECT_NAME in this shell overrides the one written in that folder, so this '
-                         f'command would have reached {resolved!r} instead. Unset it, then run this command again.')
+    usable, why = compose_route(host, folder, project)
+    if not usable:
+        raise AgentError(f'Compose could not say which project {folder} belongs to, so this command stopped rather '
+                         f'than acting on a project nobody confirmed: that folder {why}. ./relay hosted status '
+                         f'{person} shows what Docker has without changing anything, and ./relay hosted remove '
+                         f'{person} --confirm {person} removes this agent without needing Compose.')
     return plow_agent.guard_docker(fresh, run=host.run, folder=folder, environ=os.environ,
                                    record=folder / 'install.json')[1]
 
@@ -358,7 +405,7 @@ def report_limits(host, found, folder, label='Limits', indent=''):
 def show(host, person=None):
     """What exists here, and what Docker says about each one. Where they disagree, both are said."""
     recorded = registry.read(host.registry())['agents']
-    wanted = {person: required(host, person)} if person is not None else recorded
+    wanted = {person: required(host, person, acting=False)} if person is not None else recorded
     # Docker is asked before anything is printed, including when the registry is empty. An empty
     # registry is when it is most likely to be wrong, so it is the last moment to stop looking.
     world = look(host)
@@ -384,16 +431,20 @@ def describe(host, entry, world, limits=False):
                       or 'none'), flush=True)
     print(status_line('  Memory volume', entry['volume']), flush=True)
     print(status_line('  Created', entry['created']), flush=True)
-    for text in disagreements(entry, found, world):
+    for text in disagreements(host, entry, found, world):
         print('  ' + text, flush=True)
     if limits:
         report_limits(host, found, entry['folder'], label='  Limits', indent='  ')
 
 
-def disagreements(entry, found, world):
+def disagreements(host, entry, found, world):
     """Where the record and Docker do not say the same thing. The record is what this tool did,
     not evidence that anything is running, so these are reported rather than reconciled."""
     notes, folder = [], Path(entry['folder'])
+    wrong = mismatches(host, entry, entry['person'])
+    if wrong:
+        notes.append(f'This record does not match what {entry["person"]} derives on this host: {wrong}. Reading '
+                     'about it changes nothing; a command that would act on it refuses until it is corrected.')
     if not found:
         notes.append('Docker has no container for this project, so nothing is answering on that line.')
     if len(found) > 1:
@@ -422,32 +473,40 @@ def unrecorded(recorded, world):
                    f'{state} ({identifier}).')
 
 
-def required(host, person):
+def required(host, person, acting=True):
+    """One person's record. acting means a command that would stop, start or delete something.
+
+    A read only command reports a record that does not match rather than refusing over it: after a
+    checkout has moved, every record mismatches, and status is exactly where this tool's own messages
+    send people to find out what is going on.
+    """
     person = registry.safe_identifier(person)
     entry = registry.find(host.registry(), person)
     if entry is None:
         raise DecisionNeeded(f'{person} has no agent recorded here, so nothing was changed. ./relay hosted list '
                              'shows the agents this host created.')
-    return rederived(host, entry, person)
+    wrong = mismatches(host, entry, person)
+    if wrong and acting:
+        raise DecisionNeeded(
+            f'The record for {person} does not match what its identifier derives on this host: {wrong}. Nothing '
+            f'was changed. Correct {host.registry()} so it matches, and regenerate that person\'s compose.yml, '
+            'whose build context is an absolute path into this repository too, so correcting the registry alone '
+            f'would not be enough. ./relay hosted status {person} reports what Docker has without changing '
+            'anything.')
+    return entry
 
 
-def rederived(host, entry, person):
-    """The record, once its folder, project and volume are the ones this person's identifier derives here.
+def mismatches(host, entry, person):
+    """How this record differs from what the person's identifier derives here, or an empty string.
 
-    The registry is a file. A folder in it is about to be deleted with rmtree and a volume name in it is
-    about to be handed to docker volume rm, so neither is taken on the file's word.
+    The registry is a file. A folder in it would be deleted with rmtree and a volume name in it would
+    be handed to docker volume rm, so neither is taken on the file's word.
     """
     project = registry.project_name(person)
     expected = {'project': project, 'volume': registry.volume_name(project),
                 'folder': str(registry.folder_for(host.root, person))}
-    wrong = [f'{key} {entry.get(key)!r}, where {person} on this host has {value!r}'
-             for key, value in expected.items() if entry.get(key) != value]
-    if wrong:
-        raise AgentError(f'The record for {person} does not match what its identifier derives on this host: '
-                         + '; '.join(wrong) + '. Nothing was changed. A record says what this tool did, and this '
-                         'one was written somewhere else or edited by hand. Inspect '
-                         f'{host.registry()}.')
-    return entry
+    return '; '.join(f'{key} {entry.get(key)!r}, where {person} on this host has {value!r}'
+                     for key, value in expected.items() if entry.get(key) != value)
 
 
 def usable_folder(host, entry):
@@ -467,14 +526,26 @@ def running_folder(host, entry):
 def stop(host, args):
     """Stop one person's container. Everything else is kept."""
     entry = required(host, args.person)
-    folder = running_folder(host, entry)
-    guard(host, folder, entry['project'], fresh=False)  # before Compose runs anywhere near another project
-    if host.compose('stop', cwd=folder).returncode:
-        raise AgentError('Docker did not stop the agent. The output above shows why. Nothing else was changed.')
+    folder = usable_folder(host, entry)
+    mine = containers_of(look(host), entry['project'])
+    usable, why = compose_route(host, folder, entry['project'])
+    if usable:
+        plow_agent.guard_docker(False, run=host.run, folder=folder, environ=os.environ,
+                                record=folder / 'install.json')
+        if host.compose('stop', cwd=folder).returncode:
+            raise AgentError('Docker did not stop the agent. The output above shows why. Nothing else was changed.')
+    elif mine:
+        # Compose could not confirm the project, so the containers Docker itself listed under it are
+        # stopped by their own ids. That cannot reach another project whatever Compose would have said.
+        print(by_identifier(folder, entry, why), flush=True)
+        if host.run(['docker', 'stop', *[identifier for identifier, _, _, _ in mine]]).returncode:
+            raise AgentError('Docker did not stop the agent. Nothing else was changed.')
+    else:
+        print(f'Docker has no container under {entry["project"]}, so there was none to stop.', flush=True)
     found = containers_of(look(host), entry['project'])
     print(status_line('Container', ', '.join(f'{state} ({identifier})' for identifier, _, _, state in found)
                       or 'none'), flush=True)
-    if any(state in plow_agent.ACTIVE_STATES for _, _, _, state in found):
+    if found and any(state in plow_agent.ACTIVE_STATES for _, _, _, state in found):
         raise AgentError('Docker still reports this container as running after being asked to stop it. Nothing was '
                          f'deleted. Inspect it with docker ps --filter label=com.docker.compose.project={entry["project"]}.')
     print('Stopped. The line, the credential and the memory volume are kept. Start it again with '
@@ -494,13 +565,18 @@ def remove(host, args, person):
     folder = usable_folder(host, entry)
     world = look(host)
     found = containers_of(world, entry['project'])
-    if (folder / 'compose.yml').is_file():
-        guard(host, folder, entry['project'], fresh=False)  # Compose is about to be told to destroy something
+    usable, why = compose_route(host, folder, entry['project'])
+    if usable:
+        # Compose is about to be told to destroy something, so it only runs where Compose confirmed
+        # the project. Everywhere else the containers Docker listed are removed by their own ids.
+        plow_agent.guard_docker(False, run=host.run, folder=folder, environ=os.environ,
+                                record=folder / 'install.json')
         if host.compose('down', '--remove-orphans', cwd=folder).returncode:
             raise AgentError('Docker did not remove the agent. The output above shows why. This command cannot tell '
                              'you whether anything was removed before that failed; ./relay hosted status '
                              f'{entry["person"]} shows what Docker still has.')
     elif found:
+        print(by_identifier(folder, entry, why), flush=True)
         host.run(['docker', 'rm', '-f', *[identifier for identifier, _, _, _ in found]])
     if containers_of(look(host), entry['project']):
         raise AgentError(f'The Docker project {entry["project"]} still has a container after being asked to remove '
@@ -532,6 +608,14 @@ def remove(host, args, person):
     print(f'Removed {person}. Their Plow line {line_label(entry)} is still theirs on your Plow account: retire it '
           f'with plow-agents revoke {entry["line"]["uid"]} if you want it back.', flush=True)
     return 0
+
+
+def by_identifier(folder, entry, why):
+    """Why this command is going round Compose, said before it does."""
+    return (f'{folder} {why}. Docker was asked which containers it has labelled {entry["project"]}, and they are '
+            'being handled by their own ids, which cannot reach another project. Anything else Compose would have '
+            f'removed, such as this project\'s network, is untouched: docker network ls --filter '
+            f'name={entry["project"]} shows whether one is there.')
 
 
 def line_label(entry):

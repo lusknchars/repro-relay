@@ -106,6 +106,8 @@ class FakeDocker:
         self.logs = READY_LOG
         self.up = 0  # the exit code `compose up` gives
         self.ignore = ()  # compose subcommands Docker accepts and then does nothing about
+        self.speechless = False  # `docker compose config` cannot answer: no compose file, or a rejected one
+        self.down = False  # the daemon is not running, so every docker command fails
         self.refuse_volume_removal = ()
         self.limits_override = {}  # what Docker reports, when it is not what the compose file asked for
         self.next_id = 0
@@ -126,6 +128,13 @@ class FakeDocker:
 
     def run(self, command, cwd=None):
         self.commands.append((list(command), str(cwd) if cwd is not None else None))
+        if self.down:
+            return SimpleNamespace(returncode=1, stdout='')
+        if command[:2] == ['docker', 'stop']:
+            for item in self.containers:
+                if item['ID'] in command[2:]:
+                    item['State'] = 'exited'
+            return SimpleNamespace(returncode=0, stdout='\n'.join(command[2:]) + '\n')
         if command[:2] == ['docker', 'compose']:
             return self.composed(command[2:], cwd)
         if command[:2] == ['docker', 'ps']:
@@ -146,6 +155,8 @@ class FakeDocker:
             raise AssertionError(f'compose {arguments} ran in {cwd!r}, which is not a project folder')
         project = self.project_of(cwd)
         if arguments[:2] == ['config', '--format']:
+            if self.speechless or not (Path(cwd) / 'compose.yml').is_file():
+                return SimpleNamespace(returncode=1, stdout='')
             return SimpleNamespace(returncode=0, stdout=json.dumps({'name': project, 'services': {}}))
         if arguments[0] in self.ignore:
             return SimpleNamespace(returncode=0, stdout='')
@@ -796,20 +807,24 @@ class StopTests(unittest.TestCase):
         elsewhere = self.made.root / 'elsewhere'
         elsewhere.mkdir()
         (elsewhere / 'keep.txt').write_text('keep')
+        path = registry.registry_path(self.made.root)
+        written = path.read_bytes()  # the record as create wrote it, restored before each field
         for field, value in (('folder', str(elsewhere)), ('volume', 'some-other-volume'),
                              ('project', 'relay-hosted-someone-else')):
             with self.subTest(field=field):
-                path = registry.registry_path(self.made.root)
+                registry.write(path, registry.read(path))  # no op, to keep the folder private
+                path.write_bytes(written)
                 saved = registry.read(path)
+                self.assertEqual(saved['agents']['dana'][field], registry.read(path)['agents']['dana'][field])
                 saved['agents']['dana'][field] = value
                 registry.write(path, saved)
                 self.made.out, self.made.err = io.StringIO(), io.StringIO()
-                self.assertEqual(self.made.run('remove', person='dana', confirm='dana'), 1)
+                self.assertEqual(self.made.run('remove', person='dana', confirm='dana'), 2)
                 self.assertIn('does not match', self.made.said())
+                self.assertIn(repr(value), self.made.said())
                 self.assertTrue((elsewhere / 'keep.txt').is_file())
                 self.assertEqual(self.made.docker.volumes, ['relay-hosted-dana_agent-home'])
                 self.assertEqual(list(self.made.recorded()), ['dana'])
-                saved['agents']['dana'][field] = registry.read(path)['agents']['dana'][field]
 
     def test_stop_for_someone_without_an_agent_here_says_so(self):
         self.assertEqual(self.made.run('stop', person='dana'), 2)
@@ -1088,6 +1103,156 @@ class NoRealDockerTests(unittest.TestCase):
             with patch.object(made, 'host', lambda: plain), self.assertRaises(AssertionError) as escaped:
                 made.run('list')
         self.assertIn('docker', str(escaped.exception))
+
+
+class BrokenAgentTests(unittest.TestCase):
+    """Every state a broken agent can be in still has a route out, and none of them is blamed on an override.
+
+    A guard that cannot be satisfied is worse than the risk it was added for when what it blocks is
+    removing an agent the operator is paying for.
+    """
+
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.made = Creation(directory.name)
+        self.made.create_two()
+
+    def removes(self, person='dana'):
+        self.made.out, self.made.err = io.StringIO(), io.StringIO()
+        code = self.made.run('remove', person=person, confirm=person)
+        return code, self.made.said()
+
+    def gone(self, person='dana'):
+        """Everything of this person's is gone, and the other person still has everything."""
+        self.assertEqual(self.made.docker.of_project(f'relay-hosted-{person}'), [])
+        self.assertNotIn(f'relay-hosted-{person}_agent-home', self.made.docker.volumes)
+        self.assertFalse(self.made.folder(person).exists())
+        self.assertNotIn(person, self.made.recorded())
+        self.assertEqual(self.made.docker.volumes, ['relay-hosted-mel_agent-home'])
+        self.assertEqual(len(self.made.docker.of_project('relay-hosted-mel')), 1)
+        self.assertTrue((self.made.folder('mel') / 'plow-credentials').is_file())
+
+    def test_a_person_with_no_container_can_still_be_removed(self):
+        self.made.docker.containers = [item for item in self.made.docker.containers
+                                       if item['com.docker.compose.project'] != 'relay-hosted-dana']
+        code, said = self.removes()
+        self.assertEqual(code, 0)
+        self.assertIn('no container', said)
+        self.gone()
+
+    def test_a_person_whose_env_file_is_gone_can_still_be_removed(self):
+        # Compose then falls back to the folder basename, which is not an override and must not be called one.
+        (self.made.folder('dana') / '.env').unlink()
+        code, said = self.removes()
+        self.assertEqual(code, 0)
+        self.assertNotIn('COMPOSE_PROJECT_NAME', said)
+        self.gone()
+
+    def test_a_person_whose_compose_file_is_gone_can_still_be_removed(self):
+        (self.made.folder('dana') / 'compose.yml').unlink()
+        code, said = self.removes()
+        self.assertEqual(code, 0)
+        self.assertNotIn('COMPOSE_PROJECT_NAME', said)
+        self.gone()
+
+    def test_a_folder_left_half_deleted_can_still_be_removed(self):
+        # rmtree deletes in scandir order and can die partway, so .env can go and compose.yml stay.
+        # Before this, every rerun refused and told the operator to unset something that was not set.
+        (self.made.folder('dana') / '.env').unlink()
+        (self.made.folder('dana') / 'install.json').unlink()
+        code, said = self.removes()
+        self.assertEqual(code, 0)
+        self.gone()
+
+    def test_docker_that_is_not_running_is_named_as_that_and_nothing_is_forgotten(self):
+        self.made.docker.down = True
+        code, said = self.removes()
+        self.assertEqual(code, 1)
+        self.assertIn('Docker did not list its', said)
+        self.assertNotIn('COMPOSE_PROJECT_NAME', said)
+        self.assertEqual(sorted(self.made.recorded()), ['dana', 'mel'])
+        self.assertTrue(self.made.folder('dana').exists())
+
+    def test_compose_that_cannot_answer_is_never_reported_as_a_shell_override(self):
+        # The commonest failure of all is a Docker that is not running. Naming a confident wrong
+        # cause for it is the one thing this tool is least allowed to do.
+        self.made.docker.speechless = True
+        for action, extra in (('stop', {}), ('start', {}), ('remove', {'confirm': 'dana'})):
+            with self.subTest(action=action):
+                self.made.out, self.made.err = io.StringIO(), io.StringIO()
+                self.made.run(action, person='dana', **extra)
+                said = self.made.said()
+                self.assertNotIn('COMPOSE_PROJECT_NAME', said)
+                self.assertNotIn('would have reached', said)
+                # And no project is attributed to Compose either. Compose said nothing at all here,
+                # so a name reached for anywhere else is still a cause nobody observed.
+                self.assertIn('could not be read by Compose', said)
+                self.assertNotIn(' to Compose, not ', said)
+
+    def test_stop_still_works_when_compose_cannot_be_asked(self):
+        self.made.docker.speechless = True
+        self.made.out, self.made.err = io.StringIO(), io.StringIO()
+        self.assertEqual(self.made.run('stop', person='dana'), 0)
+        self.assertEqual(self.made.docker.of_project('relay-hosted-dana')[0]['State'], 'exited')
+        self.assertEqual(self.made.docker.of_project('relay-hosted-mel')[0]['State'], 'running')
+
+    def test_a_shell_override_is_still_refused_when_compose_can_answer(self):
+        # The fallback must not have become a way round the guard the Critical was about.
+        self.made.docker.environ = {'COMPOSE_PROJECT_NAME': 'relay-hosted-mel'}
+        code, said = self.removes()
+        self.assertEqual(code, 1)
+        self.assertIn("as 'relay-hosted-mel', not 'relay-hosted-dana'", said)
+        self.assertEqual(sorted(self.made.recorded()), ['dana', 'mel'])
+        self.assertEqual(len(self.made.docker.volumes), 2)
+
+    def test_start_says_what_it_could_not_confirm_rather_than_starting_anyway(self):
+        self.made.run('stop', person='dana')
+        self.made.docker.speechless = True
+        self.made.out, self.made.err = io.StringIO(), io.StringIO()
+        self.assertEqual(self.made.run('start', person='dana'), 1)
+        said = self.made.said()
+        self.assertIn('could not say', said)
+        self.assertIn('./relay hosted remove dana', said)
+        self.assertEqual(self.made.docker.of_project('relay-hosted-dana')[0]['State'], 'exited')
+
+
+class MovedCheckoutTests(unittest.TestCase):
+    """A record written when the repository was somewhere else. Reading about it must not be refused."""
+
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.made = Creation(directory.name)
+        self.made.create('dana', name='Dana Whitfield')
+        path = registry.registry_path(self.made.root)
+        saved = registry.read(path)
+        saved['agents']['dana']['folder'] = '/somewhere/else/.data/hosted/agents/dana'
+        registry.write(path, saved)
+        self.made.out, self.made.err = io.StringIO(), io.StringIO()
+
+    def test_status_reports_the_mismatch_instead_of_refusing_over_it(self):
+        self.assertEqual(self.made.run('status', person='dana'), 0)
+        said = self.made.said()
+        self.assertIn('/somewhere/else', said)
+        self.assertIn('relay-hosted-dana', said)
+        self.assertIn('does not match', said)
+
+    def test_list_reports_the_mismatch_too(self):
+        self.assertEqual(self.made.run('list'), 0)
+        self.assertIn('does not match', self.made.said())
+
+    def test_a_command_that_would_act_refuses_as_a_decision_and_names_the_fix(self):
+        for action, extra in (('stop', {}), ('start', {}), ('remove', {'confirm': 'dana'})):
+            with self.subTest(action=action):
+                self.made.out, self.made.err = io.StringIO(), io.StringIO()
+                self.assertEqual(self.made.run(action, person='dana', **extra), 2)
+                said = self.made.said()
+                self.assertIn('does not match', said)
+                self.assertIn(str(registry.registry_path(self.made.root)), said)
+                # Correcting the registry is not enough on its own, and the message has to say so.
+                self.assertIn('compose.yml', said)
+        self.assertEqual(list(self.made.recorded()), ['dana'])
 
 
 class DocumentationTests(unittest.TestCase):
