@@ -81,6 +81,13 @@ const groups = [
   "Research",
   "Planning",
 ] as const;
+// Plow Latch is a Mac application, so only macOS has the Mac actions. Anything
+// that does not report macOS is never told to open Latch to finish connecting.
+const mac = /\bMac/.test(navigator.userAgent);
+// Tauri rejects a command with the plain string its Rust side returned, so the
+// real reason is kept instead of being replaced with a generic one.
+const reason = (e: unknown) =>
+  typeof e === "string" && e.trim() ? e.trim() : errorText(e);
 type Plow = {
   line_name?: string;
   configured?: boolean;
@@ -343,6 +350,13 @@ export function SettingsPage({
                 that grant before importing reports or delivering an approved
                 update.
               </p>
+              {!mac && (
+                <p className="text-sm text-muted">
+                  Plow Latch runs on macOS only. From here you can authorize the
+                  line and text the agent from your phone. Mac actions, reading
+                  a file or running a command, need a Mac with Latch installed.
+                </p>
+              )}
               <div className="flex flex-wrap gap-2">
                 <Button
                   variant="default"
@@ -367,14 +381,17 @@ export function SettingsPage({
                           setNotice(
                             "Plow line verified. Latch launch requested.",
                           );
-                        } catch {
-                          setNotice(
-                            "Plow line verified. Open the installed Latch app to finish connecting this Mac.",
-                          );
+                        } catch (e) {
+                          // The native command says why. On a computer that is
+                          // not a Mac, that reason is the whole answer.
+                          setNotice("Plow line verified.");
+                          setError(`Latch did not open. ${reason(e)}`);
                         }
                       } else {
                         setNotice(
-                          "Plow line verified. Open Latch on your Mac to use desktop actions.",
+                          mac
+                            ? "Plow line verified. Open Latch on your Mac to use desktop actions."
+                            : "Plow line verified. Mac actions need a Mac with Latch installed.",
                         );
                       }
                     })

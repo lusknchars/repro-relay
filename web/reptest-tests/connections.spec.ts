@@ -139,9 +139,9 @@ test("one Plow action verifies the line and reports a failed native launch separ
   await page
     .getByRole("button", { name: "Connect Plow + Latch", exact: true })
     .click();
-  await expect(page.getByRole("status")).toContainText(
-    "Open the installed Latch app",
-  );
+  await expect(page.getByRole("alert")).toContainText("Latch is not installed");
+  await expect(page.getByRole("status")).toContainText("Plow line verified.");
+  await expect(page.getByRole("status")).not.toContainText("this Mac");
   await expect(
     page.getByRole("region", { name: "Connection details" }),
   ).toContainText("Fixture line");
@@ -246,4 +246,84 @@ test("new account opens a skippable team guide and Settings can replay it withou
   await expect(page).toHaveURL(/view=harness/);
   await expect(guide).not.toBeVisible();
   expect(writes).toBe(1);
+});
+
+const windows =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36";
+const receipt = {
+  grant_verified: true,
+  line_name: "Fixture line",
+  checked_at: "2026-09-14T12:00:00Z",
+  latch_advertised: false,
+};
+
+test.describe("on a computer that is not a Mac", () => {
+  test.use({ userAgent: windows });
+
+  test("the desktop app gives the native reason and never asks for a Mac to be finished", async ({
+    page,
+  }) => {
+    await page.exposeFunction("nativeRelay", async (command: string) => {
+      if (command === "account_request")
+        return {
+          status: 200,
+          body: { enabled: true, authenticated: false },
+          session_persistent: false,
+        };
+      // The exact string web/src-tauri/src/main.rs returns off macOS.
+      if (command === "open_plow_latch")
+        throw new Error("Plow Latch requires a Mac.");
+      throw new Error("Unexpected native command");
+    });
+    await page.addInitScript(() =>
+      Object.defineProperty(window, "__TAURI_INTERNALS__", {
+        value: {
+          invoke: (command: string) =>
+            (
+              window as unknown as {
+                nativeRelay: (command: string) => Promise<unknown>;
+              }
+            ).nativeRelay(command),
+        },
+      }),
+    );
+    await page.route("**/api/v1/connections/plow/connect", (r) =>
+      r.fulfill({ json: receipt }),
+    );
+    await page.goto("/?view=settings");
+    const details = page.getByRole("region", { name: "Connection details" });
+    await expect(details).toContainText("Plow Latch runs on macOS only");
+    await page
+      .getByRole("button", { name: "Connect Plow + Latch", exact: true })
+      .click();
+    await expect(page.getByRole("alert")).toContainText(
+      "Plow Latch requires a Mac.",
+    );
+    await expect(page.getByRole("status")).toHaveText("Plow line verified.");
+    await expect(details).toContainText("Fixture line");
+  });
+
+  test("the browser is told what it can do here, not to open Latch on its Mac", async ({
+    page,
+  }) => {
+    await page.route("**/api/v1/account", (r) =>
+      r.fulfill({ json: { enabled: true, authenticated: false } }),
+    );
+    await page.route("**/api/v1/connections/plow", (r) =>
+      r.fulfill({ json: { configured: true, grant_verified: false } }),
+    );
+    await page.route("**/api/v1/connections/plow/connect", (r) =>
+      r.fulfill({ json: receipt }),
+    );
+    await page.goto("/?view=settings");
+    await page
+      .getByRole("button", { name: "Connect Plow + Latch", exact: true })
+      .click();
+    const notice = page.getByRole("status");
+    await expect(notice).toContainText(
+      "Mac actions need a Mac with Latch installed.",
+    );
+    await expect(notice).not.toContainText("Open Latch on your Mac");
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  });
 });
