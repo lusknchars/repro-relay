@@ -5,6 +5,7 @@ and the format template it is actually given, so a command asking for the wrong 
 the wrong answer here too. Plow is faked at the same seam the installer's own tests use.
 """
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -27,8 +28,33 @@ import plow_agent
 import registry
 
 
+def setUpModule():
+    """No test in this module may start a process. Docker is the fake below, and there is no other."""
+    global NO_PROCESSES
+    NO_PROCESSES = patch.object(subprocess, 'run', side_effect=AssertionError('a test tried to run a process'))
+    NO_PROCESSES.start()
+
+
+def tearDownModule():
+    NO_PROCESSES.stop()
+
+
+def block(said, project):
+    """The one listed block naming this project, so an assertion cannot be satisfied by another person's."""
+    found = [part for part in said.split('\n\n') if project in part]
+    assert len(found) == 1, f'{project} appears in {len(found)} blocks'
+    return found[0]
+
+
 def line(uid, agent=None, number='+15550000000', name='Alder'):
     return {'uid': uid, 'agent_uid': agent, 'provider_key': number, 'display_name': name}
+
+
+def installed_agent(folder='/repo/agent', state='running'):
+    """The agent installed on this machine, under the Compose project the installer resolves for agent/."""
+    return {'ID': 'aaaaaaaaaaaa', 'Names': 'agent-agent-1', 'State': state,
+            'com.docker.compose.project': 'agent', 'com.docker.compose.service': 'agent',
+            'com.docker.compose.project.working_dir': folder}
 
 
 FIELD = re.compile(r'\{\{\s*(?:\.Label\s+"([^"]+)"|\.([\w.]+))\s*\}\}')
@@ -79,7 +105,9 @@ class FakeDocker:
         self.environ = {}  # COMPOSE_PROJECT_NAME in the shell, which overrides the one in a project's .env
         self.logs = READY_LOG
         self.up = 0  # the exit code `compose up` gives
+        self.ignore = ()  # compose subcommands Docker accepts and then does nothing about
         self.refuse_volume_removal = ()
+        self.limits_override = {}  # what Docker reports, when it is not what the compose file asked for
         self.next_id = 0
 
     # Compose resolves a project name from the shell, then the project folder's .env, then the folder name.
@@ -119,6 +147,8 @@ class FakeDocker:
         project = self.project_of(cwd)
         if arguments[:2] == ['config', '--format']:
             return SimpleNamespace(returncode=0, stdout=json.dumps({'name': project, 'services': {}}))
+        if arguments[0] in self.ignore:
+            return SimpleNamespace(returncode=0, stdout='')
         if arguments[:2] == ['up', '-d']:
             return self.started(project, cwd)
         if arguments[0] == 'logs':
@@ -146,14 +176,16 @@ class FakeDocker:
         for item in self.of_project(project):
             item['State'] = 'running'
             return SimpleNamespace(returncode=0, stdout='')
-        self.containers.append({
+        container = {
             'ID': f'{self.next_id:012x}', 'Names': f'{project}-agent-1', 'State': 'running',
             'com.docker.compose.project': project, 'com.docker.compose.service': 'agent',
             'com.docker.compose.project.working_dir': str(Path(cwd).resolve()),
             'HostConfig.NanoCpus': int(float(limits['cpus']) * 1_000_000_000) if 'cpus' in limits else 0,
             'HostConfig.Memory': as_bytes(limits['mem_limit']) if 'mem_limit' in limits else 0,
             'HostConfig.PidsLimit': int(limits['pids_limit']) if 'pids_limit' in limits else '<nil>',
-            'HostConfig.Privileged': limits.get('privileged', 'false')})
+            'HostConfig.Privileged': limits.get('privileged', 'false')}
+        container.update(self.limits_override)
+        self.containers.append(container)
         return SimpleNamespace(returncode=0, stdout='')
 
     def listed(self, arguments, records):
@@ -325,7 +357,7 @@ class CreationTests(unittest.TestCase):
 
     def test_the_handover_names_the_line_and_nothing_secret(self):
         self.made.create('dana', name='Dana Whitfield')
-        printed = self.made.printed()
+        printed = self.made.said()  # stderr as well, or a secret printed there would pass
         self.assertIn('+15550000000', printed)
         self.assertIn('Dana Whitfield', printed)
         for secret in ('agt_', 'PLOW_AGENT_TOKEN', 'acct_fixture_token'):
@@ -425,7 +457,7 @@ class CreationTests(unittest.TestCase):
         said = self.made.said()
         self.assertIn('It was left untouched', said)
         # The installer's own words name its own command, so the message says which one applies here.
-        self.assertIn('For this person the command is ./relay hosted create dana.', said)
+        self.assertIn('Here the command is ./relay hosted create dana', said)
 
     def test_a_project_name_in_the_shell_stops_the_create_before_anything_is_minted(self):
         self.made.docker.environ = {'COMPOSE_PROJECT_NAME': 'everyone'}
@@ -480,9 +512,14 @@ class CreationTests(unittest.TestCase):
         self.assertIn('max-size:', text)
 
     def test_create_reports_the_limits_docker_says_the_container_got(self):
+        # Docker's answer, not the compose file's request. The fake reports numbers the file never asked for,
+        # so a report built from LIMITS instead of from docker inspect cannot pass this.
+        self.made.docker.limits_override = {'HostConfig.NanoCpus': 500_000_000,
+                                            'HostConfig.Memory': 512 * 1024 ** 2, 'HostConfig.PidsLimit': 64}
         self.made.create('dana')
         printed = self.made.printed()
-        self.assertIn('Docker reports 1 CPU, 2048 MiB of memory, 512 processes, not privileged', printed)
+        self.assertIn('Docker reports 0.5 CPUs, 512 MiB of memory, 64 processes, not privileged', printed)
+        self.assertNotIn('2048 MiB', printed)
 
     def test_a_container_docker_gave_no_process_limit_is_reported_as_that(self):
         with patch.object(orchestrator, 'LIMITS', dict(orchestrator.LIMITS, processes=None)):
@@ -498,7 +535,11 @@ class CreationTests(unittest.TestCase):
         self.assertIn('Docker reports this container is privileged', self.made.printed())
 
     def test_nothing_secret_reaches_the_registry_file(self):
+        # Plow's own line payload carries more than the three fields kept, so put something in it
+        # that must not survive: writing the whole line dict through then fails this.
+        self.made.lines[0]['token'] = 'agt_line_secret'
         self.made.create('dana')
+        self.assertNotIn('agt_line_secret', registry.registry_path(self.made.root).read_text())
         saved = registry.registry_path(self.made.root).read_text()
         for secret in ('agt_', 'PLOW_AGENT_TOKEN', 'acct_'):
             with self.subTest(secret=secret):
@@ -527,11 +568,60 @@ class CreationTests(unittest.TestCase):
         self.assertEqual(self.made.logged_in, 0)
         self.assertTrue(self.made.signin.exists())
 
-    def test_a_create_leaves_no_sign_in_note_for_the_installed_agent_to_act_on(self):
-        # The note lives in the installed agent's own state, where ./relay agent would later read it.
+    def test_a_create_never_touches_the_installed_agents_sign_in_note_or_its_sign_in(self):
+        # Both tools used one note in the installed agent's own state, with no lock between them,
+        # so a hosted create could settle a sign in the installer had created and not been told about.
+        installers = self.made.root / '.data/agent/signin-created.sha256'
+        installers.parent.mkdir(parents=True)
+        digest = hashlib.sha256(self.made.signin.read_bytes()).hexdigest()
+        installers.write_text(digest + '\n')
+        self.assertEqual(self.made.create('dana'), 0)
+        self.assertEqual(installers.read_text(), digest + '\n')
+        self.assertTrue(self.made.signin.exists())
+
+    def test_a_create_settles_its_own_sign_in_note_and_leaves_none_behind(self):
         self.made.signin.unlink()
-        self.made.create('dana')
-        self.assertFalse((self.made.root / '.data/agent/signin-created.sha256').exists())
+        self.assertEqual(self.made.create('dana'), 0)
+        for note in ('signin-created.sha256', 'signin-replaced'):
+            with self.subTest(note=note):
+                self.assertFalse((self.made.root / '.data/hosted' / note).exists())
+                self.assertFalse((self.made.root / '.data/agent' / note).exists())
+
+    def test_a_message_naming_the_installed_agents_env_file_is_read_for_this_operator(self):
+        # A leftover volume makes the installer's guard say "Put a different COMPOSE_PROJECT_NAME
+        # in agent/.env". An operator who did that would repoint the installed agent, not this one.
+        self.made.docker.volumes.append('relay-hosted-dana_agent-home')
+        self.assertEqual(self.made.create('dana'), 1)
+        said = self.made.said()
+        self.assertIn('agent/.env', said)
+        self.assertIn(f'the folder is {self.made.folder()}', said)
+        self.assertIn('./relay hosted create dana', said)
+        self.assertEqual(self.made.minted, [])
+
+    def test_a_message_naming_the_installed_agents_folder_is_read_for_this_operator(self):
+        # A readiness timeout says "Inspect `docker compose logs agent` in agent/".
+        self.made.docker.logs = 'starting\n'
+        self.assertEqual(self.made.create('dana'), 1)
+        said = self.made.said()
+        self.assertIn('in agent/', said)
+        self.assertIn(f'the folder is {self.made.folder()}', said)
+
+    def test_a_message_of_this_tools_own_is_left_as_it_is(self):
+        self.assertEqual(self.made.create('Dana Whitfield'), 2)
+        self.assertNotIn('That wording comes from the installer', self.made.said())
+
+    def test_a_symlink_above_the_persons_folder_is_refused_too(self):
+        # Checking only the leaf let a symlinked agents folder put credentials outside .data,
+        # and let remove rmtree through it.
+        agents = self.made.root / '.data/hosted/agents'
+        elsewhere = self.made.root / 'elsewhere'
+        elsewhere.mkdir()
+        agents.parent.mkdir(parents=True)
+        agents.symlink_to(elsewhere, target_is_directory=True)
+        self.assertEqual(self.made.create('dana'), 1)
+        self.assertIn('symlink', self.made.said())
+        self.assertEqual(list(elsewhere.iterdir()), [])
+        self.assertEqual(self.made.minted, [])
 
     def test_docker_that_is_not_ready_stops_before_creating_anything(self):
         self.made.preflight = lambda: ['Start Docker Desktop and wait.']
@@ -572,10 +662,13 @@ class ListingTests(unittest.TestCase):
         self.made.docker.of_project('relay-hosted-mel')[0]['State'] = 'exited'
         code, said = self.listing()
         self.assertEqual(code, 0)
-        self.assertRegex(said, r'relay-hosted-dana(.|\n)*Container[. ]+running')
-        self.assertRegex(said, r'relay-hosted-mel(.|\n)*Container[. ]+exited')
-        self.assertIn('+15550000000', said)
-        self.assertIn('relay-hosted-dana_agent-home', said)
+        dana, mel = block(said, 'relay-hosted-dana'), block(said, 'relay-hosted-mel')
+        self.assertRegex(dana, r'Container[. ]+running')
+        self.assertNotIn('exited', dana)
+        self.assertRegex(mel, r'Container[. ]+exited')
+        self.assertNotIn('running', mel)
+        self.assertIn('+15550000000', dana)
+        self.assertIn('relay-hosted-dana_agent-home', dana)
 
     def test_a_record_whose_container_docker_does_not_have_is_named_as_a_disagreement(self):
         self.made.create('dana')
@@ -597,6 +690,17 @@ class ListingTests(unittest.TestCase):
         code, said = self.listing()
         self.assertIn('runs from /somewhere/else', said)
 
+    def test_a_container_docker_has_is_reported_even_when_the_registry_is_empty(self):
+        # The registry being gone is when it is most likely to be wrong, so this is when Docker
+        # most needs asking. Returning the empty line before looking skipped exactly that case.
+        self.made.create('dana')
+        registry.registry_path(self.made.root).unlink()
+        code, said = self.listing()
+        self.assertEqual(code, 0)
+        self.assertIn('No hosted agents are recorded here', said)
+        self.assertIn('relay-hosted-dana', said)
+        self.assertIn('not recorded here', said)
+
     def test_a_hosted_container_docker_has_that_is_not_recorded_here_is_reported(self):
         self.made.create('dana')
         self.made.docker.containers.append({
@@ -614,11 +718,13 @@ class ListingTests(unittest.TestCase):
 
     def test_status_shows_one_person_and_the_limits_docker_reports(self):
         self.made.create_two()
+        self.made.docker.of_project('relay-hosted-dana')[0].update(
+            {'HostConfig.NanoCpus': 2_000_000_000, 'HostConfig.Memory': 256 * 1024 ** 2, 'HostConfig.PidsLimit': 99})
         code, said = self.listing('status', person='dana')
         self.assertEqual(code, 0)
         self.assertIn('relay-hosted-dana', said)
         self.assertNotIn('relay-hosted-mel', said)
-        self.assertIn('Docker reports 1 CPU, 2048 MiB of memory, 512 processes, not privileged', said)
+        self.assertIn('Docker reports 2 CPUs, 256 MiB of memory, 99 processes, not privileged', said)
 
     def test_status_for_someone_without_an_agent_here_says_so(self):
         code, said = self.listing('status', person='dana')
@@ -654,15 +760,56 @@ class StopTests(unittest.TestCase):
     def test_stop_says_so_when_docker_still_reports_the_container_running(self):
         self.made.create('dana')
         self.made.out, self.made.err = io.StringIO(), io.StringIO()
-        with patch.object(self.made.docker, 'composed',
-                          side_effect=lambda arguments, cwd: SimpleNamespace(returncode=0, stdout='')):
-            self.assertEqual(self.made.run('stop', person='dana'), 1)
+        self.made.docker.ignore = ('stop',)  # Docker takes the command and the container keeps running
+        self.assertEqual(self.made.run('stop', person='dana'), 1)
         self.assertIn('Docker still reports this container as running', self.made.said())
 
     def test_stop_only_touches_that_persons_project(self):
         self.made.create_two()
-        self.made.run('stop', person='dana')
+        self.assertEqual(self.made.run('stop', person='dana'), 0)
+        self.assertEqual(self.made.docker.of_project('relay-hosted-dana')[0]['State'], 'exited')
         self.assertEqual(self.made.docker.of_project('relay-hosted-mel')[0]['State'], 'running')
+
+    def test_a_project_name_in_the_shell_cannot_make_stop_reach_another_project(self):
+        # Compose reads COMPOSE_PROJECT_NAME from the shell before the .env in the project folder,
+        # so without a guard `compose stop` in dana's folder stops whatever the shell names.
+        self.made.create_two()
+        self.made.docker.environ = {'COMPOSE_PROJECT_NAME': 'relay-hosted-mel'}
+        self.assertEqual(self.made.run('stop', person='dana'), 1)
+        self.assertEqual(self.made.docker.of_project('relay-hosted-mel')[0]['State'], 'running')
+        self.assertEqual(self.made.docker.of_project('relay-hosted-dana')[0]['State'], 'running')
+        self.assertIn("as 'relay-hosted-mel', not 'relay-hosted-dana'", self.made.said())
+
+    def test_a_project_name_in_the_shell_cannot_make_stop_reach_the_installed_agent(self):
+        self.made.create('dana')
+        self.made.docker.containers.append(installed_agent())
+        self.made.docker.environ = {'COMPOSE_PROJECT_NAME': 'agent'}
+        self.made.out, self.made.err = io.StringIO(), io.StringIO()
+        self.assertEqual(self.made.run('stop', person='dana'), 1)
+        self.assertEqual(self.made.docker.of_project('agent')[0]['State'], 'running')
+        self.assertIn("as 'agent', not 'relay-hosted-dana'", self.made.said())
+
+    def test_a_record_naming_another_folder_or_volume_is_refused_rather_than_obeyed(self):
+        # The registry is a file. Nothing downstream should treat a path or a volume name in it as
+        # authority to delete, so both are derived again from the identifier and compared.
+        self.made.create('dana')
+        elsewhere = self.made.root / 'elsewhere'
+        elsewhere.mkdir()
+        (elsewhere / 'keep.txt').write_text('keep')
+        for field, value in (('folder', str(elsewhere)), ('volume', 'some-other-volume'),
+                             ('project', 'relay-hosted-someone-else')):
+            with self.subTest(field=field):
+                path = registry.registry_path(self.made.root)
+                saved = registry.read(path)
+                saved['agents']['dana'][field] = value
+                registry.write(path, saved)
+                self.made.out, self.made.err = io.StringIO(), io.StringIO()
+                self.assertEqual(self.made.run('remove', person='dana', confirm='dana'), 1)
+                self.assertIn('does not match', self.made.said())
+                self.assertTrue((elsewhere / 'keep.txt').is_file())
+                self.assertEqual(self.made.docker.volumes, ['relay-hosted-dana_agent-home'])
+                self.assertEqual(list(self.made.recorded()), ['dana'])
+                saved['agents']['dana'][field] = registry.read(path)['agents']['dana'][field]
 
     def test_stop_for_someone_without_an_agent_here_says_so(self):
         self.assertEqual(self.made.run('stop', person='dana'), 2)
@@ -706,6 +853,7 @@ class StartTests(unittest.TestCase):
         self.made.run('stop', person='dana')
         self.made.run('stop', person='mel')
         self.assertEqual(self.made.run('start', person='dana'), 0)
+        self.assertEqual(self.made.docker.of_project('relay-hosted-dana')[0]['State'], 'running')
         self.assertEqual(self.made.docker.of_project('relay-hosted-mel')[0]['State'], 'exited')
 
     def test_start_for_someone_without_an_agent_here_says_so(self):
@@ -743,8 +891,11 @@ class RemovalTests(unittest.TestCase):
 
     def test_remove_says_the_plow_line_is_not_released(self):
         code, said = self.remove()
+        self.assertEqual(code, 2)
         self.assertIn('ln_1', said)
         self.assertIn('plow-agents revoke', said)
+        self.assertEqual(sorted(self.made.recorded()), ['dana', 'mel'])
+        self.assertEqual(len(self.made.docker.volumes), 2)
 
     def test_a_mismatched_confirmation_deletes_nothing(self):
         code, said = self.remove(confirm='mel')
@@ -781,9 +932,8 @@ class RemovalTests(unittest.TestCase):
         self.assertTrue(self.made.folder('dana').exists())
 
     def test_a_container_that_survives_the_removal_keeps_the_volume_and_the_record(self):
-        with patch.object(self.made.docker, 'composed',
-                          side_effect=lambda arguments, cwd: SimpleNamespace(returncode=0, stdout='')):
-            code, said = self.remove(confirm='dana')
+        self.made.docker.ignore = ('down',)  # Docker takes the command and the container is still there
+        code, said = self.remove(confirm='dana')
         self.assertEqual(code, 1)
         self.assertIn('still has a container', said)
         self.assertEqual(sorted(self.made.recorded()), ['dana', 'mel'])
@@ -800,6 +950,49 @@ class RemovalTests(unittest.TestCase):
         code, said = self.remove(person='nobody', confirm='nobody')
         self.assertEqual(code, 2)
         self.assertIn('nobody has no agent recorded here', said)
+
+    def test_a_project_name_in_the_shell_cannot_make_remove_reach_another_project(self):
+        # The worst case: compose down in dana's folder destroying whatever the shell names instead.
+        self.made.docker.environ = {'COMPOSE_PROJECT_NAME': 'relay-hosted-mel'}
+        code, said = self.remove(confirm='dana')
+        self.assertEqual(code, 1)
+        self.assertIn("as 'relay-hosted-mel', not 'relay-hosted-dana'", said)
+        self.assertEqual(sorted(item['com.docker.compose.project'] for item in self.made.docker.containers),
+                         ['relay-hosted-dana', 'relay-hosted-mel'])
+        self.assertEqual(len(self.made.docker.volumes), 2)
+        self.assertEqual(sorted(self.made.recorded()), ['dana', 'mel'])
+
+    def test_a_shell_override_cannot_make_remove_destroy_the_installed_agent(self):
+        self.made.docker.containers.append(installed_agent())
+        self.made.docker.environ = {'COMPOSE_PROJECT_NAME': 'agent'}
+        code, said = self.remove(confirm='dana')
+        self.assertEqual(code, 1)
+        self.assertIn("as 'agent', not 'relay-hosted-dana'", said)
+        self.assertEqual(len(self.made.docker.of_project('agent')), 1)
+        self.assertEqual(sorted(self.made.recorded()), ['dana', 'mel'])
+
+    def test_a_shell_override_is_caught_even_when_this_person_has_no_container(self):
+        # The state a create that failed at `up` leaves behind, which is where the README sends
+        # the operator to remove from, and where every check keyed on this project passes vacuously.
+        self.made.docker.containers = [item for item in self.made.docker.containers
+                                       if item['com.docker.compose.project'] != 'relay-hosted-dana']
+        self.made.docker.environ = {'COMPOSE_PROJECT_NAME': 'relay-hosted-mel'}
+        code, said = self.remove(confirm='dana')
+        self.assertEqual(code, 1)
+        self.assertIn("as 'relay-hosted-mel', not 'relay-hosted-dana'", said)
+        self.assertEqual([item['com.docker.compose.project'] for item in self.made.docker.containers],
+                         ['relay-hosted-mel'])
+        self.assertEqual(sorted(self.made.recorded()), ['dana', 'mel'])
+
+    def test_a_folder_that_lost_its_compose_file_can_still_be_removed(self):
+        wanted = self.made.docker.of_project('relay-hosted-dana')[0]['ID']
+        (self.made.folder('dana') / 'compose.yml').unlink()
+        code, said = self.remove(confirm='dana')
+        self.assertEqual(code, 0)
+        self.assertEqual([command for command, _ in self.made.docker.commands if command[:3] == ['docker', 'rm', '-f']],
+                         [['docker', 'rm', '-f', wanted]])
+        self.assertEqual(list(self.made.recorded()), ['mel'])
+        self.assertFalse(self.made.folder('dana').exists())
 
     def test_a_folder_that_is_already_gone_still_removes_the_container_by_its_own_id(self):
         wanted = self.made.docker.of_project('relay-hosted-dana')[0]['ID']
@@ -871,8 +1064,17 @@ class CommandLineTests(unittest.TestCase):
                     cli.main(argv)
 
     def test_no_relay_api_call_is_needed_to_run_a_hosted_command(self):
-        with patch.object(cli, 'API', side_effect=AssertionError('hosted reached for the Relay API')):
-            self.reaching(['hosted', 'list'])
+        # The real tool runs here. Patching run_hosted out would have tested the parser and nothing else.
+        with tempfile.TemporaryDirectory() as directory:
+            made = Creation(directory)
+            made.create('dana')
+            built = made.host()
+            with patch.object(cli, 'API', side_effect=AssertionError('hosted reached for the Relay API')), \
+                    patch.object(orchestrator, 'Host', lambda: built), \
+                    patch.object(plow_agent, 'trust_certifi', lambda: None), \
+                    contextlib.redirect_stdout(io.StringIO()) as printed:
+                self.assertEqual(cli.main(['hosted', 'list']), 0)
+        self.assertIn('relay-hosted-dana', printed.getvalue())
 
 
 class NoRealDockerTests(unittest.TestCase):

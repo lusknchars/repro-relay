@@ -112,10 +112,11 @@ def write(path, data):
 
 
 def private_folder(path):
-    """Create a folder and its missing parents owner only, and keep this tool's own folders that way.
+    """Create a folder and its missing parents owner only, and keep this one owner only on every write.
 
-    A folder that was already there is left alone: .data holds the installed agent's state too,
-    and this tool does not change what it did not create.
+    Folders above it that were already there are left as they are: .data holds the installed agent's
+    state too, and this tool does not change the modes of a folder it did not create. The folder named
+    here is this tool's own, so a loosened one is made private again rather than used as it is.
     """
     path = Path(path)
     missing = [folder for folder in (path, *path.parents) if not folder.exists()]

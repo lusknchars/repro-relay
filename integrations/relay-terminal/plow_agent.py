@@ -1181,13 +1181,17 @@ def announce_line(line):
     print(f'Line .............. {line.get("display_name") or line["uid"]} {line.get("provider_key") or ""}', flush=True)
 
 
-def credential_for_new_line(args, path=None, command='./relay agent'):
+def credential_for_new_line(args, path=None, command='./relay agent', marker=None):
     """Sign in when needed, choose a free line and mint its credential. Returns the line.
 
     The credential is the installed agent's unless another agent's own path is named. Whichever it is,
     ensure_credential still refuses to write over a credential that belongs to another line.
+
+    marker is where a sign in this run creates is noted, so that whoever created it settles it. It is
+    this installer's own note unless a caller keeping its own state passes another.
     """
     path = path or CREDENTIAL
+    marker = marker or signin_marker()
     client = official()
     try:
         token = client['account_token'](SimpleNamespace(token_file=None))
@@ -1195,7 +1199,7 @@ def credential_for_new_line(args, path=None, command='./relay agent'):
         token = None
     if token is None or args.new_line:
         print('Plow sign-in ...... follow the activation text below', flush=True)
-        with noting_signin(signin_path(), signin_marker()):
+        with noting_signin(signin_path(), marker):
             client['login'](SimpleNamespace(api_base=ORIGIN, token_file=None, new_line=args.new_line))
         token = client['account_token'](SimpleNamespace(token_file=None))
     line = choose_line(client['account_lines'](ORIGIN, token), lambda options: ask_for_line(options, command),

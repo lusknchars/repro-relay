@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -12,6 +13,17 @@ HOSTED = Path(__file__).resolve().parent
 sys.path[:0] = [str(HOSTED), str(HOSTED.parent / 'integrations/relay-terminal')]
 import plow_agent
 import registry
+
+
+def setUpModule():
+    """No test in this module may start a process. The registry is files and nothing else."""
+    global NO_PROCESSES
+    NO_PROCESSES = patch.object(subprocess, 'run', side_effect=AssertionError('a test tried to run a process'))
+    NO_PROCESSES.start()
+
+
+def tearDownModule():
+    NO_PROCESSES.stop()
 
 
 class IdentifierTests(unittest.TestCase):

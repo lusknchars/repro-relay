@@ -43,9 +43,10 @@ and you name one with `--line`. `--new-line` asks Plow to provision one. Creatin
 twice mints nothing: it says what already exists and stops.
 
 `create` signs you in to Plow when it has to, and takes that sign in off this machine again when
-it finishes, exactly as the installer does, so an account token does not sit here between runs. If
-you are creating several agents in a row, run `plow-agents login` yourself first. Every create then
-reuses that sign in and none of them removes it.
+it finishes, exactly as the installer does, so an account token does not sit here between runs. It
+only ever removes a sign in it created itself. If you are creating several agents in a row, run
+`plow-agents login` yourself first. Every create then reuses that sign in and none of them removes
+it.
 
 `stop` keeps everything: the line, the credential and the memory volume. `start` brings that same
 agent back on the line it already has. Stopping is meant to be undone, which is why `start` exists
@@ -68,7 +69,17 @@ Every statement about a container comes from asking Docker at that moment. `list
 say what Docker reports and name every place the record and Docker disagree: a record with no
 container, a container running from another folder, a missing memory volume, a hosted container
 Docker has that this machine has no record of. Reconciling them silently is the failure this
-product exists to avoid.
+product exists to avoid. `list` asks Docker even when the registry is empty, because an empty
+registry is when it is most likely to be wrong.
+
+A record is not authority either. The folder, the project and the volume in it are derived again
+from the identifier before anything is stopped or deleted, and a record that does not match is
+refused rather than obeyed. Nothing hands a path out of a file to `rmtree` or a volume name out of
+a file to `docker volume rm`.
+
+Before running Compose in a person's folder, every command checks that Compose resolves the project
+it expects there. `COMPOSE_PROJECT_NAME` in your shell beats the one written in that folder, so
+without that check a `stop` or a `remove` would reach whatever your shell names.
 
 ## Limits
 
@@ -113,6 +124,7 @@ table above as evidence: read what `status` prints.
 | --- | --- |
 | `.data/hosted/registry.json` | The record of who has an agent here. Owner only. |
 | `.data/hosted/agents/<person>/` | That person's folder: their compose file, their project name, their credential. Owner only. |
+| `.data/hosted/signin-created.sha256` | A note of a sign in a create made, so that the same create can remove it. |
 | `.data/hosted/hosted.log` | Unexpected failures, with every token on this host removed. |
 
 `.data` is outside version control.
@@ -126,9 +138,15 @@ line, the same readiness check. What is added here is that every agent gets a fo
 a credential and a volume of its own.
 
 Because those parts were written for the agent you install on your own machine, some of their
-messages name `./relay agent`. When one of those reaches you here, the tool says so underneath and
-names the command that applies to this person instead. Following `./relay agent` would install an
-agent in `agent/` on this machine, which is not the agent you asked about.
+messages name the installer's command or the installer's folder: `./relay agent`, `agent/.env`, or
+`in agent/`. When one of those reaches you here, the tool passes it on as it is and then says
+underneath which command and which folder apply to this person. Following the message as written
+would install or repoint the agent in `agent/` on this machine, which is not the agent you asked
+about.
+
+The two tools keep their sign in notes apart. `create` notes a sign in it made in
+`.data/hosted/`, never in the installed agent's `.data/agent/`, so a hosted create can never settle
+a sign in that `./relay agent` created and is relying on.
 
 Run the tests with `python3 -m unittest discover -s hosted -p 'test_*.py'`. They never run Docker
 and never reach Plow.

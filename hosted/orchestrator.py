@@ -30,7 +30,8 @@ import registry
 
 ROOT = Path(__file__).resolve().parents[1]
 IMAGE = 'repro-relay-agent:local'
-INSTALLER = './relay agent'
+# What a message has to say for it to be the installer talking about its own agent rather than this one.
+INSTALLER = ('./relay agent', 'agent/.env', 'in agent/')
 
 # Every hosted container is limited, from the first one. One person's loop must not take the
 # host down for everybody else's. These are ceilings, not reservations: an idle agent uses
@@ -157,7 +158,8 @@ def create(host, args, person):
         plow_agent.announce_line(line)
         print(status_line('Credential', 'reused'), flush=True)
     else:
-        line = plow_agent.credential_for_new_line(args, credential, command=f'./relay hosted create {person}')
+        line = plow_agent.credential_for_new_line(args, credential, command=f'./relay hosted create {person}',
+                                                  marker=hosted_marker(host))
 
     # Recorded before the container starts. The line is minted and billable from here on, whether
     # or not Docker manages to start anything, so losing the record would lose a line somebody pays for.
@@ -179,10 +181,10 @@ def create(host, args, person):
     plow_agent.remember_install(folder / 'install.json', project, folder)
     await_ready(host, folder)
     report_limits(host, containers_of(look(host), project), folder)
-    # A sign in this run created is taken off the machine again, exactly as the installer does. Leaving it
-    # would leave an account token here, and leave a note in the installed agent's own state that ./relay
-    # agent would later act on. Sign in yourself with plow-agents login and every create reuses that instead.
-    plow_agent.settle_signin(plow_agent.signin_path(), plow_agent.signin_marker(), minted=not resuming)
+    # A sign in this run created is taken off the machine again, exactly as the installer does, through
+    # this tool's own note rather than the installer's. Sign in yourself with plow-agents login and every
+    # create reuses that one instead, and none of them removes it.
+    plow_agent.settle_signin(plow_agent.signin_path(), hosted_marker(host), minted=not resuming)
     print(f'\nGive {args.name or person} this number: {line.get("provider_key") or line["uid"]}', flush=True)
     print('They text it to talk to their agent. Nothing is installed on their computer.', flush=True)
     print(f'Next: ./relay hosted status {person}, ./relay hosted stop {person}', flush=True)
@@ -209,7 +211,7 @@ def start(host, args):
     remove the person and create them again, which would mint and bill a second line.
     """
     entry = required(host, args.person)
-    folder = running_folder(entry)
+    folder = running_folder(host, entry)
     if not (folder / 'plow-credentials').is_file():
         raise AgentError(f'The folder recorded for {entry["person"]}, {folder}, holds no credential, so there is no '
                          'agent to start there. ./relay hosted status ' + entry['person'] + ' shows what is left of it.')
@@ -230,13 +232,25 @@ def already_here(known):
             f'line was minted. Use ./relay hosted status {known["person"]} to see what Docker says about it.')
 
 
+def unlinked(root, folder):
+    """folder, once no part of the path from root down to it is a symlink.
+
+    Checking the last part only was not enough: a symlinked agents folder would put every person's
+    credential somewhere nobody chose, and would let remove delete through it.
+    """
+    folder = Path(folder)
+    parts = folder.relative_to(root).parts
+    for depth in range(1, len(parts) + 1):
+        part = root.joinpath(*parts[:depth])
+        if part.is_symlink():
+            raise AgentError(f'{part} is a symlink. This tool will not follow one, because that would put this '
+                             "person's folder somewhere nobody chose. Nothing was changed. Inspect it yourself.")
+    return folder
+
+
 def prepare(host, person, project):
     """The person's own folder, holding what Compose reads: the project name and the service."""
-    folder = registry.folder_for(host.root, person)
-    if folder.is_symlink():
-        raise AgentError(f'{folder} is a symlink. This tool will not follow one, because that would put this '
-                         "person's credential somewhere else. Nothing was created. Inspect it yourself.")
-    folder = registry.private_folder(folder)
+    folder = registry.private_folder(unlinked(host.root, registry.folder_for(host.root, person)))
     write_private(folder / '.env', f'COMPOSE_PROJECT_NAME={project}\n')
     write_private(folder / 'compose.yml', COMPOSE_FILE.format(
         person=person, context=host.root / 'agent', image=IMAGE, limits=limit_lines(LIMITS),
@@ -270,14 +284,15 @@ def guard(host, folder, project, fresh):
     Two agents under one Compose project would share one memory volume and one credential, which is
     exactly what these guards exist to prevent.
     """
-    resolved, reused = plow_agent.guard_docker(fresh, run=host.run, folder=folder, environ=os.environ,
-                                               record=folder / 'install.json')
+    # Asked first, and on its own, because it is the precise diagnosis. The installer's own guards
+    # would also refuse a shell override, but they would describe it as somebody else's agent.
+    resolved = plow_agent.compose_project(host.run, folder, os.environ)
     if resolved != project:
         raise AgentError(f'Compose resolves the project in {folder} as {resolved!r}, not {project!r}. '
-                         'COMPOSE_PROJECT_NAME in this shell overrides the one written in that folder, and two '
-                         'hosted agents under one project would share one memory volume. Unset it, then run this '
-                         'command again.')
-    return reused
+                         'COMPOSE_PROJECT_NAME in this shell overrides the one written in that folder, so this '
+                         f'command would have reached {resolved!r} instead. Unset it, then run this command again.')
+    return plow_agent.guard_docker(fresh, run=host.run, folder=folder, environ=os.environ,
+                                   record=folder / 'install.json')[1]
 
 
 def observed_limits(host, container):
@@ -334,7 +349,8 @@ def report_limits(host, found, folder, label='Limits', indent=''):
         return
     summary, problems = limits_report(observed_limits(host, found[0][0]), folder)
     if summary:
-        print(status_line(label, summary), flush=True)
+        named = f'{summary}, for {found[0][0]}' if len(found) > 1 else summary
+        print(status_line(label, named), flush=True)
     for text in problems:
         print(indent + text, flush=True)
 
@@ -342,14 +358,12 @@ def report_limits(host, found, folder, label='Limits', indent=''):
 def show(host, person=None):
     """What exists here, and what Docker says about each one. Where they disagree, both are said."""
     recorded = registry.read(host.registry())['agents']
-    if person is not None:
-        wanted = {person: required(host, person)}
-    elif not recorded:
-        print('No hosted agents are recorded here. Create one with ./relay hosted create <identifier>.', flush=True)
-        return 0
-    else:
-        wanted = recorded
+    wanted = {person: required(host, person)} if person is not None else recorded
+    # Docker is asked before anything is printed, including when the registry is empty. An empty
+    # registry is when it is most likely to be wrong, so it is the last moment to stop looking.
     world = look(host)
+    if person is None and not recorded:
+        print('No hosted agents are recorded here. Create one with ./relay hosted create <identifier>.', flush=True)
     for entry in wanted.values():
         describe(host, entry, world, limits=person is not None)
     for text in unrecorded(recorded, world):
@@ -409,24 +423,41 @@ def unrecorded(recorded, world):
 
 
 def required(host, person):
-    entry = registry.find(host.registry(), registry.safe_identifier(person))
+    person = registry.safe_identifier(person)
+    entry = registry.find(host.registry(), person)
     if entry is None:
         raise DecisionNeeded(f'{person} has no agent recorded here, so nothing was changed. ./relay hosted list '
                              'shows the agents this host created.')
+    return rederived(host, entry, person)
+
+
+def rederived(host, entry, person):
+    """The record, once its folder, project and volume are the ones this person's identifier derives here.
+
+    The registry is a file. A folder in it is about to be deleted with rmtree and a volume name in it is
+    about to be handed to docker volume rm, so neither is taken on the file's word.
+    """
+    project = registry.project_name(person)
+    expected = {'project': project, 'volume': registry.volume_name(project),
+                'folder': str(registry.folder_for(host.root, person))}
+    wrong = [f'{key} {entry.get(key)!r}, where {person} on this host has {value!r}'
+             for key, value in expected.items() if entry.get(key) != value]
+    if wrong:
+        raise AgentError(f'The record for {person} does not match what its identifier derives on this host: '
+                         + '; '.join(wrong) + '. Nothing was changed. A record says what this tool did, and this '
+                         'one was written somewhere else or edited by hand. Inspect '
+                         f'{host.registry()}.')
     return entry
 
 
-def usable_folder(entry):
-    folder = Path(entry['folder'])
-    if folder.is_symlink():
-        raise AgentError(f'The folder recorded for {entry["person"]}, {folder}, is a symlink. This tool will not '
-                         'follow one, so nothing was changed. Inspect it yourself.')
-    return folder
+def usable_folder(host, entry):
+    """The person's folder, refused when any part of the path to it is a symlink."""
+    return unlinked(host.root, entry['folder'])
 
 
-def running_folder(entry):
+def running_folder(host, entry):
     """The folder Compose has to be run in, refused when it is not one."""
-    folder = usable_folder(entry)
+    folder = usable_folder(host, entry)
     if not folder.is_dir():
         raise AgentError(f'The folder recorded for {entry["person"]}, {folder}, is gone, so Compose cannot be run '
                          'there. ./relay hosted list shows what Docker still has under that project.')
@@ -436,7 +467,8 @@ def running_folder(entry):
 def stop(host, args):
     """Stop one person's container. Everything else is kept."""
     entry = required(host, args.person)
-    folder = running_folder(entry)
+    folder = running_folder(host, entry)
+    guard(host, folder, entry['project'], fresh=False)  # before Compose runs anywhere near another project
     if host.compose('stop', cwd=folder).returncode:
         raise AgentError('Docker did not stop the agent. The output above shows why. Nothing else was changed.')
     found = containers_of(look(host), entry['project'])
@@ -459,19 +491,25 @@ def remove(host, args, person):
     entry = required(host, person)
     if args.confirm != person:
         raise DecisionNeeded(removal_plan(entry, mismatched=args.confirm is not None))
-    folder = usable_folder(entry)
+    folder = usable_folder(host, entry)
     world = look(host)
     found = containers_of(world, entry['project'])
-    if folder.is_dir():
+    if (folder / 'compose.yml').is_file():
+        guard(host, folder, entry['project'], fresh=False)  # Compose is about to be told to destroy something
         if host.compose('down', '--remove-orphans', cwd=folder).returncode:
-            raise AgentError('Docker did not remove the agent. The output above shows why. Nothing was deleted.')
+            raise AgentError('Docker did not remove the agent. The output above shows why. This command cannot tell '
+                             'you whether anything was removed before that failed; ./relay hosted status '
+                             f'{entry["person"]} shows what Docker still has.')
     elif found:
         host.run(['docker', 'rm', '-f', *[identifier for identifier, _, _, _ in found]])
     if containers_of(look(host), entry['project']):
         raise AgentError(f'The Docker project {entry["project"]} still has a container after being asked to remove '
-                         'it, so nothing was deleted. Inspect it with docker ps -a --filter '
-                         f'label=com.docker.compose.project={entry["project"]}.')
-    print(status_line('Container', 'removed'), flush=True)
+                         'it. The volume, the folder and the record were kept. Inspect it with docker ps -a '
+                         f'--filter label=com.docker.compose.project={entry["project"]}.')
+    if found:
+        print(status_line('Container', 'removed (' + ', '.join(row[0] for row in found) + ')'), flush=True)
+    else:
+        print(f'Docker had no container under {entry["project"]}, so there was none to remove.', flush=True)
 
     if entry['volume'] in world['volumes']:
         if host.run(['docker', 'volume', 'rm', entry['volume']]).returncode:
@@ -487,7 +525,9 @@ def remove(host, args, person):
 
     if folder.is_dir():
         shutil.rmtree(folder)
-    print(status_line('Folder', f'{folder} deleted'), flush=True)
+        print(status_line('Folder', f'{folder} deleted'), flush=True)
+    else:
+        print(f'There was no folder at {folder}, so there was none to delete.', flush=True)
     registry.forget(host.registry(), person)
     print(f'Removed {person}. Their Plow line {line_label(entry)} is still theirs on your Plow account: retire it '
           f'with plow-agents revoke {entry["line"]["uid"]} if you want it back.', flush=True)
@@ -509,6 +549,15 @@ def removal_plan(entry, mismatched):
             f'with plow-agents revoke {entry["line"]["uid"]} if you want it back.\n'
             f'Repeat the identifier to confirm: ./relay hosted remove {entry["person"]} '
             f'--confirm {entry["person"]}').lstrip()
+
+
+def hosted_marker(host):
+    """Where a hosted create notes a sign in it made.
+
+    Its own note, not the installed agent's. Both tools can run at once, they lock different files,
+    and a note in the other tool's state is a sign in the other tool may be relying on.
+    """
+    return host.registry().parent / 'signin-created.sha256'
 
 
 def hosted_tokens(host):
@@ -537,16 +586,19 @@ def record_failure(host, error, path):
         log.write(f'=== {datetime.now(timezone.utc):%Y-%m-%dT%H:%M:%SZ} ===\n{text}\n')
 
 
-def installer_wording(message, command):
-    """plow_agent speaks in the installed agent's command, because that is the agent it was written for.
+def installer_wording(message, command, folder=None):
+    """plow_agent speaks in the installed agent's command and the installed agent's folder.
 
-    An operator here who followed it would install an agent in agent/ on this machine rather than touch the one
-    they asked about, so the message is passed on as it is and then read for them.
+    An operator here who followed it would install an agent in agent/, or edit agent/.env, and in both
+    cases would be changing the agent installed on this machine rather than the one they asked about.
+    The message is passed on as it is and then read for them.
     """
-    if INSTALLER not in message:
+    if not any(marker in message for marker in INSTALLER):
         return message
-    return (f'{message}\nThat wording comes from the installer this tool reuses. {INSTALLER} installs an agent in '
-            f'agent/ on this machine. For this person the command is {command}.')
+    where = f', and the folder is {folder}' if folder else ''
+    return (f'{message}\nThat wording comes from the installer this tool reuses, which speaks in its own command '
+            'and its own folder. ./relay agent installs an agent in agent/ on this machine, and agent/.env belongs '
+            f'to that agent rather than to this person. Here the command is {command}{where}.')
 
 
 def run_hosted(args, host=None):
@@ -554,6 +606,10 @@ def run_hosted(args, host=None):
     person_named = getattr(args, 'person', None)
     command = f'./relay hosted {action} {person_named}' if person_named else f'./relay hosted {action}'
     host = host or Host()
+    folder = None
+    if person_named:
+        with contextlib.suppress(AgentError):
+            folder = registry.folder_for(host.root, registry.safe_identifier(person_named))
     try:
         plow_agent.trust_certifi()  # before any Plow call
         if action == 'list':
@@ -569,7 +625,7 @@ def run_hosted(args, host=None):
         with plow_agent.exit_on_sigterm(), plow_agent.installation_lock(state / 'hosted.lock'):
             return create(host, args, person) if action == 'create' else remove(host, args, person)
     except AgentError as error:
-        print(installer_wording(str(error), command), file=sys.stderr, flush=True)
+        print(installer_wording(str(error), command, folder), file=sys.stderr, flush=True)
         return error.code
     except KeyboardInterrupt:
         print('Stopped before finishing. Run the command again; it continues from what is already there.',
