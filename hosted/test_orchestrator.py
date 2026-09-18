@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import shutil
 import stat
+import subprocess
 import sys
 import tempfile
 from types import SimpleNamespace
@@ -205,6 +206,17 @@ class Creation:
         self.verified = None  # what identity() says about an existing credential, or an exception to raise
         self.out, self.err = io.StringIO(), io.StringIO()
 
+    @staticmethod
+    def no_processes(command, **options):
+        raise AssertionError(f'A test tried to run {command}')
+
+    @staticmethod
+    def record_failure(host, error, path, record=orchestrator.record_failure):
+        """run_hosted logs unexpected failures; a tripwire (AssertionError) must reach the test instead."""
+        if isinstance(error, AssertionError):
+            raise error
+        return record(host, error, path)
+
     def official(self):
         return {'account_token': self.account_token, 'login': self.login,
                 'account_lines': lambda base, token: self.lines, 'mint': self.mint}
@@ -254,6 +266,9 @@ class Creation:
             for name, value in fakes.items():
                 stack.enter_context(patch.object(plow_agent, name, value))
             stack.enter_context(patch.object(plow_agent, 'ROOT', self.root))
+            # Nothing here may reach a real process. Docker is the fake above, and there is no other.
+            stack.enter_context(patch.object(subprocess, 'run', self.no_processes))
+            stack.enter_context(patch.object(orchestrator, 'record_failure', self.record_failure))
             stack.enter_context(patch.dict(os.environ, dict(self.docker.environ,
                                                             XDG_CONFIG_HOME=str(self.root / 'config')), clear=False))
             if not self.docker.environ.get('COMPOSE_PROJECT_NAME'):
@@ -858,6 +873,19 @@ class CommandLineTests(unittest.TestCase):
     def test_no_relay_api_call_is_needed_to_run_a_hosted_command(self):
         with patch.object(cli, 'API', side_effect=AssertionError('hosted reached for the Relay API')):
             self.reaching(['hosted', 'list'])
+
+
+class NoRealDockerTests(unittest.TestCase):
+    """The fake is the only Docker these tests have. This proves it, rather than trusting it."""
+
+    def test_a_command_that_escaped_the_fake_would_fail_the_test(self):
+        with tempfile.TemporaryDirectory() as directory:
+            made = Creation(directory)
+            made.create('dana')  # so that listing has somebody to ask Docker about
+            plain = orchestrator.Host(root=made.root, now=lambda: 'now')  # a host with the real Docker
+            with patch.object(made, 'host', lambda: plain), self.assertRaises(AssertionError) as escaped:
+                made.run('list')
+        self.assertIn('docker', str(escaped.exception))
 
 
 class DocumentationTests(unittest.TestCase):

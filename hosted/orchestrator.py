@@ -178,7 +178,7 @@ def create(host, args, person):
                          'are recorded, so running this command again continues with them.')
     plow_agent.remember_install(folder / 'install.json', project, folder)
     await_ready(host, folder)
-    report_limits(host, project, folder)
+    report_limits(host, containers_of(look(host), project), folder)
     # A sign in this run created is taken off the machine again, exactly as the installer does. Leaving it
     # would leave an account token here, and leave a note in the installed agent's own state that ./relay
     # agent would later act on. Sign in yourself with plow-agents login and every create reuses that instead.
@@ -217,7 +217,7 @@ def start(host, args):
     if host.compose('up', '-d', cwd=folder).returncode:
         raise AgentError('Docker could not start the agent. The output above shows why. Nothing was changed.')
     await_ready(host, folder)
-    report_limits(host, entry['project'], folder)
+    report_limits(host, containers_of(look(host), entry['project']), folder)
     print(f'Started. Text {entry["line"].get("provider_key") or entry["line"]["uid"]} to reach it.', flush=True)
     return 0
 
@@ -328,8 +328,8 @@ def asked_for(key, written, folder):
     return f' The compose file in {folder} asks for {written}: {LIMITS[key]}.' if LIMITS.get(key) is not None else ''
 
 
-def report_limits(host, project, folder, label='Limits', indent=''):
-    found = containers_of(look(host), project)
+def report_limits(host, found, folder, label='Limits', indent=''):
+    """Print what Docker says this container got, rather than what the compose file asked for."""
     if not found:
         return
     summary, problems = limits_report(observed_limits(host, found[0][0]), folder)
@@ -372,12 +372,8 @@ def describe(host, entry, world, limits=False):
     print(status_line('  Created', entry['created']), flush=True)
     for text in disagreements(entry, found, world):
         print('  ' + text, flush=True)
-    if limits and found:
-        summary, problems = limits_report(observed_limits(host, found[0][0]), entry['folder'])
-        if summary:
-            print(status_line('  Limits', summary), flush=True)
-        for text in problems:
-            print('  ' + text, flush=True)
+    if limits:
+        report_limits(host, found, entry['folder'], label='  Limits', indent='  ')
 
 
 def disagreements(entry, found, world):
