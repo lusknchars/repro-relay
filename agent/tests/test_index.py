@@ -30,10 +30,11 @@ class IndexWrapper(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     index.credentials(path)
                 private_files.protect(path)
-            link = Path(folder) / 'link'
-            link.symlink_to(path)
-            with self.assertRaises((OSError, ValueError)):  # ELOOP here, a refusal by name on Windows
-                index.credentials(link)
+            if symlinks_available():  # needs SeCreateSymbolicLinkPrivilege on Windows
+                link = Path(folder) / 'link'
+                link.symlink_to(path)
+                with self.assertRaises((OSError, ValueError)):  # ELOOP here, a refusal by name on Windows
+                    index.credentials(link)
 
     def test_credentials_reject_wrong_origin_and_duplicates(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -8,7 +8,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from fake_windows import windows_host
+from fake_windows import symlinks_available, windows_host
+import private_files
 
 spec = importlib.util.spec_from_file_location('relay_terminal', pathlib.Path(__file__).with_name('cli.py'))
 cli = importlib.util.module_from_spec(spec)
@@ -118,10 +119,12 @@ class TerminalTests(unittest.TestCase):
             self.assertEqual((repo / 'code.txt').read_text(), 'original')
             with self.assertRaises(ValueError): cli.prepare_worktree(plan, repo)
             self.assertEqual(cli.git(repo, 'rev-parse', 'HEAD'), base)
-            # A symlink destination must not be followed.
-            plan['id'] = 'FIX-2'
-            (worktree.parent / 'FIX-2').symlink_to(repo, target_is_directory=True)
-            with self.assertRaises(ValueError): cli.prepare_worktree(plan, repo)
+            # A symlink destination must not be followed. Creating one needs
+            # SeCreateSymbolicLinkPrivilege on Windows, which a host may not grant.
+            if symlinks_available():
+                plan['id'] = 'FIX-2'
+                (worktree.parent / 'FIX-2').symlink_to(repo, target_is_directory=True)
+                with self.assertRaises(ValueError): cli.prepare_worktree(plan, repo)
 
     def test_plan_freezes_observed_base_without_running_tests(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -162,11 +165,11 @@ class OutputEncodingTests(unittest.TestCase):
             self.assertEqual(stream.asked, [{'encoding': 'utf-8', 'errors': 'replace'}])
             self.assertEqual(stream.encoding, 'utf-8')
 
-    def test_nothing_is_reconfigured_on_this_host(self):
+    def test_this_host_is_reconfigured_only_if_it_needs_to_be(self):
         out = self.Console()
         with patch.object(cli.sys, 'stdout', out):
             cli.readable_output()
-        self.assertEqual(out.asked, [])
+        self.assertEqual(bool(out.asked), private_files.windows())
 
     def test_a_stream_that_cannot_be_reconfigured_is_left_alone(self):
         with windows_host(), patch.object(cli.sys, 'stdout', io.StringIO()):

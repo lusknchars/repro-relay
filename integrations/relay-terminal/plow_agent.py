@@ -175,7 +175,8 @@ def remember_install(record, name, folder):
     particular computer.
     """
     record.parent.mkdir(parents=True, exist_ok=True)
-    with os.fdopen(os.open(record, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w') as output:
+    with os.fdopen(os.open(record, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w',
+                   encoding='utf-8', newline='') as output:
         json.dump({'project': name, 'agent_dir': str(Path(folder).resolve()),
                    'platform': host_platform()}, output)
     protect_or_stop(record)
@@ -484,6 +485,9 @@ def trust_certifi():
 def official():
     """The pinned official client, verified before use."""
     if not CLIENT.is_file():
+        # Before the download, not only before Plow: a Windows Python often has no issuer for
+        # GitHub's certificate until a bundle is pointed at, and this is the first HTTPS call.
+        trust_certifi()
         CLIENT.parent.mkdir(parents=True, exist_ok=True)
         try:
             with urllib.request.urlopen(CLIENT_URL, timeout=60) as response:
@@ -532,7 +536,7 @@ def windows_write_private(path, body):
         protect_or_stop(directory)
     descriptor, temporary = tempfile.mkstemp(dir=directory, prefix='.plow-agents.', suffix='.new')
     try:
-        with os.fdopen(descriptor, 'w', encoding='utf-8') as handle:
+        with os.fdopen(descriptor, 'w', encoding='utf-8', newline='') as handle:
             protect_or_stop(temporary)
             handle.write(body)
         private_files.replace_atomically(temporary, destination)
@@ -1226,7 +1230,10 @@ def replaced_flag(marker):
 def remember_signin(marker, digest, replaced):
     """Record a sign-in this run's activation wrote, so a later successful run can remove exactly that file."""
     marker.parent.mkdir(parents=True, exist_ok=True)
-    with os.fdopen(os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w') as output:
+    # newline='' everywhere this writes: Windows text mode would turn the \n into \r\n, and
+    # a digest file written there would then differ from the same digest written anywhere else.
+    with os.fdopen(os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w',
+                   encoding='utf-8', newline='') as output:
         output.write(digest + '\n')
     protect_or_stop(marker)
     if replaced:
@@ -1361,7 +1368,8 @@ def record_failure(error, path):
     for token in plow_tokens():
         text = text.replace(token, '[token removed]')
     path.parent.mkdir(parents=True, exist_ok=True)
-    with os.fdopen(os.open(path, os.O_CREAT | os.O_APPEND | os.O_WRONLY, 0o600), 'a', encoding='utf-8') as log:
+    with os.fdopen(os.open(path, os.O_CREAT | os.O_APPEND | os.O_WRONLY, 0o600), 'a',
+                   encoding='utf-8', newline='') as log:
         log.write(f'=== {datetime.now(timezone.utc):%Y-%m-%dT%H:%M:%SZ} ===\n{text}\n')
     private_files.protect(path)
 

@@ -50,7 +50,9 @@ class AnyHostTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.directory = Path(self.temporary.name)
         self.file = self.directory / 'credential'
-        self.file.write_text('PLOW_AGENT_TOKEN=agt_fixture_token\n')
+        # write_bytes, because these are compared as bytes: a text write turns the \n into
+        # \r\n on Windows and the fixture stops being what the test says it is.
+        self.file.write_bytes(b'PLOW_AGENT_TOKEN=agt_fixture_token\n')
 
     def test_protect_raises_and_never_returns_quietly_when_it_cannot(self):
         with self.assertRaises(private_files.PrivacyError) as error:
@@ -59,9 +61,9 @@ class AnyHostTests(unittest.TestCase):
 
     def test_replace_atomically_moves_the_finished_file_into_place(self):
         source, target = self.directory / 'new', self.directory / 'credential'
-        source.write_text('replacement\n')
+        source.write_bytes(b'replacement\n')
         private_files.replace_atomically(source, target)
-        self.assertEqual(target.read_text(), 'replacement\n')
+        self.assertEqual(target.read_bytes(), b'replacement\n')
         self.assertFalse(source.exists())
 
     def test_a_replace_that_cannot_happen_names_both_paths(self):
@@ -86,7 +88,7 @@ class PosixPrivacyTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.directory = Path(self.temporary.name)
         self.file = self.directory / 'credential'
-        self.file.write_text('PLOW_AGENT_TOKEN=agt_fixture_token\n')
+        self.file.write_bytes(b'PLOW_AGENT_TOKEN=agt_fixture_token\n')
 
     def test_protect_sets_owner_only_modes_and_is_private_agrees(self):
         self.file.chmod(0o644)
@@ -149,7 +151,7 @@ class WindowsPrivacyTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.directory = Path(self.temporary.name)
         self.file = self.directory / 'plow-credentials'
-        self.file.write_text('PLOW_AGENT_TOKEN=agt_fixture_token\n')
+        self.file.write_bytes(b'PLOW_AGENT_TOKEN=agt_fixture_token\n')
 
     def test_a_file_chmod_left_alone_is_not_private_and_protect_makes_it_so(self):
         with windows_host() as windows:
@@ -157,13 +159,27 @@ class WindowsPrivacyTests(unittest.TestCase):
             self.assertEqual(windows.principals(self.file),
                              ['NT AUTHORITY\\SYSTEM', 'BUILTIN\\Administrators', 'OWNER RIGHTS'])
             self.assertFalse(private_files.is_private(self.file))
+            windows.calls.clear()
             private_files.protect(self.file)
-            self.assertEqual(windows.calls[-2],
-                             ['icacls', str(self.file), '/inheritance:r', '/grant:r', 'runneradmin:F'])
-            self.assertEqual(windows.calls[-1], ['icacls', str(self.file)])  # protect reads back what it did
+            # The grant, the one entry the grant cannot reach because /inheritance:r only
+            # removes inherited ones, and then a look at what all of that actually left.
+            self.assertEqual(windows.calls, [
+                ['icacls', str(self.file), '/inheritance:r', '/grant:r', 'runneradmin:F'],
+                ['icacls', str(self.file), '/remove:g', '*S-1-3-4'],
+                ['icacls', str(self.file)]])
             self.assertEqual(windows.principals(self.file),
                              ['runneradmin', 'NT AUTHORITY\\SYSTEM', 'BUILTIN\\Administrators'])
             self.assertTrue(private_files.is_private(self.file))
+
+    def test_a_folder_is_granted_so_what_is_made_inside_it_is_yours_too(self):
+        folder = self.directory / 'state'
+        folder.mkdir()
+        with windows_host() as windows:
+            windows.calls.clear()
+            private_files.protect(folder)
+            self.assertEqual(windows.calls[0],
+                             ['icacls', str(folder), '/inheritance:r', '/grant:r', 'runneradmin:(OI)(CI)F'])
+            self.assertTrue(private_files.is_private(folder))
 
     def test_chmod_alone_never_makes_a_windows_file_private(self):
         with windows_host():
@@ -196,7 +212,7 @@ class WindowsPrivacyTests(unittest.TestCase):
             with self.assertRaises(private_files.PrivacyError) as error:
                 private_files.protect(self.file)
             self.assertEqual(windows.calls[0][2:], ['/inheritance:r', '/grant:r', 'runneradmin:F'])
-            self.assertEqual(windows.calls[1], ['icacls', str(self.file)])
+            self.assertEqual(windows.calls[-1], ['icacls', str(self.file)])  # it read back what it did
             self.assertFalse(private_files.is_private(self.file))
         self.assertIn(str(self.file), str(error.exception))
         self.assertIn('icacls', str(error.exception))
@@ -237,23 +253,23 @@ class WindowsPrivacyTests(unittest.TestCase):
 
     def test_a_replace_retries_while_another_process_holds_the_file(self):
         source = self.directory / 'plow-credentials.new'
-        source.write_text('minted\n')
+        source.write_bytes(b'minted\n')
         with windows_host(), patch.object(private_files.time, 'sleep') as pause, \
                 held_by_another_process(self.file, times=2):
             private_files.replace_atomically(source, self.file)
         self.assertEqual(pause.call_count, 2)
-        self.assertEqual(self.file.read_text(), 'minted\n')
+        self.assertEqual(self.file.read_bytes(), b'minted\n')
 
     def test_a_file_held_for_good_stops_with_something_the_owner_can_act_on(self):
         source = self.directory / 'plow-credentials.new'
-        source.write_text('minted\n')
+        source.write_bytes(b'minted\n')
         with windows_host(), patch.object(private_files.time, 'sleep'), \
                 held_by_another_process(self.file, times=private_files.REPLACE_ATTEMPTS):
             with self.assertRaises(private_files.PrivacyError) as error:
                 private_files.replace_atomically(source, self.file)
         self.assertIn(str(self.file), str(error.exception))
         self.assertIn('holding it', str(error.exception))
-        self.assertEqual(self.file.read_text(), 'PLOW_AGENT_TOKEN=agt_fixture_token\n')
+        self.assertEqual(self.file.read_bytes(), b'PLOW_AGENT_TOKEN=agt_fixture_token\n')
 
 
 class UnsupportedHostTests(unittest.TestCase):
@@ -261,7 +277,11 @@ class UnsupportedHostTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'credential'
             path.write_text('x')
-            with patch.object(sys, 'platform', 'unknown-host'), patch.object(os, 'name', 'unknown'):
+            # private_files.posix rather than os.name: pathlib picks its path class from
+            # os.name, so patching that would hand every later Path the wrong kind and the
+            # message would name the file with the other separator.
+            with patch.object(sys, 'platform', 'unknown-host'), \
+                    patch.object(private_files, 'posix', lambda: False):
                 with self.assertRaises(private_files.PrivacyError) as error:
                     private_files.protect(path)
                 self.assertFalse(private_files.is_private(path))

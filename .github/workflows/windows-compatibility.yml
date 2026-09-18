@@ -66,7 +66,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m pip install --quiet pyyaml
+      # certifi as well as pyyaml: a Windows Python has no issuer for GitHub's certificate
+      # until a bundle is pointed at it, and the contract tests download the pinned client.
+      - run: python -m pip install --quiet pyyaml certifi
       - name: The command runs the way a Windows terminal types it
         run: python relay agent --help > /dev/null
       - name: The installer suite passes on Windows

@@ -21,7 +21,9 @@ class LedgerTests(unittest.TestCase):
         self.root = self.directory / 'checkout'
         self.root.mkdir()
         self.file = self.root / 'code.txt'
-        self.file.write_text('first\nsecond\nthird\n')
+        # newline='' throughout: the ledger returns a file's bytes, so a fixture written in
+        # text mode on Windows would hold \r\n and stop being what these tests assert.
+        self.file.write_text('first\nsecond\nthird\n', newline='')
         self.database = self.directory / 'state' / 'ledger.sqlite3'
         self.anchor = {'plan': 'FIX-1', 'base': 'observed-fixture-base'}
         self.ledger = Ledger(self.root, self.database, self.anchor)
@@ -36,7 +38,7 @@ class LedgerTests(unittest.TestCase):
         self.assertEqual(self.ledger.read('code.txt', 1, 3, [first['receipt_id']])['decision'], 'allow')
         self.assertEqual(self.ledger.read('code.txt', 1, 2, ['LED-unknown'])['decision'], 'allow')
         # An external editor changes bytes, even if the requested lines match.
-        self.file.write_text('first\nsecond\nchanged\n')
+        self.file.write_text('first\nsecond\nchanged\n', newline='')
         fresh = self.ledger.read('code.txt', 1, 2, [first['receipt_id']])
         self.assertEqual(fresh['decision'], 'allow')
         self.assertEqual(fresh['request']['change_counter'], 1)
@@ -46,12 +48,12 @@ class LedgerTests(unittest.TestCase):
 
     def test_state_detects_external_change_deletion_and_restore(self):
         first = self.ledger.read('code.txt')
-        original = self.file.read_text()
+        original = self.file.read_bytes()
         self.file.write_text('external change')
         self.assertFalse(self.ledger.inform()['observations'][0]['fresh'])
         self.file.unlink()
         self.assertIsNone(self.ledger.inform()['observed_files']['code.txt']['sha256'])
-        self.file.write_text(original)
+        self.file.write_bytes(original)
         state = self.ledger.inform()
         self.assertEqual(state['observed_change_count'], 3)
         self.assertFalse(state['runtime_hook_connected'])
@@ -73,13 +75,16 @@ class LedgerTests(unittest.TestCase):
 
     def test_failed_oversized_binary_and_unsafe_reads_are_not_recorded(self):
         outside = self.directory / 'outside'; outside.write_text('outside')
-        (self.root / 'link').symlink_to(outside)
-        (self.root / 'folder-link').symlink_to(self.directory, target_is_directory=True)
         (self.root / 'binary').write_bytes(b'binary\0data')
         (self.root / 'large').write_bytes(b'a' * (MAX_FILE + 1))
         (self.root / 'long-line').write_text('a' * 65537)
         (self.root / 'invalid-utf8').write_bytes(b'\xff')
-        for path in ('../outside', '/etc/passwd', '.git/config', 'link', 'folder-link/outside', 'binary', 'large', 'long-line', 'missing', 'invalid-utf8', 'code.txt/..'):
+        refused = ['../outside', '/etc/passwd', '.git/config', 'binary', 'large', 'long-line', 'missing', 'invalid-utf8', 'code.txt/..']
+        if symlinks_available():  # creating one needs SeCreateSymbolicLinkPrivilege on Windows
+            (self.root / 'link').symlink_to(outside)
+            (self.root / 'folder-link').symlink_to(self.directory, target_is_directory=True)
+            refused += ['link', 'folder-link/outside']
+        for path in refused:
             with self.subTest(path=path), self.assertRaises((ValueError, OSError)):
                 self.ledger.read(path)
         self.assertEqual(self.ledger.inform()['records'], 0)
@@ -90,6 +95,8 @@ class LedgerTests(unittest.TestCase):
 
     def test_storage_cannot_be_inside_checkout_or_follow_symlinks(self):
         with self.assertRaises(ValueError): Ledger(self.root, self.root / 'state.db', self.anchor)
+        if not symlinks_available():  # SeCreateSymbolicLinkPrivilege is not granted here
+            return
         link = self.directory / 'link'; link.symlink_to(self.database.parent, target_is_directory=True)
         with self.assertRaises(ValueError): Ledger(self.root, link / 'other.db', self.anchor)
         link_file = self.database.parent / 'link.db'; link_file.symlink_to(self.database)
@@ -187,9 +194,9 @@ class WindowsLedgerTests(unittest.TestCase):
         self.directory = pathlib.Path(self.temporary.name).resolve()
         self.root = self.directory / 'checkout'
         self.root.mkdir()
-        (self.root / 'code.txt').write_text('first\nsecond\nthird\n')
+        (self.root / 'code.txt').write_text('first\nsecond\nthird\n', newline='')
         (self.root / 'src').mkdir()
-        (self.root / 'src/deep.txt').write_text('deep\n')
+        (self.root / 'src/deep.txt').write_text('deep\n', newline='')
         self.database = self.directory / 'state' / 'ledger.sqlite3'
         self.anchor = {'plan': 'FIX-1', 'base': 'observed-fixture-base'}
 

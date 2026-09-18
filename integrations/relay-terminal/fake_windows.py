@@ -10,7 +10,9 @@ Measured on that runner, and reproduced here:
   os.chmod(path, 0o600) leaves mode 0o666, and icacls still lists
     NT AUTHORITY\\SYSTEM:(F), BUILTIN\\Administrators:(F) and OWNER RIGHTS:(F)
   icacls <path> /inheritance:r /grant:r <USERNAME>:F exits 0 and leaves that user,
-    SYSTEM and Administrators
+    SYSTEM and Administrators, and OWNER RIGHTS with them: /inheritance:r removes the
+    inherited entries and OWNER RIGHTS is explicit, so it outlives the grant until it is
+    removed by its own SID
   os.O_NOFOLLOW, os.geteuid, os.getuid and os.fchmod do not exist, and
     os.open is not in os.supports_dir_fd
   replacing a file another process holds raises PermissionError [WinError 32]
@@ -49,10 +51,15 @@ class FakeWindows:
         return self.access.get(os.fspath(path), list(self.INHERITED))
 
     def listing(self, path):
-        """What `icacls <path>` prints: the first account on the path's line, the rest indented."""
+        """What `icacls <path>` prints: the first account on the path's line, the rest indented.
+
+        A folder's entries carry the inheritance flags as well as the rights, which is the
+        shape the parser has to survive.
+        """
+        rights = '(OI)(CI)(F)' if os.path.isdir(path) else '(F)'
         accounts = self.principals(path)
-        rows = [f'{path} {accounts[0]}:(F)'] if accounts else [path]
-        rows += [' ' * (len(path) + 1) + f'{account}:(F)' for account in accounts[1:]]
+        rows = [f'{path} {accounts[0]}:{rights}'] if accounts else [path]
+        rows += [' ' * (len(path) + 1) + f'{account}:{rights}' for account in accounts[1:]]
         return '\n'.join(rows) + '\n\nSuccessfully processed 1 files; Failed processing 0 files\n'
 
     def run(self, command, **options):
@@ -63,6 +70,14 @@ class FakeWindows:
             return self.fallback(command, **options)
         self.calls.append(command)
         path = command[1]
+        if command[2:3] == ['/remove:g']:
+            removed = {'*S-1-3-4': 'OWNER RIGHTS'}.get(command[3])
+            if removed is None:
+                raise AssertionError(f'A faked Windows was asked to remove an account it does not know: {command}')
+            if self.applies:
+                self.access[os.fspath(path)] = [name for name in self.principals(path) if name != removed]
+            return subprocess.CompletedProcess(
+                command, 0, f'processed file: {path}\nSuccessfully processed 1 files; Failed processing 0 files\n', '')
         if not os.path.exists(path):
             return subprocess.CompletedProcess(
                 command, 1, 'Successfully processed 0 files; Failed processing 1 files\n',
@@ -77,18 +92,24 @@ class FakeWindows:
                 command, 1332, 'Successfully processed 0 files; Failed processing 1 files\n',
                 f'{path}: No mapping between account names and security IDs was done.\n')
         if self.applies:
-            self.access[os.fspath(path)] = [granted, 'NT AUTHORITY\\SYSTEM', 'BUILTIN\\Administrators']
+            self.access[os.fspath(path)] = [granted, 'NT AUTHORITY\\SYSTEM', 'BUILTIN\\Administrators',
+                                            'OWNER RIGHTS']
         return subprocess.CompletedProcess(
             command, 0, f'processed file: {path}\nSuccessfully processed 1 files; Failed processing 0 files\n', '')
 
     @staticmethod
     def granted(command):
-        """The account an `/inheritance:r /grant:r <account>:F` call names, or None for any other call."""
+        """The account an `/inheritance:r /grant:r <account>:<rights>` call names, or None otherwise.
+
+        A folder is granted (OI)(CI)F so that what is made inside it belongs to that account
+        too; a file is granted F. Anything else is not a call this answers.
+        """
         if '/inheritance:r' not in command or '/grant:r' not in command:
             return None
         grant = command[command.index('/grant:r') + 1]
         account, separator, rights = grant.rpartition(':')
-        return account if separator and rights == 'F' else None
+        wanted = '(OI)(CI)F' if os.path.isdir(command[1]) else 'F'
+        return account if separator and rights == wanted else None
 
 
 def symlinks_available():

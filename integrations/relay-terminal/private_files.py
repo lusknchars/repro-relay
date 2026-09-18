@@ -24,6 +24,11 @@ EXECUTABLE_MODE = 0o700
 # Every Windows file carries these two, and removing them is neither possible nor useful:
 # SYSTEM is the operating system itself and Administrators can take ownership regardless.
 WINDOWS_ALWAYS_PRESENT = ('NT AUTHORITY\\SYSTEM', 'BUILTIN\\ADMINISTRATORS')
+# OWNER RIGHTS grants whoever owns the file, so it is not this account by name and is not
+# accepted as one. /inheritance:r removes inherited entries and this one is explicit, so it
+# outlives the grant and has to be removed by hand. Its well known SID rather than its name:
+# the name is localised and this has to work in any language.
+OWNER_RIGHTS = '*S-1-3-4'
 SHARING_VIOLATION = 32  # WinError 32: another process is still holding the file
 REPLACE_ATTEMPTS = 5
 REPLACE_PAUSE = 0.2
@@ -42,6 +47,16 @@ class PrivacyError(ValueError):
 def windows():
     """Whether this host decides file access with ACLs rather than with mode bits."""
     return sys.platform == 'win32'
+
+
+def posix():
+    """Whether this host decides file access with mode bits.
+
+    A function rather than a bare os.name check at each site, because a test that wants the
+    third case, a host that can do neither, cannot patch os.name: pathlib picks its path
+    class from it, so patching it hands every later Path the wrong kind.
+    """
+    return os.name == 'posix'
 
 
 def host_platform():
@@ -112,13 +127,20 @@ def protect(path, executable=False):
     """
     path = Path(path)
     if windows():
-        result = icacls(str(path), '/inheritance:r', '/grant:r', account_name() + ':F')
+        # A folder grants (OI)(CI) as well, which is what 0700 means there: what the owner
+        # makes inside it is theirs too. Without it a new file inherits nothing at all.
+        rights = '(OI)(CI)F' if path.is_dir() else 'F'
+        result = icacls(str(path), '/inheritance:r', '/grant:r', f'{account_name()}:{rights}')
         if result.returncode != 0:
             detail = (result.stderr or result.stdout or '').strip().replace('\n', ' ')
             raise PrivacyError(f'{path} could not be locked to your account: {detail or "icacls failed"}. '
                                'Check that you own it and that the folder it is in allows a permission '
                                'change, then run this again.')
-    elif os.name != 'posix':
+        # Then the one entry the grant cannot reach. Its exit code is not acted on, because
+        # the read back below is what decides whether this worked; on a path that never had
+        # it, this is a no op.
+        icacls(str(path), '/remove:g', OWNER_RIGHTS)
+    elif not posix():
         raise PrivacyError(f'{path} cannot be made private on this computer, so nothing that depends on it '
                            'was written. Run this on macOS, Linux or Windows.')
     else:
@@ -133,7 +155,24 @@ def protect(path, executable=False):
                            'private, so nothing that depends on it was written. A drive that cannot keep '
                            'one account apart from another does this, such as a memory stick or a network '
                            f'share. Keep it on your own drive, or run {how_to_protect(path)} and check the '
-                           'result before running this again.')
+                           f'result before running this again.{access_report(path)}')
+
+
+def access_report(path):
+    """What the host said about a path, for a refusal that has to be acted on remotely.
+
+    Empty on POSIX, where the mode in the message is the whole story. On Windows it carries
+    the listing icacls actually printed, because otherwise a host that disagrees with this
+    code gives no way to tell which of the two is wrong.
+    """
+    if not windows():
+        return ''
+    try:
+        result = icacls(str(Path(path)))
+    except PrivacyError:
+        return ' icacls could not be run to say what access it has.'
+    listing = ' '.join(result.stdout.split())
+    return f' icacls exited {result.returncode} and reported: {listing[:400]}'
 
 
 def how_to_protect(path):
@@ -187,7 +226,7 @@ def is_private(path, info=None):
         return bool(principals) and all(
             principal in allowed or principal == user or principal.rsplit('\\', 1)[-1] == user
             for principal in principals)
-    if os.name != 'posix':
+    if not posix():
         return False
     if info is None:
         info = os.stat(path)

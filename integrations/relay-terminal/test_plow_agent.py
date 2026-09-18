@@ -27,7 +27,7 @@ import urllib.parse
 import urllib.request
 
 import cli
-from fake_windows import FakeWindows, held_by_another_process, windows_host
+from fake_windows import FakeWindows, held_by_another_process, symlinks_available, windows_host
 import plow_agent
 import private_files
 
@@ -724,7 +724,10 @@ class FailureTests(unittest.TestCase):
             install = Installation(directory)
             install.up = RuntimeError('compose failed in an unforeseen way')
             self.assertEqual(install.run(), 1)
-            self.assertTrue(private_files.is_private(install.root / '.data/agent/install.log'))
+            # Through whatever this host used to make it private, which on Windows is the
+            # icacls this harness answered rather than the real one.
+            with patch.object(subprocess, 'run', install.subprocess_run):
+                self.assertTrue(private_files.is_private(install.root / '.data/agent/install.log'))
 
     def test_a_log_that_cannot_be_saved_still_ends_in_one_sentence(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -831,6 +834,7 @@ class DockerGuardTests(unittest.TestCase):
         self.assertEqual(docker.commands, [FakeDocker.CONFIG, SERVICES, listing(), volume_listing()])
         self.assertEqual(docker.folders, [self.agent])
 
+    @unittest.skipUnless(symlinks_available(), 'creating a link needs SeCreateSymbolicLinkPrivilege here')
     def test_this_folders_own_containers_let_the_install_continue(self):
         alias = self.root / 'alias'
         alias.symlink_to(self.root / 'here', target_is_directory=True)
@@ -953,11 +957,14 @@ class InstallGuardTests(unittest.TestCase):
         # The platform is whatever this host is, so the expectation follows the host rather
         # than naming one. All three are covered, because recording the wrong one silently is
         # the whole failure this key exists to prevent.
-        for platform, expected in (('darwin', 'macos'), ('linux', 'linux'), ('win32', 'windows')):
-            with self.subTest(platform=platform), tempfile.TemporaryDirectory() as directory:
+        # host_platform() rather than sys.platform: faking the platform would also fake the
+        # mechanism that makes the record private, which is a different question and is asked
+        # by its own test below.
+        for expected in ('macos', 'linux', 'windows'):
+            with self.subTest(platform=expected), tempfile.TemporaryDirectory() as directory:
                 install = Installation(directory)
                 install.docker.project = 'relay-two'
-                with patch.object(sys, 'platform', platform):
+                with patch.object(plow_agent, 'host_platform', lambda: expected):
                     self.assertEqual(install.run(), 0)
                 saved = json.loads((install.root / '.data/agent/install.json').read_text())
                 self.assertEqual(saved, {'project': 'relay-two', 'agent_dir': str(install.agent.resolve()),
@@ -1186,7 +1193,8 @@ class SignInTests(unittest.TestCase):
             install.lines = [line('ln_a'), line('ln_b')]
             self.assertEqual(install.run(), 2)
             marker = self.marker(install)
-            recorded, private = marker.read_text(), private_files.is_private(marker)
+            with patch.object(subprocess, 'run', install.subprocess_run):
+                recorded, private = marker.read_text(), private_files.is_private(marker)
             expected = hashlib.sha256(install.signin.read_bytes()).hexdigest()
         self.assertEqual(recorded.strip(), expected)
         self.assertTrue(private)
