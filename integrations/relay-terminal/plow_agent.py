@@ -690,20 +690,42 @@ def _model_entry_line(indent, model_id, as_list):
     return f'{" " * indent}- {model_id}\n' if as_list else f'{" " * indent}{model_id}: {{}}\n'
 
 
+_TRAILING_COMMENT = re.compile(r'(\s+#.*)$')
+
+
 def _set_default_line(lines, model_id):
-    """lines with model.default's value replaced, in place. Raises AgentError when it cannot be located."""
+    """lines with model.default's value replaced, in place, keeping a trailing comment on that line if it
+    has one. Raises AgentError when it cannot be located."""
     model_index = _top_key_line(lines, 'model')
     start, end = (None, None) if model_index is None else _child_block(lines, model_index)
     default_index = None if model_index is None else _child_key_line(lines, start, end, 'default')
     if default_index is None:
         raise AgentError('Could not locate model.default in the config text to edit it. Nothing was changed.')
-    lines[default_index] = re.sub(r'^([ \t]*default:).*$', lambda m: f'{m.group(1)} {model_id}',
-                                  lines[default_index], count=1)
+    line = lines[default_index]
+    comment_match = _TRAILING_COMMENT.search(line)
+    comment = comment_match.group(1) if comment_match else ''
+    lines[default_index] = re.sub(r'^([ \t]*default:).*$', lambda m: f'{m.group(1)} {model_id}{comment}',
+                                  line, count=1)
     return lines
 
 
+def _is_flow_style(line):
+    """Whether a `key: value` line's value starts a flow mapping or sequence (`key: {...}` or `key: [...]`)."""
+    rest = line.split(':', 1)[1] if ':' in line else ''
+    rest = rest.split('#', 1)[0].strip()
+    return rest[:1] in ('{', '[')
+
+
 def _ensure_model_id(lines, provider, model_id, original):
-    """lines with model_id added under providers.<provider>.models, in place, when it is not already there."""
+    """lines with model_id added under providers.<provider>.models, in place, when it is not already there.
+
+    Refuses (DecisionNeeded) rather than editing when a block that needs a new line under it turns out to be
+    written in flow style (`{...}` or `[...]`): this minimal edit only inserts lines under block-style YAML,
+    which is what the live config uses throughout, and a text insertion under a flow scalar produces YAML
+    that will not parse -- refusing by name, before touching anything, beats blaming that on the owner's
+    config. Reading past a flow-style block that already has the id needs no insertion, so it is never
+    refused; only writing into one is unsupported.
+    """
     providers = original.get('providers')
     provider_block = providers.get(provider) if isinstance(providers, dict) else None
     models_value = provider_block.get('models') if isinstance(provider_block, dict) else None
@@ -716,8 +738,11 @@ def _ensure_model_id(lines, provider, model_id, original):
     if providers_index is None:
         if lines and not lines[-1].endswith('\n'):
             lines[-1] += '\n'
-        return lines + [f'providers:\n', f'{" " * step}{provider}:\n', f'{" " * (step * 2)}models:\n',
+        return lines + ['providers:\n', f'{" " * step}{provider}:\n', f'{" " * (step * 2)}models:\n',
                         _model_entry_line(step * 3, model_id, as_list)]
+    if _is_flow_style(lines[providers_index]):
+        raise DecisionNeeded('providers is written in flow style ({...} or [...]) in the agent config; adding '
+                             'a new provider or model id there is not supported. Nothing was changed.')
 
     p_start, p_end = _child_block(lines, providers_index)
     provider_line = _child_key_line(lines, p_start, p_end, provider)
@@ -726,6 +751,9 @@ def _ensure_model_id(lines, provider, model_id, original):
         lines[p_end:p_end] = [f'{" " * indent}{provider}:\n', f'{" " * (indent + step)}models:\n',
                               _model_entry_line(indent + step * 2, model_id, as_list)]
         return lines
+    if _is_flow_style(lines[provider_line]):
+        raise DecisionNeeded(f'providers.{provider} is written in flow style ({{...}} or [...]) in the agent '
+                             f'config; adding a new model id there is not supported. Nothing was changed.')
 
     pv_start, pv_end = _child_block(lines, provider_line)
     models_line = _child_key_line(lines, pv_start, pv_end, 'models')
@@ -733,6 +761,9 @@ def _ensure_model_id(lines, provider, model_id, original):
         indent = _first_child_indent(lines, pv_start, pv_end, _line_indent(lines[provider_line]) + step)
         lines[pv_end:pv_end] = [f'{" " * indent}models:\n', _model_entry_line(indent + step, model_id, as_list)]
         return lines
+    if _is_flow_style(lines[models_line]):
+        raise DecisionNeeded(f'providers.{provider}.models is written in flow style ({{...}} or [...]) in the '
+                             f'agent config; adding a new model id there is not supported. Nothing was changed.')
 
     m_start, m_end = _child_block(lines, models_line)
     indent = _first_child_indent(lines, m_start, m_end, _line_indent(lines[models_line]) + step)
@@ -806,12 +837,31 @@ def read_config(path=CONFIG_PATH):
     return result.stdout
 
 
-def backup_config():
-    """Copy the live config beside itself, named with this moment in UTC, before any edit. Returns its path."""
-    backup = f'{CONFIG_PATH}.backup-{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}'
+def make_backup(kind):
+    """Copy the live config beside itself as <kind>-<UTC timestamp>-<unique>, via mktemp (with the timestamp
+    still leading, so names stay sortable) rather than a bare cp to a second-resolution name, which a switch
+    and a revert inside the same second could otherwise collide on. Returns its path."""
+    template = f'{CONFIG_PATH}.{kind}-{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}-XXXXXX'
+    made = hermes_run('mktemp', template)
+    if made.returncode or not made.stdout.strip():
+        raise AgentError('The config backup could not be created inside the container. Nothing was changed.')
+    backup = made.stdout.strip()
     if hermes_run('cp', CONFIG_PATH, backup).returncode:
         raise AgentError('The config backup could not be written inside the container. Nothing was changed.')
     return backup
+
+
+def backup_config():
+    """Copy the live config beside itself as a revertable backup, before any edit. Returns its path."""
+    return make_backup('backup')
+
+
+def before_revert_backup():
+    """Copy the live config beside itself before a revert replaces it, so a mistaken revert is itself
+    reversible. Named so list_backups() -- which selects only config.yaml.backup-* -- never selects it: a
+    revert's own safety copy must never become the next revert's target, or two reverts in a row would
+    alternate between two configs instead of both landing on the same one."""
+    return make_backup('before-revert')
 
 
 def write_config(text):
@@ -836,9 +886,15 @@ def write_config(text):
 
 
 def list_backups():
-    """Every config backup beside the config, oldest first; a fixed-width UTC suffix sorts lexicographically."""
-    result = hermes_run('sh', '-c', f'ls -1 {CONFIG_PATH}.backup-* 2>/dev/null')
-    if result.returncode not in (0, 1, 2) or (result.returncode and result.stdout.strip()):
+    """Every config backup beside the config, oldest first; a fixed-width UTC suffix sorts lexicographically.
+
+    Uses the shell's own glob and an existence test rather than trusting ls's exit code for "no match": that
+    code varies by implementation (1 or 2 are both common) and, read on its own, cannot be told apart from a
+    real failure that also exits non-zero with no output. `set -- <pattern>` followed by `[ -e "$1" ]` always
+    exits 0 whether or not anything matched, so here any non-zero exit really is a failure.
+    """
+    result = hermes_run('sh', '-c', f'set -- {CONFIG_PATH}.backup-*; if [ -e "$1" ]; then printf "%s\\n" "$@"; fi')
+    if result.returncode:
         raise AgentError('Could not list config backups inside the container. Check `docker compose logs agent` in agent/.')
     return sorted(name.strip() for name in result.stdout.splitlines() if name.strip())
 
@@ -860,37 +916,62 @@ def gateway_pid():
     return int(match.group(1)) if match else None
 
 
-def wait_for_restart(previous_pid, read_pid, sleep=time.sleep, timeout=GATEWAY_TIMEOUT, step=2):
-    """Poll read_pid() until it reports a pid other than previous_pid, or time runs out."""
+def wait_for_restart(previous_pid, read_pid, sleep=time.sleep, timeout=GATEWAY_TIMEOUT, step=2, confirm_seconds=5):
+    """Poll read_pid() for a pid other than previous_pid that is *still* there confirm_seconds later, or time
+    runs out. A single sighting of a differing pid is never enough on its own: s6 respawns a gateway that
+    crashes on the new model too, so one differing reading looks identical to a real restart until it is
+    confirmed stable. If a confirmed candidate turns out to have changed again, it is treated as a new,
+    unconfirmed candidate and waited on the same way -- within the same overall timeout, never extending it.
+
+    Returns 'confirmed' (a pid held stable across two reads), 'timeout' (no differing pid was ever seen) or
+    'churning' (one or more differing pids appeared, but none held stable before time ran out).
+    """
     waited = 0
-    while True:
+    candidate = None
+    churned = False
+    while waited < timeout:
         pid = read_pid()
         if pid is not None and pid != previous_pid:
-            return True
-        if waited >= timeout:
-            return False
+            if pid == candidate:
+                return 'confirmed'
+            if candidate is not None:
+                churned = True
+            candidate = pid
+            sleep(confirm_seconds)
+            waited += confirm_seconds
+            continue
+        candidate = None
         sleep(step)
         waited += step
+    return 'churning' if churned else 'timeout'
 
 
 def restart_and_wait(backup):
-    """Ask s6 to restart the gateway, as the transport watchdog does, then wait for a new pid to appear.
+    """Ask s6 to restart the gateway, as the transport watchdog does, then wait for a new, stable pid to
+    appear.
 
     wait_ready's `plow-init: configured` marker cannot verify this: plow-init writes it once at container
     boot, and restarting only the gateway never re-emits it, so watching for it here would poll for the
     full timeout on every successful switch. s6-svstat's own pid is the real signal that it actually
     restarted. This runs without the hermes wrapper, like the transport watchdog's own restart call: s6's
-    control files need the container's default user, not hermes. Both failures below name the backup so the
+    control files need the container's default user, not hermes. Every failure below names the backup so the
     owner can recover with --revert.
     """
     previous = gateway_pid()
     if compose('exec', '-T', 'agent', '/command/s6-svc', '-r', GATEWAY_SERVICE, capture=True).returncode:
         raise AgentError(f'The gateway could not be restarted. The previous config is backed up at {backup}; '
                          'restore it with ./relay agent model --revert.')
-    if not wait_for_restart(previous, gateway_pid):
-        raise AgentError(f'The gateway did not come back up within {GATEWAY_TIMEOUT} seconds after the restart. '
-                         f'Check `docker compose logs agent` in agent/. The previous config is backed up at '
-                         f'{backup}; restore it with ./relay agent model --revert.')
+    # A fresh time.sleep lookup, not wait_for_restart's own default: its default is bound once at import
+    # time, so a test patching time.sleep around a call that relies on it would still sleep for real.
+    state = wait_for_restart(previous, gateway_pid, sleep=time.sleep)
+    if state == 'confirmed':
+        return
+    if state == 'churning':
+        raise AgentError('The gateway keeps restarting instead of settling on the new model. The previous '
+                         f'config is backed up at {backup}; restore it with ./relay agent model --revert.')
+    raise AgentError(f'The gateway did not come back up within {GATEWAY_TIMEOUT} seconds after the restart. '
+                     f'Check `docker compose logs agent` in agent/. The previous config is backed up at '
+                     f'{backup}; restore it with ./relay agent model --revert.')
 
 
 def show_model():
@@ -952,7 +1033,7 @@ def revert_model():
     old = 'unknown'
     with contextlib.suppress(AgentError):
         old = model_summary(read_config())['default']
-    safety_backup = backup_config()
+    safety_backup = before_revert_backup()
     write_config(backup_text)
     restart_and_wait(safety_backup)
     print(status_line('Model', f'{old} -> {new_default}'), flush=True)
@@ -966,9 +1047,6 @@ def model_command(args):
     if args.id is None:
         return show_model()
     return switch_model(args.id, args.check)
-
-
-
 
 def signin_path():
     """The full-access account sign-in, resolved exactly as the pinned client's account_token resolves it."""

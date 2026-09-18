@@ -17,6 +17,7 @@ import ssl
 import subprocess
 import sys
 import tempfile
+import time
 from types import ModuleType, SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -1440,6 +1441,51 @@ class ModelEditTests(unittest.TestCase):
         new_text = plow_agent.set_default_model(text, 'anthropic/claude-opus-4')
         self.assertEqual(plow_agent.model_summary(new_text)['models'], ['anthropic/claude-opus-4'])
 
+    def test_a_flow_style_provider_is_refused_not_silently_reshaped(self):
+        # providers:\n  plow: {}\n succeeded under the old yaml.safe_dump-based edit, which just re-serialized
+        # the whole file in block style regardless of how it started. The minimal text edit cannot safely
+        # insert a new line under a one-line flow scalar (it produced YAML that would not parse), so this now
+        # refuses by name up front instead. This narrows what the old dump-based version accepted; refusing
+        # clearly beats corrupting, and the live config is block style throughout.
+        text = 'model:\n  default: anthropic/claude-sonnet-5\n  provider: plow\nproviders:\n  plow: {}\n'
+        with self.assertRaises(plow_agent.DecisionNeeded) as error:
+            plow_agent.set_default_model(text, 'anthropic/claude-opus-4')
+        self.assertEqual(error.exception.code, 2)
+        self.assertIn('flow style', str(error.exception))
+        self.assertIn('providers.plow', str(error.exception))
+        self.assertIn('Nothing was changed', str(error.exception))
+
+    def test_a_flow_style_models_mapping_is_refused(self):
+        text = 'model:\n  default: anthropic/claude-sonnet-5\n  provider: plow\nproviders:\n  plow:\n    models: {}\n'
+        with self.assertRaises(plow_agent.DecisionNeeded) as error:
+            plow_agent.set_default_model(text, 'anthropic/claude-opus-4')
+        self.assertEqual(error.exception.code, 2)
+        self.assertIn('flow style', str(error.exception))
+        self.assertIn('providers.plow.models', str(error.exception))
+
+    def test_a_flow_style_models_list_is_refused(self):
+        text = 'model:\n  default: anthropic/claude-sonnet-5\n  provider: plow\nproviders:\n  plow:\n    models: []\n'
+        with self.assertRaises(plow_agent.DecisionNeeded) as error:
+            plow_agent.set_default_model(text, 'anthropic/claude-opus-4')
+        self.assertEqual(error.exception.code, 2)
+        self.assertIn('flow style', str(error.exception))
+        self.assertIn('providers.plow.models', str(error.exception))
+
+    def test_a_flow_style_providers_block_is_refused(self):
+        text = 'model:\n  default: anthropic/claude-sonnet-5\n  provider: plow\nproviders: {}\n'
+        with self.assertRaises(plow_agent.DecisionNeeded) as error:
+            plow_agent.set_default_model(text, 'anthropic/claude-opus-4')
+        self.assertEqual(error.exception.code, 2)
+        self.assertIn('flow style', str(error.exception))
+
+    def test_flow_style_is_never_a_problem_when_the_id_is_already_present(self):
+        # No insertion is needed, so a flow-style models mapping that already has the id is never touched
+        # and never refused -- only writing into a flow scalar is unsupported, not merely reading past one.
+        text = ('model:\n  default: anthropic/claude-sonnet-5\n  provider: plow\n'
+                'providers:\n  plow:\n    models: {anthropic/claude-opus-4: {}}\n')
+        new_text = plow_agent.set_default_model(text, 'anthropic/claude-opus-4')
+        self.assertEqual(plow_agent.model_summary(new_text)['default'], 'anthropic/claude-opus-4')
+
     def test_reading_never_needs_the_models_key_to_exist(self):
         text = 'model:\n  default: anthropic/claude-sonnet-5\n  provider: plow\n'
         self.assertEqual(plow_agent.model_summary(text),
@@ -1449,6 +1495,12 @@ class ModelEditTests(unittest.TestCase):
         new_text = plow_agent.set_default_model(SAMPLE_MODEL_CONFIG, 'anthropic/claude-opus-4')
         self.assertIn('base_url: ${PLOW_API_BASE}/v1', new_text)
         self.assertIn('key_env: HERMES_CUSTOM_PLOW_API_KEY', new_text)
+
+    def test_switching_keeps_a_trailing_comment_on_the_default_line(self):
+        text = ('model:\n  default: anthropic/claude-sonnet-5  # the production model\n  provider: plow\n'
+                'providers:\n  plow:\n    models:\n      anthropic/claude-sonnet-5: {}\n')
+        new_text = plow_agent.set_default_model(text, 'anthropic/claude-opus-4')
+        self.assertIn('default: anthropic/claude-opus-4  # the production model', new_text)
 
     def test_a_switch_leaves_everything_else_byte_for_byte(self):
         new_text = plow_agent.set_default_model(EXOTIC_MODEL_CONFIG, 'anthropic/claude-opus-4')
@@ -1609,7 +1661,7 @@ class FakeContainer:
         return SimpleNamespace(returncode=0, stdout='')
 
     def _shell(self, script, input):
-        if script.startswith('ls -1 '):
+        if script.startswith('set -- '):
             backups = sorted(name for name in self.files if re.fullmatch(
                 re.escape(plow_agent.CONFIG_PATH) + r'\.backup-.+', name))
             return SimpleNamespace(returncode=0, stdout=''.join(name + '\n' for name in backups))
@@ -1623,7 +1675,10 @@ class FakeContainer:
 def run_model(container, **options):
     """run_agent(agent_action='model', ...) with the same tripwires Installation.run() gives the install flow:
     no question asked, no terminal assumed, and os.environ restored so trust_certifi() cannot leak
-    SSL_CERT_FILE into the rest of the suite."""
+    SSL_CERT_FILE into the rest of the suite. time.sleep is patched too: wait_for_restart's confirm step
+    means even a successful restart sleeps for real once, and restart_and_wait takes a fresh time.sleep
+    lookup specifically so this patch (rather than only an explicit sleep= override) reaches it.
+    """
     out, err = io.StringIO(), io.StringIO()
     arguments = dict(agent_action='model', id=None, check=False, revert=False)
     arguments.update(options)
@@ -1632,6 +1687,7 @@ def run_model(container, **options):
         stack.enter_context(patch.dict(os.environ, {}))
         stack.enter_context(patch('builtins.input', side_effect=AssertionError('./relay agent model asked a question.')))
         stack.enter_context(patch('sys.stdin', SimpleNamespace(isatty=lambda: False)))
+        stack.enter_context(patch('time.sleep', lambda seconds: None))
         stack.enter_context(contextlib.redirect_stdout(out))
         stack.enter_context(contextlib.redirect_stderr(err))
         code = plow_agent.run_agent(SimpleNamespace(**arguments))
@@ -1639,18 +1695,42 @@ def run_model(container, **options):
 
 
 class RestartWaitTests(unittest.TestCase):
-    """wait_for_restart(): pure polling logic, independent of compose/svstat."""
+    """wait_for_restart(): pure polling logic, independent of compose/svstat.
 
-    def test_a_new_pid_reports_success(self):
-        self.assertTrue(plow_agent.wait_for_restart(111, read_pid=lambda: 222, sleep=lambda s: None, timeout=10))
+    Returns 'confirmed' only once a new pid has been seen on two consecutive reads, so a single sighting of
+    a differing pid -- which a gateway crashing and being respawned by s6 would also produce -- is never
+    enough on its own. 'timeout' means no differing pid was ever seen; 'churning' means one or more were,
+    but none held stable within the budget.
+    """
+
+    def test_a_new_pid_confirmed_on_the_next_read_reports_success(self):
+        self.assertEqual(plow_agent.wait_for_restart(111, read_pid=lambda: 222, sleep=lambda s: None, timeout=10),
+                         'confirmed')
 
     def test_the_same_pid_keeps_waiting_then_times_out(self):
         slept = []
-        self.assertFalse(plow_agent.wait_for_restart(111, read_pid=lambda: 111, sleep=slept.append, timeout=6))
+        self.assertEqual(plow_agent.wait_for_restart(111, read_pid=lambda: 111, sleep=slept.append, timeout=6),
+                         'timeout')
         self.assertLessEqual(sum(slept), 6)
 
     def test_no_pid_yet_also_times_out(self):
-        self.assertFalse(plow_agent.wait_for_restart(111, read_pid=lambda: None, sleep=lambda s: None, timeout=4))
+        self.assertEqual(plow_agent.wait_for_restart(111, read_pid=lambda: None, sleep=lambda s: None, timeout=4),
+                         'timeout')
+
+    def test_a_pid_that_changes_again_before_being_confirmed_is_not_accepted(self):
+        # One sighting of a new pid, then a second, different pid: a crash-loop must not read as success just
+        # because *some* pid differed from the one before the restart.
+        seen = iter([222, 333, 333])
+        self.assertEqual(plow_agent.wait_for_restart(111, read_pid=lambda: next(seen), sleep=lambda s: None,
+                                                      timeout=30), 'confirmed')
+
+    def test_a_gateway_that_keeps_respawning_a_fresh_pid_every_poll_reports_churning(self):
+        pids = iter(range(200, 300))  # a fresh pid every single poll: it never repeats, so never confirms
+        slept = []
+        result = plow_agent.wait_for_restart(111, read_pid=lambda: next(pids), sleep=slept.append,
+                                             timeout=20, confirm_seconds=5)
+        self.assertEqual(result, 'churning')
+        self.assertLessEqual(sum(slept), 20)
 
 
 class GatewayPidTests(unittest.TestCase):
@@ -1681,6 +1761,30 @@ class GatewayPidTests(unittest.TestCase):
     def test_a_nonzero_exit_is_not_up_even_with_an_up_looking_line(self):
         with patch.object(plow_agent, 'compose', self.fake_compose(self.REAL_UP, returncode=1)):
             self.assertIsNone(plow_agent.gateway_pid())
+
+
+class BackupNamingTests(unittest.TestCase):
+    """backup_config() and before_revert_backup(): both go through mktemp, and land in different namespaces."""
+
+    def test_backup_config_uses_mktemp_so_same_second_backups_do_not_collide(self):
+        container = FakeContainer()
+        with patch.object(plow_agent, 'compose', container):
+            first = plow_agent.backup_config()
+            second = plow_agent.backup_config()
+        self.assertNotEqual(first, second)
+        self.assertTrue(first.startswith(f'{plow_agent.CONFIG_PATH}.backup-'))
+        leaves = [call[call.index('hermes') + 1:][0] for call in container.calls
+                 if call[0] == 'exec' and 'hermes' in call]
+        self.assertEqual(leaves.count('mktemp'), 2)
+
+    def test_before_revert_backup_uses_mktemp_and_a_name_list_backups_never_selects(self):
+        container = FakeContainer()
+        with patch.object(plow_agent, 'compose', container):
+            first = plow_agent.before_revert_backup()
+            second = plow_agent.before_revert_backup()
+        self.assertNotEqual(first, second)
+        self.assertTrue(first.startswith(f'{plow_agent.CONFIG_PATH}.before-revert-'))
+        self.assertNotIn('.backup-', first)
 
 
 @unittest.skipUnless(HAVE_YAML, 'PyYAML is not installed')
@@ -1735,7 +1839,7 @@ class ModelCommandTests(unittest.TestCase):
                          'anthropic/claude-haiku-4')
         others = [name for name in container.files if name != plow_agent.CONFIG_PATH]
         self.assertEqual(len(others), 1)  # exactly the backup; the mktemp file was renamed away, not left behind
-        self.assertRegex(others[0], r'\.backup-\d{8}T\d{6}Z$')
+        self.assertRegex(others[0], r'\.backup-\d{8}T\d{6}Z-\w+$')
         self.assertEqual(plow_agent.model_summary(container.files[others[0]])['default'], 'anthropic/claude-sonnet-5')
 
     def test_switching_to_a_new_id_adds_it_to_the_provider_inside_the_container(self):
@@ -1821,10 +1925,23 @@ class ModelCommandTests(unittest.TestCase):
 
     def test_the_gateway_not_reporting_a_new_pid_names_the_backup_and_revert(self):
         container = FakeContainer()
-        with patch.object(plow_agent, 'wait_for_restart', return_value=False):
+        with patch.object(plow_agent, 'wait_for_restart', return_value='timeout'):
             code, out, err = run_model(container, id='anthropic/claude-haiku-4')
         self.assertEqual(code, 1)
         self.assertIn('did not come back up', err)
+        self.assertIn('--revert', err)
+        backups = [name for name in container.files if '.backup-' in name]
+        self.assertEqual(len(backups), 1)
+        self.assertIn(backups[0], err)
+
+    def test_a_churning_gateway_says_so_and_names_the_backup_and_revert(self):
+        # s6 keeps respawning a gateway that crashes on the new model: exits non-zero rather than reading
+        # some transient pid sighting as success.
+        container = FakeContainer()
+        with patch.object(plow_agent, 'wait_for_restart', return_value='churning'):
+            code, out, err = run_model(container, id='anthropic/claude-haiku-4')
+        self.assertEqual(code, 1)
+        self.assertIn('keeps restarting', err)
         self.assertIn('--revert', err)
         backups = [name for name in container.files if '.backup-' in name]
         self.assertEqual(len(backups), 1)
@@ -1853,18 +1970,38 @@ class ModelCommandTests(unittest.TestCase):
 
     def test_revert_backs_up_the_config_it_replaces(self):
         container = FakeContainer()
-        # far in the past, so the fresh safety backup (a real UTC timestamp) always sorts as the newest
-        container.files[f'{plow_agent.CONFIG_PATH}.backup-20200101T000000Z'] = SAMPLE_MODEL_CONFIG.replace(
+        # An ordinary date: the safety copy no longer needs to be dated in the past to pass this test,
+        # because it is no longer named so that list_backups() could ever select it (see the ping-pong
+        # test below) -- unlike before this fix round, when only an artificially old seed date kept it out
+        # of the way of the next revert's own selection.
+        container.files[f'{plow_agent.CONFIG_PATH}.backup-20260101T000000Z-aaaaaa'] = SAMPLE_MODEL_CONFIG.replace(
             'default: anthropic/claude-sonnet-5', 'default: anthropic/claude-haiku-4')
         code, out, err = run_model(container, revert=True)
         self.assertEqual(code, 0)
-        backups = sorted(name for name in container.files if '.backup-' in name)
-        self.assertEqual(len(backups), 2)  # the one reverted from, plus a fresh backup of the pre-revert state
-        self.assertEqual(plow_agent.model_summary(container.files[backups[-1]])['default'], 'anthropic/claude-sonnet-5')
+        revertable = sorted(name for name in container.files if '.backup-' in name)
+        self.assertEqual(len(revertable), 1)  # only the one seeded backup; the safety copy is not one of these
+        safety = [name for name in container.files if '.before-revert-' in name]
+        self.assertEqual(len(safety), 1)
+        self.assertEqual(plow_agent.model_summary(container.files[safety[0]])['default'], 'anthropic/claude-sonnet-5')
+
+    def test_two_reverts_in_a_row_land_on_the_same_config_not_alternating(self):
+        container = FakeContainer()
+        container.files[f'{plow_agent.CONFIG_PATH}.backup-20260101T000000Z-aaaaaa'] = SAMPLE_MODEL_CONFIG.replace(
+            'default: anthropic/claude-sonnet-5', 'default: anthropic/claude-too-old')
+        container.files[f'{plow_agent.CONFIG_PATH}.backup-20260917T120000Z-bbbbbb'] = SAMPLE_MODEL_CONFIG.replace(
+            'default: anthropic/claude-sonnet-5', 'default: anthropic/claude-haiku-4')
+        code1, out1, err1 = run_model(container, revert=True)
+        self.assertEqual(code1, 0)
+        after_first = plow_agent.model_summary(container.files[plow_agent.CONFIG_PATH])['default']
+        code2, out2, err2 = run_model(container, revert=True)
+        self.assertEqual(code2, 0)
+        after_second = plow_agent.model_summary(container.files[plow_agent.CONFIG_PATH])['default']
+        self.assertEqual(after_first, 'anthropic/claude-haiku-4')
+        self.assertEqual(after_second, after_first)  # not toggled back to anthropic/claude-too-old
 
     def test_revert_uses_the_same_atomic_write_as_a_switch(self):
         container = FakeContainer()
-        container.files[f'{plow_agent.CONFIG_PATH}.backup-20200101T000000Z'] = SAMPLE_MODEL_CONFIG.replace(
+        container.files[f'{plow_agent.CONFIG_PATH}.backup-20260101T000000Z-aaaaaa'] = SAMPLE_MODEL_CONFIG.replace(
             'default: anthropic/claude-sonnet-5', 'default: anthropic/claude-haiku-4')
         run_model(container, revert=True)
         leaves = [call[call.index('hermes') + 1:][0] for call in container.calls
@@ -1881,18 +2018,24 @@ class ModelCommandTests(unittest.TestCase):
         self.assertEqual(container.restarts, 0)
 
     def test_a_broken_backup_listing_is_a_real_failure_not_no_backups(self):
-        container = FakeContainer()
-        real_shell = container._shell
+        # Any non-zero exit is now unambiguously a real failure: the shell command itself no longer relies
+        # on ls's own "no match" exit code (which varies by implementation and was previously allow-listed
+        # as harmless, return code 1 included -- indistinguishable, by code alone, from a genuine failure
+        # exiting 1 with no output).
+        for returncode in (1, 2, 127):
+            with self.subTest(returncode=returncode):
+                container = FakeContainer()
+                real_shell = container._shell
 
-        def failing_shell(script, input):
-            if script.startswith('ls -1 '):
-                return SimpleNamespace(returncode=127, stdout='')
-            return real_shell(script, input)
-        container._shell = failing_shell
-        code, out, err = run_model(container, revert=True)
-        self.assertEqual(code, 1)
-        self.assertIn('Could not list config backups', err)
-        self.assertNotIn('No config backup exists', err)
+                def failing_shell(script, input, returncode=returncode):
+                    if script.startswith('set -- '):
+                        return SimpleNamespace(returncode=returncode, stdout='')
+                    return real_shell(script, input)
+                container._shell = failing_shell
+                code, out, err = run_model(container, revert=True)
+                self.assertEqual(code, 1)
+                self.assertIn('Could not list config backups', err)
+                self.assertNotIn('No config backup exists', err)
 
     def test_revert_still_works_when_the_live_config_cannot_be_parsed(self):
         container = FakeContainer(config='not: valid: yaml: [')
