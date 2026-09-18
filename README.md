@@ -23,7 +23,15 @@ Repro Relay is an engineering agent you reach from your phone. Text it on your o
 
 ## Quick start
 
-Two ways to run Repro Relay. Both need Docker Desktop installed and open. Copy this repository with GitHub's **Code** button, then run the commands from its folder.
+Docker Desktop installed and open, and Python 3. Then one line.
+
+```sh
+git clone https://github.com/lusknchars/repro-relay.git && cd repro-relay && ./relay agent
+```
+
+In Windows PowerShell, the same line ends `; cd repro-relay; python relay agent`.
+
+That is the whole install. Nothing is piped into a shell, so you can read every line you run before you run it. [agent/INSTALL.md](agent/INSTALL.md) covers what it asks you for and what to do when something is missing.
 
 ### A text agent on your own Plow line
 

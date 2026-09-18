@@ -2444,13 +2444,39 @@ class CommandLineTests(unittest.TestCase):
 
 
 class DocumentationTests(unittest.TestCase):
-    def test_readme_teaches_the_command_and_keeps_no_install_url(self):
+    def test_readme_teaches_the_command_and_never_pipes_a_download_into_a_shell(self):
+        """The rule this protects is that nobody runs code they have not been given a chance to read.
+
+        It began as a ban on any URL in the quick start, which also banned the clone line the
+        install now uses. A clone is not the thing the ban was for: it fetches source that sits
+        on disk before anything executes. Downloading a script straight into an interpreter is,
+        and that stays banned, because the install is the first thing this product teaches and
+        it is taught to people who will install agents for others.
+        """
         readme = (plow_agent.ROOT / 'README.md').read_text()
         start = readme.index('## Quick start')
         section = readme[start:readme.index('\n## ', start + 1)]
         self.assertIn('./relay agent', section)
         self.assertNotIn('curl', section)
-        self.assertNotIn('https://', section)
+        self.assertNotIn('wget', section)
+        self.assertNotIn('iwr', section)
+        self.assertNotIn('Invoke-WebRequest', section)
+        for fetched in re.findall(r'^.*https?://.*$', section, re.MULTILINE):
+            self.assertNotIn('|', fetched, 'a line that fetches something must not pipe it anywhere')
+
+    def test_the_quick_start_line_is_the_one_install_teaches(self):
+        """The README and INSTALL.md must not drift into teaching two different commands."""
+        readme = (plow_agent.ROOT / 'README.md').read_text()
+        install = (plow_agent.ROOT / 'agent/INSTALL.md').read_text()
+        one_line = 'git clone https://github.com/lusknchars/repro-relay.git && cd repro-relay && ./relay agent'
+        self.assertIn(one_line, readme)
+        self.assertIn(one_line, install)
+
+    def test_install_says_what_windows_types_and_what_needs_a_mac(self):
+        install = (plow_agent.ROOT / 'agent/INSTALL.md').read_text()
+        self.assertIn('python relay agent', install)
+        self.assertIn('Latch', install)
+        self.assertNotIn('curl', install)
 
     def test_readme_teaches_the_model_command(self):
         readme = (plow_agent.ROOT / 'README.md').read_text()
