@@ -236,6 +236,7 @@ class Creation:
 
     def run(self, action, **options):
         arguments = dict(hosted_action=action, person=None, name=None, line=None, new_line=False, confirm=None)
+        assert action in ('create', 'list', 'status', 'start', 'stop', 'remove'), action
         arguments.update(options)
         fakes = {'preflight': self.preflight, 'official': self.official, 'identity': self.identity,
                  'trust_certifi': lambda: None}
@@ -476,6 +477,17 @@ class CreationTests(unittest.TestCase):
             with self.subTest(secret=secret):
                 self.assertNotIn(secret, saved)
 
+    def test_a_folder_that_is_a_symlink_is_refused_before_anything_is_written(self):
+        target = self.made.root / 'elsewhere'
+        target.mkdir()
+        folder = self.made.folder('dana')
+        folder.parent.mkdir(parents=True)
+        folder.symlink_to(target, target_is_directory=True)
+        self.assertEqual(self.made.create('dana'), 1)
+        self.assertIn('symlink', self.made.said())
+        self.assertEqual(self.made.minted, [])
+        self.assertEqual(list(target.iterdir()), [])
+
     def test_docker_that_is_not_ready_stops_before_creating_anything(self):
         self.made.preflight = lambda: ['Start Docker Desktop and wait.']
         self.assertEqual(self.made.create('dana'), 1)
@@ -612,6 +624,57 @@ class StopTests(unittest.TestCase):
         self.assertIn('dana has no agent recorded here', self.made.said())
 
 
+class StartTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.made = Creation(directory.name)
+
+    def stopped(self):
+        self.made.create('dana')
+        self.assertEqual(self.made.run('stop', person='dana'), 0)
+        self.made.out, self.made.err = io.StringIO(), io.StringIO()
+
+    def test_start_brings_a_stopped_agent_back_without_minting_or_recording_anything(self):
+        self.stopped()
+        before = dict(self.made.recorded())
+        self.assertEqual(self.made.run('start', person='dana'), 0)
+        self.assertEqual(self.made.docker.of_project('relay-hosted-dana')[0]['State'], 'running')
+        self.assertEqual(len(self.made.minted), 1)
+        self.assertEqual(self.made.recorded(), before)
+        self.assertIn('Agent ready', self.made.printed())
+
+    def test_stop_says_how_to_start_it_again(self):
+        self.made.create('dana')
+        self.made.out = io.StringIO()
+        self.made.run('stop', person='dana')
+        self.assertIn('./relay hosted start dana', self.made.printed())
+
+    def test_start_waits_for_the_agent_to_report_ready(self):
+        self.stopped()
+        self.made.docker.logs = 'starting\n'
+        self.assertEqual(self.made.run('start', person='dana'), 1)
+        self.assertIn('The agent did not report readiness', self.made.said())
+
+    def test_start_only_touches_that_persons_project(self):
+        self.made.create_two()
+        self.made.run('stop', person='dana')
+        self.made.run('stop', person='mel')
+        self.assertEqual(self.made.run('start', person='dana'), 0)
+        self.assertEqual(self.made.docker.of_project('relay-hosted-mel')[0]['State'], 'exited')
+
+    def test_start_for_someone_without_an_agent_here_says_so(self):
+        self.assertEqual(self.made.run('start', person='dana'), 2)
+        self.assertIn('dana has no agent recorded here', self.made.said())
+
+    def test_start_without_a_credential_in_the_folder_says_so_rather_than_minting(self):
+        self.stopped()
+        (self.made.folder() / 'plow-credentials').unlink()
+        self.assertEqual(self.made.run('start', person='dana'), 1)
+        self.assertEqual(len(self.made.minted), 1)
+        self.assertIn('holds no credential', self.made.said())
+
+
 class RemovalTests(unittest.TestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
@@ -730,10 +793,10 @@ class CommandLineTests(unittest.TestCase):
         args, _ = self.reaching(['hosted', 'remove', 'dana'])
         self.assertIsNone(args.confirm)
 
-    def test_list_status_and_stop_reach_the_tool(self):
+    def test_list_status_start_and_stop_reach_the_tool(self):
         args, _ = self.reaching(['hosted', 'list'])
         self.assertEqual((args.hosted_action, getattr(args, 'person', None)), ('list', None))
-        for action in ('status', 'stop'):
+        for action in ('status', 'start', 'stop'):
             with self.subTest(action=action):
                 args, _ = self.reaching(['hosted', action, 'dana'])
                 self.assertEqual((args.hosted_action, args.person), (action, 'dana'))
@@ -761,7 +824,7 @@ class DocumentationTests(unittest.TestCase):
 
     def test_the_readme_teaches_the_commands(self):
         for command in ('./relay hosted create', './relay hosted list', './relay hosted status',
-                        './relay hosted stop', './relay hosted remove'):
+                        './relay hosted start', './relay hosted stop', './relay hosted remove'):
             with self.subTest(command=command):
                 self.assertIn(command, self.readme)
 

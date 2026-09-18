@@ -260,6 +260,8 @@ def main(argv=None):
     hosted_actions.add_parser('list', help='Every agent recorded here, and what Docker says about each one')
     hosted_status = hosted_actions.add_parser('status', help='One agent, and the limits Docker reports for it')
     hosted_status.add_argument('person')
+    hosted_start = hosted_actions.add_parser('start', help='Start one stopped agent again, on the line it already has')
+    hosted_start.add_argument('person')
     hosted_stop = hosted_actions.add_parser('stop', help='Stop one agent, keeping its line, credential and memory')
     hosted_stop.add_argument('person')
     hosted_remove = hosted_actions.add_parser('remove', help="Delete one agent's container, memory volume and folder")

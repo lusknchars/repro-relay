@@ -20,6 +20,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import time
 import traceback
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'integrations/relay-terminal'))
@@ -91,7 +92,7 @@ class Host:
                                                                     text=True, timeout=60))
         self.compose = compose or plow_agent.compose
         self.now = now or (lambda: f'{datetime.now(timezone.utc):%Y-%m-%dT%H:%M:%SZ}')
-        self.sleep = sleep or __import__('time').sleep
+        self.sleep = sleep or time.sleep
 
     def registry(self):
         return registry.registry_path(self.root)
@@ -176,16 +177,44 @@ def create(host, args, person):
         raise AgentError('Docker could not start the agent. The output above shows why. The line and the folder '
                          'are recorded, so running this command again continues with them.')
     plow_agent.remember_install(folder / 'install.json', project, folder)
+    await_ready(host, folder)
+    report_limits(host, project, folder)
+    print(f'\nGive {args.name or person} this number: {line.get("provider_key") or line["uid"]}', flush=True)
+    print('They text it to talk to their agent. Nothing is installed on their computer.', flush=True)
+    print(f'Next: ./relay hosted status {person}, ./relay hosted stop {person}', flush=True)
+    return 0
+
+
+def await_ready(host, folder):
+    """Wait for the container to say it is configured, and report the line it said it with.
+
+    The agent is called ready because its own log says so, not because Compose returned nothing.
+    """
     state, detail = plow_agent.wait_ready(
         lambda: host.compose('logs', '--no-color', '--since', '15m', 'agent', capture=True, cwd=folder).stdout,
         sleep=host.sleep)
     if state != 'ready':
         raise AgentError(detail)
     print(status_line('Agent ready', detail.split(plow_agent.READY)[-1].strip()), flush=True)
-    report_limits(host, project, folder)
-    print(f'\nGive {args.name or person} this number: {line.get("provider_key") or line["uid"]}', flush=True)
-    print('They text it to talk to their agent. Nothing is installed on their computer.', flush=True)
-    print(f'Next: ./relay hosted status {person}, ./relay hosted stop {person}', flush=True)
+
+
+def start(host, args):
+    """Bring one person's stopped agent back, with the credential and memory it already has.
+
+    This exists so that stopping an agent can be undone. Without it the only way back would be to
+    remove the person and create them again, which would mint and bill a second line.
+    """
+    entry = required(host, args.person)
+    folder = running_folder(entry)
+    if not (folder / 'plow-credentials').is_file():
+        raise AgentError(f'The folder recorded for {entry["person"]}, {folder}, holds no credential, so there is no '
+                         'agent to start there. ./relay hosted status ' + entry['person'] + ' shows what is left of it.')
+    guard(host, folder, entry['project'], fresh=False)
+    if host.compose('up', '-d', cwd=folder).returncode:
+        raise AgentError('Docker could not start the agent. The output above shows why. Nothing was changed.')
+    await_ready(host, folder)
+    report_limits(host, entry['project'], folder)
+    print(f'Started. Text {entry["line"].get("provider_key") or entry["line"]["uid"]} to reach it.', flush=True)
     return 0
 
 
@@ -199,7 +228,11 @@ def already_here(known):
 
 def prepare(host, person, project):
     """The person's own folder, holding what Compose reads: the project name and the service."""
-    folder = registry.private_folder(registry.folder_for(host.root, person))
+    folder = registry.folder_for(host.root, person)
+    if folder.is_symlink():
+        raise AgentError(f'{folder} is a symlink. This tool will not follow one, because that would put this '
+                         "person's credential somewhere else. Nothing was created. Inspect it yourself.")
+    folder = registry.private_folder(folder)
     write_private(folder / '.env', f'COMPOSE_PROJECT_NAME={project}\n')
     write_private(folder / 'compose.yml', COMPOSE_FILE.format(
         person=person, context=host.root / 'agent', image=IMAGE, limits=limit_lines(LIMITS),
@@ -391,13 +424,19 @@ def usable_folder(entry):
     return folder
 
 
-def stop(host, args):
-    """Stop one person's container. Everything else is kept."""
-    entry = required(host, args.person)
+def running_folder(entry):
+    """The folder Compose has to be run in, refused when it is not one."""
     folder = usable_folder(entry)
     if not folder.is_dir():
         raise AgentError(f'The folder recorded for {entry["person"]}, {folder}, is gone, so Compose cannot be run '
                          'there. ./relay hosted list shows what Docker still has under that project.')
+    return folder
+
+
+def stop(host, args):
+    """Stop one person's container. Everything else is kept."""
+    entry = required(host, args.person)
+    folder = running_folder(entry)
     if host.compose('stop', cwd=folder).returncode:
         raise AgentError('Docker did not stop the agent. The output above shows why. Nothing else was changed.')
     found = containers_of(look(host), entry['project'])
@@ -406,8 +445,8 @@ def stop(host, args):
     if any(state in plow_agent.ACTIVE_STATES for _, _, _, state in found):
         raise AgentError('Docker still reports this container as running after being asked to stop it. Nothing was '
                          f'deleted. Inspect it with docker ps --filter label=com.docker.compose.project={entry["project"]}.')
-    print('Stopped. The line, the credential and the memory volume are kept, and ./relay hosted create '
-          f'{entry["person"]} would continue with them.', flush=True)
+    print('Stopped. The line, the credential and the memory volume are kept. Start it again with '
+          f'./relay hosted start {entry["person"]}.', flush=True)
     return 0
 
 
@@ -479,10 +518,11 @@ def hosted_tokens(host):
     agent's credential is somewhere else, so it is added here rather than left to leak.
     """
     tokens = list(plow_agent.plow_tokens())
-    for entry in registry.read(host.registry())['agents'].values():
+    # Read off the filesystem rather than the registry: a registry this tool could not read is one
+    # of the things that lands here, and a log must still be scrubbed then.
+    for credential in sorted((host.root / '.data/hosted/agents').glob('*/plow-credentials')):
         with contextlib.suppress(OSError, UnicodeError):
-            tokens += [text.partition('=')[2].strip()
-                       for text in (Path(entry['folder']) / 'plow-credentials').read_text().splitlines()
+            tokens += [text.partition('=')[2].strip() for text in credential.read_text().splitlines()
                        if text.startswith('PLOW_AGENT_TOKEN=')]
     return [token for token in tokens if token]
 
@@ -520,6 +560,8 @@ def run_hosted(args, host=None):
             return show(host)
         if action == 'status':
             return show(host, registry.safe_identifier(args.person))
+        if action == 'start':
+            return start(host, args)
         if action == 'stop':
             return stop(host, args)
         person = registry.safe_identifier(args.person)  # before any folder is made, for create and remove

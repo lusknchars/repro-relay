@@ -28,6 +28,7 @@ to stop an agent that reaches it.
 ./relay hosted list
 ./relay hosted status dana
 ./relay hosted stop dana
+./relay hosted start dana
 ./relay hosted remove dana --confirm dana
 ```
 
@@ -40,6 +41,11 @@ another.
 `create` picks the free line when there is one. When there are several it stops and lists them,
 and you name one with `--line`. `--new-line` asks Plow to provision one. Creating the same person
 twice mints nothing: it says what already exists and stops.
+
+`stop` keeps everything: the line, the credential and the memory volume. `start` brings that same
+agent back on the line it already has. Stopping is meant to be undone, which is why `start` exists
+at all: without it the only way back would be to remove the person and create them again, and that
+would mint and bill a second line.
 
 `remove` deletes that person's container, their memory volume and their folder, including their
 credential. None of it comes back. It refuses until you repeat the identifier with `--confirm`,
