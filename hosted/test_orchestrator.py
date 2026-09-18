@@ -756,6 +756,18 @@ class RemovalTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn('nobody has no agent recorded here', said)
 
+    def test_a_folder_that_is_already_gone_still_removes_the_container_by_its_own_id(self):
+        wanted = self.made.docker.of_project('relay-hosted-dana')[0]['ID']
+        shutil.rmtree(self.made.folder('dana'))
+        code, said = self.remove(confirm='dana')
+        self.assertEqual(code, 0)
+        self.assertEqual([command for command, _ in self.made.docker.commands if command[:3] == ['docker', 'rm', '-f']],
+                         [['docker', 'rm', '-f', wanted]])
+        self.assertEqual(list(self.made.recorded()), ['mel'])
+        self.assertEqual(self.made.docker.volumes, ['relay-hosted-mel_agent-home'])
+        self.assertEqual([item['com.docker.compose.project'] for item in self.made.docker.containers],
+                         ['relay-hosted-mel'])
+
     def test_a_folder_that_is_a_symlink_is_never_followed(self):
         target = self.made.root / 'elsewhere'
         target.mkdir()
