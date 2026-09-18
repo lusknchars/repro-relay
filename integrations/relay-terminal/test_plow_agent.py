@@ -1767,6 +1767,14 @@ class ModelCommandTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn('the switch itself landed', out)
 
+    def test_check_raising_something_other_than_agenterror_still_does_not_fail_the_switch(self):
+        container = FakeContainer()
+        with patch.object(plow_agent, 'speak', side_effect=RuntimeError('unexpected')):
+            code, out, err = run_model(container, id='anthropic/claude-haiku-4', check=True)
+        self.assertEqual(code, 0)
+        self.assertEqual(err, '')
+        self.assertIn('the switch itself landed', out)
+
     def test_the_restart_command_failing_names_the_backup_and_revert(self):
         container = FakeContainer()
         container.restart_fails = True

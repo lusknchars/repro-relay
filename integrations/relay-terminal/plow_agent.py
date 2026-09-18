@@ -900,10 +900,14 @@ def show_model():
 
 def report_check():
     """After a switch: one prompt through speak(), so a wrong id shows up at once. A failed call or an empty
-    reply never turns a landed switch into a failure; it says the switch landed and the check did not."""
+    reply never turns a landed switch into a failure; it says the switch landed and the check did not.
+
+    Catches any exception, not only AgentError: the Model line is already printed by the time this runs, so
+    nothing this does may turn an already-landed switch into a non-zero exit.
+    """
     try:
         reply = speak(MODEL_CHECK_PROMPT)
-    except AgentError:
+    except Exception:
         reply = ''
     if reply.strip():
         print(reply, flush=True)
