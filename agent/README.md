@@ -87,18 +87,44 @@ That edition does not satisfy the competition's usage-reporting requirement.
 ## Transport watchdog
 
 The image also runs `transport-watchdog`, an s6 service that checks once a
-minute that the agent can still receive messages. It reads the gateway's own
-record of its Plow chat and email connections. When a connection has stopped
-reporting for six minutes, it restarts only the gateway, at most once every ten
-minutes. A restart that works is silent. After three restarts that do not bring
-the connection back, it sends one text to the owner chat that `plow-init`
-configures, over the same REST API the agent replies through, and stops
-restarting until the connection returns.
+minute that the agent can still receive messages, and that it can still reach
+the owner's Mac.
+
+For messages, it reads the gateway's own record of its Plow chat and email
+connections. When a connection has stopped reporting for six minutes, it
+restarts only the gateway. A restart that works is silent. After three restarts
+that do not bring the connection back, it sends one text to the owner chat that
+`plow-init` configures, over the same REST API the agent replies through, and
+stops restarting until the connection returns.
+
+The Mac tools are watched the same way. The agent reaches the Mac through Latch,
+as an MCP server the gateway connects to, and nothing records that session in a
+state file: when it drops, the tools simply vanish and the agent answers as
+though it never had hands. So the watchdog reads the end of the gateway's own
+log, `/var/lib/hermes/logs/agent.log`, for the last state change that logger
+wrote about the server, and believes only lines with that logger's exact shape.
+When the session has been anything but connected for six minutes, it asks Latch
+itself for one MCP handshake, once a minute for as long as the session stays
+unhealthy, and the answer decides what happens:
+
+- **Latch answers.** The session is stuck inside the gateway, so the gateway is
+  restarted, verified and, after three failed recoveries, texted about, exactly
+  as a lost message transport is.
+- **Latch does not answer.** The Mac is asleep, offline, or Latch is closed. No
+  restart here can reach it, so it sends one text saying so and nothing further
+  until the session comes back.
+
+The two are watched separately, each with its own failures and its own text, so
+neither can silence the other. They share one rule: the gateway is restarted at
+most once every ten minutes, whichever of them asks, because one restart serves
+both. Watching the Mac session needs `PLOW_MCP_URL`; without it messages are
+still watched and the log says so once at startup.
 
 It runs as root, because restarting a service needs s6's control files, and it
-reads the agent token only to send that one text. The token goes only to
-`https://` Plow, never through a proxy or a redirect, and is never logged.
-Without a token or an owner chat it stands down. See what it has done:
+reads the agent token to send those texts and to ask Latch. The token goes only
+to an `https://` endpoint, never through a proxy or a redirect. Neither it nor
+the Latch url, which names the device, is ever logged. Without a token or an
+owner chat it stands down. See what it has done:
 
 ```sh
 docker compose logs agent | grep transport-watchdog:

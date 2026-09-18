@@ -1,10 +1,16 @@
+from contextlib import contextmanager
 import datetime as dt
 import importlib.util
 import inspect
 import json
 import os
 from pathlib import Path
+import re
+import signal
+import subprocess
+import sys
 import tempfile
+import time
 import unittest
 import unittest.mock
 import urllib.error
@@ -18,6 +24,25 @@ spec.loader.exec_module(watchdog)
 
 NOW = dt.datetime(2026, 9, 16, 12, 0, tzinfo=dt.timezone.utc)
 PID, STARTED = 198, 38119734
+
+
+class Blocked(BaseException):
+    """A read that must never block did. Not an Exception, so no except clause hides it."""
+
+
+@contextmanager
+def deadline(seconds=5):
+    """Turn a read that blocks into a failure rather than a hung suite."""
+    def ring(number, frame):
+        raise Blocked("the call blocked")
+
+    previous = signal.signal(signal.SIGALRM, ring)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
 
 
 def minutes_ago(n):
@@ -116,7 +141,7 @@ class HealthRule(unittest.TestCase):
             deep = Path(folder) / "deep.json"
             deep.write_text('{"a":' * 100000 + "1" + "}" * 100000)
             for path in (link, fifo, big, deep):
-                with self.subTest(path=path.name):
+                with self.subTest(path=path.name), deadline(5):
                     self.assertIsNone(watchdog.load_state(path))
             self.assertEqual(watchdog.load_state(real)["pid"], PID)
 
@@ -147,8 +172,168 @@ class ProcessStartTime(unittest.TestCase):
             self.assertIsNone(watchdog.process_start_time(PID + 1, proc=folder))
 
 
+ARROW = "→"
+
+# The lines the running agent wrote on September 17, verbatim.
+DEGRADED = "2026-09-17 18:27:49,111 WARNING tools.mcp_tool: MCP server 'plow' keepalive failed, triggering reconnect (state: connected → degraded): MCPError: Server returned an error response"
+PARKED = "2026-09-17 18:28:25,446 WARNING tools.mcp_tool: MCP server 'plow' failed after 5 reconnection attempts, parking; will self-probe every 300s until it recovers (state: degraded → parked): MCPError: Server returned an error response"
+REVIVED = "2026-09-17 18:36:29,267 WARNING tools.mcp_tool: MCP server 'plow': revived — session healthy again after parking (state: parked → connected)"
+UNKNOWN_TOOL = '2026-09-17 17:03:47,416 WARNING [20260915_195146_eccb6d55] agent.tool_executor: Tool mcp__plow__plow_device_status returned error (0.00s): {"error": "Unknown tool: mcp__plow__plow_device_status"}'
+AGENT_LOG = "\n".join([UNKNOWN_TOOL, DEGRADED, PARKED]) + "\n"
+
+# The same two substrings, inside lines the gateway's MCP logger did not write.
+CHAT_ECHO = f'2026-09-17 18:41:02,004 INFO agent.messages: message from the owner: "{PARKED}"'
+TOOL_ECHO = ('2026-09-17 18:42:11,900 WARNING [20260915_195146_eccb6d55] agent.tool_executor: '
+             f'Tool mcp__plow__plow_read_file returned error (0.00s): {{"error": "{REVIVED}"}}')
+
+
+def mcp_line(at, body, server="plow"):
+    return f"2026-09-17 {at} WARNING tools.mcp_tool: MCP server '{server}' {body}"
+
+
+def timed_reading(path, tail, limit=10):
+    """(seconds, state, stamp) for one mcp_status call, measured in a child process.
+
+    A pattern that backtracks runs inside the regex engine, where a signal cannot
+    interrupt it, so a runaway would hang this suite instead of failing it. The
+    child is killed at `limit` and that becomes a failure with a plain reason.
+    """
+    code = (
+        "import importlib.util, sys, time\n"
+        "spec = importlib.util.spec_from_file_location('w', sys.argv[1])\n"
+        "module = importlib.util.module_from_spec(spec)\n"
+        "spec.loader.exec_module(module)\n"
+        "started = time.perf_counter()\n"
+        "state, stamp = module.mcp_status(sys.argv[2], tail=int(sys.argv[3]))\n"
+        "print(time.perf_counter() - started, state, stamp.isoformat() if stamp else '')\n")
+    module = str(ROOT / "image/s6-overlay/scripts/transport_watchdog.py")
+    try:
+        done = subprocess.run([sys.executable, "-I", "-c", code, module, str(path), str(tail)],
+                              capture_output=True, text=True, timeout=limit)
+    except subprocess.TimeoutExpired:
+        raise AssertionError(f"mcp_status did not finish within {limit}s on one line")
+    if done.returncode:
+        raise AssertionError(f"mcp_status failed in the child: {done.stderr.strip()[:200]}")
+    spent, state, stamp = done.stdout.split(" ", 2)
+    return float(spent), state, stamp.strip()
+
+
+def logged(folder, text):
+    path = Path(folder) / "agent.log"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def at(hour, minute, second, millisecond=0):
+    return dt.datetime(2026, 9, 17, hour, minute, second, millisecond * 1000, tzinfo=dt.timezone.utc)
+
+
+class MacSessionLog(unittest.TestCase):
+    def test_the_last_state_change_for_the_server_is_the_session_state(self):
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertEqual(watchdog.mcp_status(logged(folder, AGENT_LOG)),
+                             ("parked", at(18, 28, 25, 446)))
+
+    def test_a_plain_arrow_reads_like_the_unicode_one_and_another_server_is_not_ours(self):
+        elsewhere = mcp_line("18:40:12,000", f"keepalive failed (state: connected {ARROW} degraded)", server="github")
+        text = "\n".join([AGENT_LOG, REVIVED.replace(ARROW, "->"), elsewhere]) + "\n"
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertEqual(watchdog.mcp_status(logged(folder, text)),
+                             ("connected", at(18, 36, 29, 267)))
+
+    def test_a_line_the_gateways_own_logger_did_not_write_is_not_a_reading(self):
+        text = "\n".join([DEGRADED, PARKED, REVIVED, CHAT_ECHO, TOOL_ECHO]) + "\n"
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertEqual(watchdog.mcp_status(logged(folder, text)),
+                             ("connected", at(18, 36, 29, 267)))
+            quoted = "\n".join([CHAT_ECHO, TOOL_ECHO]) + "\n"
+            self.assertEqual(watchdog.mcp_status(logged(folder, quoted)), (None, None))
+
+    def test_a_stamp_that_names_no_moment_is_not_a_reading(self):
+        impossible = PARKED.replace("2026-09-17 18:28:25,446", "2026-13-45 18:28:25,446")
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertEqual(watchdog.mcp_status(logged(folder, impossible + "\n")), (None, None))
+            both = "\n".join([DEGRADED, impossible]) + "\n"
+            self.assertEqual(watchdog.mcp_status(logged(folder, both)),
+                             ("degraded", at(18, 27, 49, 111)))
+
+    def test_quarter_megabyte_hostile_lines_cost_almost_nothing(self):
+        start = "2026-09-17 18:29:00,000 WARNING tools.mcp_tool: MCP server 'plow' "
+        for shape, hostile in (("open parentheses", start + "(state: " * 34000),
+                               ("half written changes", start + "(state: a -> b " * 18000)):
+            with self.subTest(shape=shape):
+                self.assertGreater(len(hostile.encode()), 256 * 1024)
+                text = "\n".join([PARKED, hostile]) + "\n"
+                with tempfile.TemporaryDirectory() as folder:
+                    path = logged(folder, text)
+                    spent, state, stamp = timed_reading(path, len(text.encode()) + 1)
+                self.assertEqual((state, stamp), ("parked", at(18, 28, 25, 446).isoformat()))
+                self.assertLess(spent, 0.5, f"the pattern spent {spent:.1f}s on one line")
+
+    def test_every_repetition_in_the_line_pattern_has_an_upper_bound(self):
+        pattern = watchdog.MCP_LINE.pattern
+        for unbounded in ('*', '+'):
+            self.assertNotIn(unbounded, pattern,
+                             f"an unbounded {unbounded} can be made to backtrack for minutes")
+        self.assertEqual(re.findall(r'\{\d+,\}', pattern), [],
+                         'a repetition with no upper bound can be made to backtrack for minutes')
+
+    def test_a_change_far_from_the_server_name_is_not_a_reading(self):
+        distant = ("2026-09-17 18:29:00,000 WARNING tools.mcp_tool: MCP server 'plow' "
+                   + "x" * 1000 + "(state: parked -> connected)")
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertEqual(watchdog.mcp_status(logged(folder, distant + "\n")), (None, None))
+            near = "\n".join([PARKED, distant]) + "\n"
+            self.assertEqual(watchdog.mcp_status(logged(folder, near)),
+                             ("parked", at(18, 28, 25, 446)))
+
+    def test_a_missing_or_unsafe_log_and_one_without_the_server_read_as_nothing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertEqual(watchdog.mcp_status(Path(folder) / "gone.log"), (None, None))
+            real = logged(folder, AGENT_LOG)
+            link = Path(folder) / "link.log"
+            link.symlink_to(real)
+            fifo = Path(folder) / "fifo.log"
+            os.mkfifo(fifo)
+            directory = Path(folder) / "directory.log"
+            directory.mkdir()
+            quiet = Path(folder) / "quiet.log"
+            quiet.write_text(UNKNOWN_TOOL + "\n", encoding="utf-8")
+            for path in (link, fifo, directory, quiet):
+                with self.subTest(path=path.name), deadline(5):
+                    self.assertEqual(watchdog.mcp_status(path), (None, None))
+            self.assertEqual(watchdog.mcp_status(real)[0], "parked")
+
+    def test_only_the_end_of_the_log_is_read_and_the_partial_first_line_is_dropped(self):
+        text = "\n".join([DEGRADED, PARKED, UNKNOWN_TOOL]) + "\n"
+        opens_inside_the_parked_line = len(PARKED.encode()) + len(UNKNOWN_TOOL.encode()) - 3
+        with tempfile.TemporaryDirectory() as folder:
+            path = logged(folder, text)
+            self.assertEqual(watchdog.mcp_status(path, tail=len(text.encode())),
+                             ("parked", at(18, 28, 25, 446)))
+            self.assertEqual(watchdog.mcp_status(path, tail=opens_inside_the_parked_line),
+                             (None, None))
+
+
 def down_since(minutes):
     return NOW - dt.timedelta(minutes=minutes)
+
+
+class MacSessionRule(unittest.TestCase):
+    def test_connected_or_nothing_read_is_no_problem(self):
+        self.assertIsNone(watchdog.mcp_problem("connected", at(18, 36, 29, 267)))
+        self.assertIsNone(watchdog.mcp_problem(None, None))
+
+    def test_every_other_state_dates_the_problem_from_the_change(self):
+        since = at(18, 27, 49, 111)
+        for state in ("degraded", "parked", "reconnecting"):
+            with self.subTest(state=state):
+                self.assertEqual(watchdog.mcp_problem(state, since), since)
+
+    def test_the_mac_session_waits_out_the_grace_the_transport_gets(self):
+        self.assertEqual(watchdog.MCP_GRACE_SECONDS, watchdog.GRACE_SECONDS)
+        self.assertFalse(watchdog.unhealthy(watchdog.mcp_problem("parked", down_since(5)), NOW))
+        self.assertTrue(watchdog.unhealthy(watchdog.mcp_problem("parked", down_since(6)), NOW))
 
 
 def later(minutes):
@@ -230,8 +415,9 @@ class RecoveryPolicy(unittest.TestCase):
 
 
 class FakeResponse:
-    def __init__(self, body):
+    def __init__(self, body, status=200):
         self.body = body
+        self.status = status
 
     def read(self):
         return self.body
@@ -324,11 +510,191 @@ class OwnerAlert(unittest.TestCase):
 
     def test_the_alert_text_has_no_hyphens_or_dashes(self):
         dashes = {"-", "‐", "‑", "‒", "–", "—", "―", "−"}
-        self.assertFalse(dashes & set(watchdog.ALERT_TEXT))
+        for text in (watchdog.ALERT_TEXT, watchdog.MAC_ALERT_TEXT, watchdog.LATCH_ALERT_TEXT):
+            with self.subTest(text=text[:24]):
+                self.assertFalse(dashes & set(text))
+
+    def test_the_mac_texts_say_what_is_lost_and_what_the_owner_can_do(self):
+        self.assertEqual(watchdog.MAC_ALERT_TEXT, (
+            "I lost my connection to your Mac and could not get it back after three tries, "
+            "so I cannot read files or run commands there. Restarting the agent may fix it."))
+        self.assertEqual(watchdog.LATCH_ALERT_TEXT, (
+            "I cannot reach your Mac through Latch right now, so I cannot read files or run "
+            "commands there. Waking the Mac or opening Latch should fix it. Messages still reach me."))
+
+
+LATCH_URL = "https://api.plow.co/v1/mcp/dev_2f8a9c"
+HANDSHAKE = b'{"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2025-06-18", "serverInfo": {"name": "plow"}}}'
+
+
+def latch_with(opener, url=LATCH_URL):
+    return watchdog.latch_reachable(url, "tok", opener=opener)
+
+
+class LatchProbe(unittest.TestCase):
+    def test_the_handshake_has_the_shape_an_mcp_server_expects(self):
+        request = watchdog.build_handshake_request(LATCH_URL, "tok")
+        self.assertEqual(request.full_url, LATCH_URL)
+        self.assertEqual(request.get_method(), "POST")
+        self.assertEqual(request.get_header("Authorization"), "Bearer tok")
+        self.assertEqual(request.get_header("Content-type"), "application/json")
+        self.assertEqual(request.get_header("Accept"), "application/json, text/event-stream")
+        self.assertEqual(request.get_header("Mcp-protocol-version"), "2025-06-18")
+        self.assertEqual(json.loads(request.data), {
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {"protocolVersion": "2025-06-18", "capabilities": {},
+                       "clientInfo": {"name": "transport-watchdog", "version": "1"}}})
+
+    def test_latch_answering_the_handshake_means_the_mac_is_reachable(self):
+        asked = []
+
+        def opener(request, timeout):
+            asked.append((request.full_url, timeout))
+            return FakeResponse(HANDSHAKE)
+
+        self.assertTrue(watchdog.latch_reachable(LATCH_URL, "tok", opener=opener))
+        self.assertEqual(asked, [(LATCH_URL, 20)])
+
+    def test_an_event_stream_is_read_from_its_last_data_line(self):
+        stream = (b'event: message\ndata: {"jsonrpc": "2.0", "id": 0, "error": {"code": -32000}}\n'
+                  b"\nevent: message\ndata: " + HANDSHAKE + b"\n\n")
+        self.assertTrue(latch_with(answering(stream)))
+
+    def test_an_answer_without_a_result_is_not_an_answer(self):
+        for body in (b'{"jsonrpc": "2.0", "id": 1, "error": {"code": -32000, "message": "no device"}}',
+                     b"event: message\ndata: half a line\n\n", b"", b"not json", b"[]"):
+            with self.subTest(body=body):
+                self.assertFalse(latch_with(answering(body)))
+
+    def test_an_error_a_timeout_or_a_nonsense_url_is_not_an_answer_and_never_raises(self):
+        for error in (http_error(503), http_error(401), http_error(404),
+                      urllib.error.URLError(TimeoutError()), urllib.error.URLError(ConnectionRefusedError()),
+                      TimeoutError(), ConnectionResetError(), ValueError("unknown url type")):
+            with self.subTest(error=type(error).__name__):
+                self.assertFalse(latch_with(raising(error)))
+
+    def test_only_a_2xx_answer_counts(self):
+        for status in (302, 204):
+            with self.subTest(status=status):
+                self.assertEqual(latch_with(lambda request, timeout: FakeResponse(HANDSHAKE, status)),
+                                 status == 204)
+
+    def test_the_agent_token_never_leaves_over_plain_http(self):
+        sent = []
+
+        def opener(request, timeout):
+            sent.append(request)
+            return FakeResponse(HANDSHAKE)
+
+        for url in ("http://api.plow.co/v1/mcp/dev_2f8a9c", "/v1/mcp/dev_2f8a9c", ""):
+            with self.subTest(url=url):
+                self.assertFalse(latch_with(opener, url=url))
+        self.assertEqual(sent, [])
 
 
 def stalled():
     return gateway(chat=entry("disconnected", minutes_ago(6)))
+
+
+def reading(state, minutes=None):
+    """What mcp_status returns for a session in this state since then."""
+    return lambda: (state, None if minutes is None else down_since(minutes))
+
+
+class Dimensions(unittest.TestCase):
+    """The transport and the Mac session, sharing only the gateway restart."""
+
+    def setUp(self):
+        self.restarts, self.sent, self.lines = [], [], []
+
+    def check(self, dog, mac, minute, doc):
+        moment = later(minute)
+        return watchdog.once(dog, moment, doc,
+                             restart=lambda: self.restarts.append(moment) or True,
+                             alert=lambda text: self.sent.append(text) or "sent",
+                             log=self.lines.append, start_time_of=running, mac=mac)
+
+    def test_after_the_mac_has_alerted_a_transport_outage_still_restarts_and_alerts(self):
+        dog, mac = watchdog.watchers(reading("parked", 7), lambda: True)
+        for minute in range(40):
+            self.check(dog, mac, minute, gateway())
+        self.assertEqual((self.sent, len(self.restarts)), ([watchdog.MAC_ALERT_TEXT], 3))
+        for minute in range(40, 120):
+            self.check(dog, mac, minute, stalled())
+        self.assertEqual(self.sent, [watchdog.MAC_ALERT_TEXT, watchdog.ALERT_TEXT])
+        self.assertEqual(len(self.restarts), 6)
+
+    def test_after_the_transport_has_alerted_a_stuck_mac_still_restarts_and_alerts(self):
+        session = ["connected"]
+        dog, mac = watchdog.watchers(lambda: (session[0], down_since(7)), lambda: True)
+        for minute in range(40):
+            self.check(dog, mac, minute, stalled())
+        self.assertEqual((self.sent, len(self.restarts)), ([watchdog.ALERT_TEXT], 3))
+        session[0] = "parked"
+        for minute in range(40, 120):
+            self.check(dog, mac, minute, gateway())
+        self.assertEqual(self.sent, [watchdog.ALERT_TEXT, watchdog.MAC_ALERT_TEXT])
+        self.assertEqual(len(self.restarts), 6)
+
+    def test_two_problems_at_once_restart_the_gateway_only_once_in_ten_minutes(self):
+        dog, mac = watchdog.watchers(reading("parked", 7), lambda: True)
+        for minute in range(60):
+            self.check(dog, mac, minute, stalled())
+        self.assertEqual(self.restarts, [later(minute) for minute in (0, 10, 20, 30, 40, 50)])
+        self.assertEqual(self.sent, [watchdog.ALERT_TEXT, watchdog.MAC_ALERT_TEXT])
+
+    def test_an_intermittent_probe_never_restarts_more_than_three_times(self):
+        asked = []
+
+        def probe():
+            asked.append(1)
+            return len(asked) % 20 != 0
+
+        dog, mac = watchdog.watchers(reading("parked", 7), probe)
+        for minute in range(600):
+            self.check(dog, mac, minute, gateway())
+        self.assertEqual(len(self.restarts), 3)
+        self.assertEqual(self.sent.count(watchdog.MAC_ALERT_TEXT), 1)
+        self.assertEqual(self.sent.count(watchdog.LATCH_ALERT_TEXT), 1)
+
+    def test_nothing_is_said_about_a_transport_that_was_never_down(self):
+        dog, mac = watchdog.watchers(reading("parked", 7), lambda: False)
+        for minute in range(600):
+            self.check(dog, mac, minute, gateway())
+        self.assertEqual([line for line in self.lines if "transport" in line], [])
+        self.assertEqual(self.restarts, [])
+
+    def test_a_change_younger_than_the_grace_holds_the_episode_and_its_counters(self):
+        session, reachable = ["parked", down_since(7)], [False]
+        dog, mac = watchdog.watchers(lambda: (session[0], session[1]), lambda: reachable[0])
+        self.check(dog, mac, 0, gateway())          # Latch does not answer: told once, no restart
+        reachable[0] = True
+        self.check(dog, mac, 1, gateway())          # stuck: the gateway is restarted
+        self.check(dog, mac, 4, gateway())          # the restart did not revive it
+        self.assertEqual((mac.dog.failed, mac.reported, mac.notified), (1, True, True))
+        said = len(self.lines)
+        session[:] = ["degraded", later(3)]         # the session changed again a moment ago
+        self.check(dog, mac, 5, gateway())
+        self.check(dog, mac, 6, gateway())
+        self.assertEqual((mac.dog.failed, mac.reported, mac.notified), (1, True, True))
+        self.assertEqual(self.lines[said:], [])
+        self.assertEqual((self.sent, len(self.restarts)), ([watchdog.LATCH_ALERT_TEXT], 1))
+
+    def test_a_probe_that_flips_never_resets_what_the_mac_has_counted(self):
+        flips = []
+
+        def probe():
+            flips.append(1)
+            return len(flips) % 2 == 1
+
+        dog, mac = watchdog.watchers(reading("parked", 7), probe)
+        counted = []
+        for minute in range(60):
+            self.check(dog, mac, minute, gateway())
+            counted.append(mac.dog.failed)
+        self.assertEqual(counted, sorted(counted))
+        self.assertEqual(mac.dog.failed, watchdog.MAX_FAILED_RECOVERIES)
+        self.assertEqual(self.sent.count(watchdog.MAC_ALERT_TEXT), 1)
 
 
 class ServiceWiring(unittest.TestCase):
@@ -398,11 +764,11 @@ class Loop(unittest.TestCase):
         dog = watchdog.Watchdog()
         dog.failed = watchdog.MAX_FAILED_RECOVERIES
         alert = watchdog.make_alert("https://api.plow.co", "tok_secret", "cht_owner",
-                                    send=lambda base, token, chat: sent.append((base, token, chat)) or "sent")
+                                    send=lambda base, token, chat, text: sent.append((base, token, chat, text)) or "sent")
         action = watchdog.once(dog, NOW, stalled(), restart=lambda: True, alert=alert,
                                log=lines.append, start_time_of=running)
         self.assertEqual(action, "alert")
-        self.assertEqual(sent, [("https://api.plow.co", "tok_secret", "cht_owner")])
+        self.assertEqual(sent, [("https://api.plow.co", "tok_secret", "cht_owner", watchdog.ALERT_TEXT)])
         self.assertIn("owner alert sent", lines[-1])
         self.assertNotIn("tok_secret", "\n".join(lines))
 
@@ -432,7 +798,7 @@ class Loop(unittest.TestCase):
         dog = watchdog.Watchdog()
         dog.failed = watchdog.MAX_FAILED_RECOVERIES
 
-        def alert():
+        def alert(text):
             raise ValueError("detail that must not reach the log")
 
         action = watchdog.once(dog, NOW, stalled(), restart=lambda: True, alert=alert,
@@ -440,21 +806,178 @@ class Loop(unittest.TestCase):
         self.assertEqual(action, "alert")
         self.assertEqual(lines, ["recovery failed 3 times, owner alert failed with ValueError"])
 
+    def test_a_stuck_mac_session_latch_answers_for_restarts_the_gateway_on_its_own(self):
+        restarts, lines = [], []
+        dog, mac = watchdog.watchers(reading("parked", 7), lambda: True)
+        action = watchdog.once(dog, NOW, gateway(), restart=lambda: restarts.append(1) or True,
+                               alert=lambda text: "sent", log=lines.append, start_time_of=running,
+                               mac=mac)
+        self.assertEqual((action, len(restarts)), ("none", 1))
+        self.assertEqual((dog.since, mac.dog.since), (None, down_since(7)))
+        self.assertEqual(lines, ["the Mac session has been parked since 11:53 UTC",
+                                 "the Mac session is stuck, restarting the gateway"])
+
+    def test_a_mac_session_inside_the_grace_is_left_alone_and_latch_is_not_asked(self):
+        probes, restarts, lines = [], [], []
+        dog, mac = watchdog.watchers(reading("degraded", 5), lambda: probes.append(1) or False)
+        action = watchdog.once(dog, NOW, gateway(),
+                               restart=lambda: restarts.append(1) or True,
+                               alert=lambda text: "sent", log=lines.append, start_time_of=running,
+                               mac=mac)
+        self.assertEqual((action, probes, restarts, lines), ("none", [], [], []))
+
+    def test_a_mac_latch_does_not_answer_for_is_not_restarted_and_is_told_once(self):
+        restarts, sent, lines = [], [], []
+        session = ["parked"]
+        dog, mac = watchdog.watchers(lambda: (session[0], down_since(7)), lambda: False)
+
+        def check(minute):
+            return watchdog.once(dog, later(minute), gateway(),
+                                 restart=lambda: restarts.append(1) or True,
+                                 alert=lambda text: sent.append(text) or "sent",
+                                 log=lines.append, start_time_of=running, mac=mac)
+
+        self.assertEqual(check(0), "none")
+        self.assertEqual(check(1), "none")
+        self.assertEqual((restarts, sent), ([], [watchdog.LATCH_ALERT_TEXT]))
+        session[0] = "connected"
+        self.assertEqual(check(2), "none")
+        session[0] = "parked"
+        self.assertEqual(check(3), "none")
+        self.assertEqual(sent, [watchdog.LATCH_ALERT_TEXT, watchdog.LATCH_ALERT_TEXT])
+        self.assertEqual(restarts, [])
+
+    def test_each_dimension_alerts_in_its_own_words(self):
+        stale = gateway(chat=entry("disconnected", minutes_ago(20)))
+        for doc, session, expected in ((stale, reading("connected", 0), watchdog.ALERT_TEXT),
+                                       (stale, None, watchdog.ALERT_TEXT),
+                                       (gateway(), reading("parked", 30), watchdog.MAC_ALERT_TEXT),
+                                       (None, reading("parked", 30), watchdog.MAC_ALERT_TEXT)):
+            with self.subTest(expected=expected[:24]):
+                sent, lines = [], []
+                dog, mac = watchdog.watchers(session, session and (lambda: True))
+                dog.failed = watchdog.MAX_FAILED_RECOVERIES
+                if mac is not None:
+                    mac.dog.failed = watchdog.MAX_FAILED_RECOVERIES
+                watchdog.once(dog, NOW, doc, restart=lambda: True,
+                              alert=lambda text: sent.append(text) or "sent",
+                              log=lines.append, start_time_of=running, mac=mac)
+                self.assertEqual(sent, [expected])
+
+    def test_the_mac_session_is_logged_when_it_goes_when_latch_is_out_and_when_it_returns(self):
+        lines = []
+        session, reachable = ["degraded", 7], [False]
+        dog, mac = watchdog.watchers(lambda: (session[0], down_since(session[1])),
+                                     lambda: reachable[0])
+
+        def check(minute):
+            return watchdog.once(dog, later(minute), gateway(), restart=lambda: True,
+                                 alert=lambda text: "sent", log=lines.append,
+                                 start_time_of=running, mac=mac)
+
+        check(0)
+        session[:] = ["parked", 8]
+        check(1)
+        session[:], reachable[0] = ["connected", 0], True
+        check(2)
+        session[:] = ["parked", 20]
+        check(3)
+        self.assertEqual(lines, [
+            "the Mac session has been degraded since 11:53 UTC",
+            "cannot reach the Mac through Latch, owner notice sent",
+            "the Mac session is connected again",
+            "the Mac session has been parked since 11:40 UTC",
+            "the Mac session is stuck, restarting the gateway",
+        ])
+
+    def test_a_recovery_and_a_failure_are_logged_in_the_mac_sessions_own_words(self):
+        lines = []
+        session = ["parked", 7]
+        dog, mac = watchdog.watchers(lambda: (session[0], down_since(session[1])), lambda: True)
+
+        def check(minute):
+            return watchdog.once(dog, later(minute), gateway(), restart=lambda: True,
+                                 alert=lambda text: "sent", log=lines.append,
+                                 start_time_of=running, mac=mac)
+
+        check(0)
+        check(3)
+        session[:] = ["connected", 0]
+        check(4)
+        self.assertEqual(lines[1:], [
+            "the Mac session is stuck, restarting the gateway",
+            "the restart did not revive the Mac session, 1 of 3",
+            "the Mac session is connected again",
+        ])
+        session[:] = ["parked", 30]
+        check(10)
+        session[:] = ["connected", 0]
+        check(11)
+        self.assertEqual(lines[-1], "the Mac session revived after the restart")
+
     def test_settings_come_from_the_names_plow_init_publishes(self):
-        env = {"PLOW_API_BASE": "https://staging.plow.example", "PLOW_AGENT_TOKEN": "tok", "PLOW_HOME_CHANNEL": "cht_owner"}
-        self.assertEqual(watchdog.settings(read=env.get), ("https://staging.plow.example", "tok", "cht_owner"))
-        self.assertEqual(watchdog.settings(read=lambda name: ""), ("https://api.plow.co", "", ""))
+        env = {"PLOW_API_BASE": "https://staging.plow.example", "PLOW_AGENT_TOKEN": "tok",
+               "PLOW_HOME_CHANNEL": "cht_owner", "PLOW_MCP_URL": LATCH_URL}
+        self.assertEqual(watchdog.settings(read=env.get),
+                         ("https://staging.plow.example", "tok", "cht_owner", LATCH_URL))
+        self.assertEqual(watchdog.settings(read=lambda name: ""),
+                         ("https://api.plow.co", "", "", ""))
 
     def test_without_the_token_or_the_owner_chat_it_stands_down_and_says_which(self):
         for token, chat, missing in (("", "cht_owner", "PLOW_AGENT_TOKEN"), ("tok_secret", "", "PLOW_HOME_CHANNEL")):
             with self.subTest(missing=missing):
                 lines, sleeps = [], []
-                watchdog.main(configured=lambda: ("https://api.plow.co", token, chat),
+                watchdog.main(configured=lambda: ("https://api.plow.co", token, chat, LATCH_URL),
                               sleep=sleeps.append, log=lines.append)
                 self.assertEqual(sleeps, [86400])
                 self.assertEqual(len(lines), 1)
                 self.assertIn(missing, lines[0])
                 self.assertNotIn("tok_secret", lines[0])
+
+    def test_main_watches_the_mac_only_when_latch_is_configured(self):
+        class Stop(Exception):
+            pass
+
+        seen = []
+
+        def fake_once(dog, now, doc, restart, alert, log=None, start_time_of=None, mac=None):
+            seen.append(mac)
+            return "none"
+
+        def stop(seconds):
+            raise Stop
+
+        def run(mcp_url):
+            lines = []
+            with unittest.mock.patch.object(watchdog, "once", fake_once), \
+                    unittest.mock.patch.object(watchdog, "load_state", lambda: None):
+                with self.assertRaises(Stop):
+                    watchdog.main(configured=lambda: ("https://api.plow.co", "tok_secret",
+                                                      "cht_owner", mcp_url),
+                                  sleep=stop, log=lines.append)
+            return lines
+
+        asked = []
+        with unittest.mock.patch.object(watchdog, "mcp_status", lambda: ("parked", NOW)), \
+                unittest.mock.patch.object(watchdog, "latch_reachable",
+                                           lambda url, token: asked.append((url, token)) or True):
+            self.assertEqual(run(LATCH_URL), [])
+            mac = seen[-1]
+            self.assertEqual(mac.read(), ("parked", NOW))
+            self.assertTrue(mac.probe())
+        self.assertEqual(asked, [(LATCH_URL, "tok_secret")])
+
+        lines = run("")
+        self.assertIsNone(seen[-1])
+        self.assertEqual(len(lines), 1)
+        self.assertIn("PLOW_MCP_URL", lines[0])
+        self.assertNotIn("tok_secret", lines[0])
+
+    def test_the_two_watchers_share_one_restart_limiter_and_nothing_else(self):
+        dog, mac = watchdog.watchers(reading("parked", 7), lambda: True)
+        self.assertIs(dog.limiter, mac.dog.limiter)
+        self.assertIsNot(dog, mac.dog)
+        self.assertIsNone(watchdog.watchers()[1])
 
     def test_main_hands_base_token_and_chat_to_the_alert_in_that_order(self):
         class Stop(Exception):
@@ -464,7 +987,7 @@ class Loop(unittest.TestCase):
 
         def fake_make_alert(base, token, chat_uid, send=None):
             made.append((base, token, chat_uid))
-            return lambda: "sent"
+            return lambda text=watchdog.ALERT_TEXT: "sent"
 
         def stop(seconds):
             raise Stop
@@ -472,7 +995,7 @@ class Loop(unittest.TestCase):
         with unittest.mock.patch.object(watchdog, "make_alert", fake_make_alert), \
                 unittest.mock.patch.object(watchdog, "load_state", lambda: None):
             with self.assertRaises(Stop):
-                watchdog.main(configured=lambda: ("https://api.plow.co", "tok", "cht_owner"),
+                watchdog.main(configured=lambda: ("https://api.plow.co", "tok", "cht_owner", LATCH_URL),
                               sleep=stop, log=lambda message: None)
         self.assertEqual(made, [("https://api.plow.co", "tok", "cht_owner")])
 

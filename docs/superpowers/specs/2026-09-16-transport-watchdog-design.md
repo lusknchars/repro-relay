@@ -134,6 +134,54 @@ Every recovery is written to the watchdog's log whether it succeeds or not, and
 so is a transport that comes back on its own after a failed recovery, so the
 history exists for the dashboard later.
 
+## The Mac tools
+
+Added September 17, 2026. The agent reaches the owner's Mac through Latch, as
+an MCP server the gateway connects to, named `plow` in `config.yaml`. Its tools
+are `plow_read_file`, `plow_write_file`, `plow_run_command` and the browser set.
+When that session drops, the model is not told the Mac is unreachable: the tools
+simply vanish from its list, and a call returns `Unknown tool:
+mcp__plow__plow_read_file`. The agent then answers as though it never had hands.
+This repository's own logs show it parking and reviving several times a day, and
+one event at 18:36 took the messaging transport and the Mac tools together.
+
+**The signal.** Nothing records this session in `gateway_state.json`, and there
+is no state file. The gateway logs each change to
+`/var/lib/hermes/logs/agent.log`:
+
+```
+MCP server 'plow' keepalive failed, triggering reconnect (state: connected -> degraded)
+MCP server 'plow' failed after 5 reconnection attempts, parking; will self probe every 300s until it recovers (state: degraded -> parked)
+MCP server 'plow': revived, session healthy again after parking (state: parked -> connected)
+```
+
+The last such line for `plow` gives the current state and when it changed. Log
+timestamps are UTC, as the container is.
+
+**The rule.** `degraded` or `parked` for six minutes is unhealthy, the same
+grace the transport gets. A parked session self probes only every five minutes,
+so this is where the agent quietly loses its hands for long stretches.
+
+**Telling the two causes apart.** The watchdog asks Latch itself, with the
+agent's own credential from `PLOW_MCP_URL` and `PLOW_AGENT_TOKEN`, for one MCP
+handshake:
+
+- **Latch answers.** The gateway's session is stuck while the Mac is reachable,
+  so this joins the transport's problem: the same restart, the same limit of one
+  per ten minutes, the same three failures before an alert.
+- **Latch does not answer.** The Mac is asleep, offline or Latch is closed.
+  Restarting the gateway cannot fix that, so it does not restart. It tells the
+  owner once per episode and says nothing further until the session returns.
+
+**The alerts.** Recovery that works stays silent, as before.
+
+- Restarts failed three times: "I lost my connection to your Mac and could not
+  get it back after three tries, so I cannot read files or run commands there.
+  Restarting the agent may fix it."
+- Latch unreachable: "I cannot reach your Mac through Latch right now, so I
+  cannot read files or run commands there. Waking the Mac or opening Latch
+  should fix it. Messages still reach me."
+
 ## The alert
 
 Sent only when recovery fails. A successful recovery is silent.
