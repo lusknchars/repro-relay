@@ -26,6 +26,8 @@ jobs:
           components: rustfmt, clippy
       - name: Install PostgreSQL client tools
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Install PyYAML for the agent model tests
+        run: sudo apt-get install -y python3-yaml
       - run: npm ci --prefix web
       - run: npm ci --prefix web/reptest
       - run: npm exec --prefix web -- playwright install --with-deps chromium
