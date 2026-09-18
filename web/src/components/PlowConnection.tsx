@@ -1,9 +1,17 @@
 import { useState } from 'react'
 import { Copy, Download, ExternalLink, LoaderCircle } from 'lucide-react'
 import { Button } from './ui/button'
+import { message } from '../lib/api'
 import guideUrl from '../../../integrations/plow/README.md?url'
 
 const launchCommand = 'open -b co.plow.domo-desktop'
+// Plow Latch is a Mac application. Anything that does not report macOS is never
+// told to open Latch on a Mac it may not have.
+const mac = /\bMac/.test(navigator.userAgent)
+// Tauri rejects a command with the plain string its Rust side returned, so the
+// real reason survives instead of being replaced by a generic one.
+const reason = (error: unknown) =>
+  typeof error === 'string' && error.trim() ? error.trim() : message(error)
 
 export function PlowConnection({ guest }: { guest: boolean }) {
   const [opening, setOpening] = useState(false)
@@ -18,8 +26,9 @@ export function PlowConnection({ guest }: { guest: boolean }) {
       const { invoke } = await import('@tauri-apps/api/core')
       await invoke('open_plow_latch')
       setNotice('Launch requested. Complete any setup in Plow Latch, then connect your Relay line below.')
-    } catch {
-      setError('Could not open Plow Latch. This action needs the installed Mac app. Open it from Applications, or use the official setup link below.')
+    } catch (error) {
+      // The native command says why. Off macOS, that reason is the whole answer.
+      setError(`Could not open Plow Latch. ${reason(error)}`)
     } finally { setOpening(false) }
   }
 
@@ -27,7 +36,7 @@ export function PlowConnection({ guest }: { guest: boolean }) {
     setNotice(''); setError('')
     try {
       await navigator.clipboard.writeText(launchCommand)
-      setNotice('Launch command copied. Paste it into Terminal on your Mac.')
+      setNotice('Launch command copied. Paste it into Terminal on the Mac where Latch is installed.')
     } catch {
       setError('Clipboard access is unavailable. Select and copy the launch command shown below.')
     }
@@ -56,11 +65,13 @@ export function PlowConnection({ guest }: { guest: boolean }) {
   }
 
   return <div className="space-y-5 text-sm">
-    <p className="text-muted-foreground">Connect your Mac and a Plow assistant line to bring phone reports into Relay and deliver approved updates.</p>
-    {guest ? <p role="status">Plow connections belong to your local workspace. Open Repro Relay on your Mac to set up this integration.</p> : <>
+    <p className="text-muted-foreground">Connect a Mac running Plow Latch and a Plow assistant line to bring phone reports into Relay and deliver approved updates.</p>
+    {guest ? <p role="status">Plow connections belong to your local workspace. Open Repro Relay on your own computer to set up this integration.</p> : <>
       <section className="rounded-lg border border-border p-4 space-y-3" aria-labelledby="plow-mac-heading">
-        <h3 id="plow-mac-heading" className="font-medium">1. Open Plow Latch on your Mac</h3>
-        <p className="text-muted-foreground">Finish the phone activation in Latch. If your Mac already shows Connected, continue to step 2.</p>
+        <h3 id="plow-mac-heading" className="font-medium">1. Open Plow Latch on a Mac</h3>
+        <p className="text-muted-foreground">{mac
+          ? 'Finish the phone activation in Latch. If your Mac already shows Connected, continue to step 2.'
+          : 'Plow Latch runs on macOS only, so step 1 needs a Mac with Latch installed. Step 2 and your Plow line work from this computer.'}</p>
         {desktop ? <Button onClick={() => void openLatch()} disabled={opening}>
           {opening ? <LoaderCircle className="animate-spin"/> : <ExternalLink/>}{opening ? 'Opening Plow Latch…' : 'Open Plow Latch'}
         </Button> : <>
