@@ -1488,6 +1488,12 @@ class ModelCommandTests(unittest.TestCase):
         self.assertIn(plow_agent.status_line('Provider', 'plow'), out)
         self.assertIn(plow_agent.status_line('Models', 'anthropic/claude-sonnet-5, anthropic/claude-haiku-4'), out)
 
+    def test_prints_none_known_when_the_provider_has_no_models_yet(self):
+        config = 'model:\n  default: anthropic/claude-sonnet-5\n  provider: plow\n'
+        code, out, err = run_model(FakeContainer(config=config))
+        self.assertEqual(code, 0)
+        self.assertIn(plow_agent.status_line('Models', '(none known)'), out)
+
     def test_a_container_not_running_refuses_with_exit_2_before_any_edit(self):
         for options in ({}, {'id': 'anthropic/claude-opus-4'}, {'revert': True}):
             with self.subTest(**options):
