@@ -1541,6 +1541,32 @@ class ModelEditTests(unittest.TestCase):
         with self.assertRaises(plow_agent.DecisionNeeded):
             plow_agent.model_summary('providers:\n  plow:\n    models: {}\n')
 
+    def test_a_duplicate_default_key_makes_the_edit_not_match_and_refuses(self):
+        # YAML keeps only the last of two duplicate keys, but the line-based editor finds and edits the
+        # first: the edited text would reparse with the *second* line's value still governing, silently
+        # discarding the switch. This is exactly what the reparse-and-compare check exists to catch.
+        text = ('model:\n  default: anthropic/claude-sonnet-5\n  default: anthropic/claude-untouched\n'
+                '  provider: plow\nproviders:\n  plow:\n    models:\n      anthropic/claude-untouched: {}\n')
+        with self.assertRaises(plow_agent.AgentError) as error:
+            plow_agent.set_default_model(text, 'anthropic/claude-opus-4')
+        self.assertNotIsInstance(error.exception, plow_agent.DecisionNeeded)
+        self.assertIn('would not match the intended change', str(error.exception))
+
+    def test_a_flow_style_model_block_cannot_be_located_and_refuses(self):
+        # model: {...} parses fine -- model.default exists -- but the line-based editor assumes block style
+        # and finds nothing indented under a one-line flow mapping to edit.
+        text = ('model: {default: anthropic/claude-sonnet-5, provider: plow}\n'
+                'providers:\n  plow:\n    models:\n      anthropic/claude-sonnet-5: {}\n')
+        with self.assertRaises(plow_agent.AgentError) as error:
+            plow_agent.set_default_model(text, 'anthropic/claude-opus-4')
+        self.assertIn('Could not locate', str(error.exception))
+
+    def test_set_default_line_directly_refuses_when_it_cannot_locate_the_default_line(self):
+        lines = ['model: {default: x, provider: plow}\n']
+        with self.assertRaises(plow_agent.AgentError) as error:
+            plow_agent._set_default_line(lines, 'anthropic/claude-opus-4')
+        self.assertIn('Could not locate', str(error.exception))
+
 
 class ModelIdValidationTests(unittest.TestCase):
     def test_a_well_shaped_id_passes_through(self):
