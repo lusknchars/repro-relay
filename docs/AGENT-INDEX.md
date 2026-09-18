@@ -7,8 +7,8 @@ reporting service. It excludes the app's private configuration and frontend.
 
 ## Pinned upstreams
 
-- Base `plow-hermes-agent`: `8088c7f77f5ffd536a80c9dc302ebdb39e6be1d2`,
-  image digest in `agent/Dockerfile`.
+- Base `plow-hermes-agent`: `51f83158a70a383f03a4d03dbd8b6ea102cf0361`,
+  image digest in `cloud/Dockerfile`.
 - Reporting service copied unchanged from `life-assistant-hermes-agent`:
   `7592281e9b6264e3b433f3f06e2c0d697f57cc3e`.
 - Official `agent-index-client`: `3f116994930cb3d1c23a485851953dd6c1eef039`,

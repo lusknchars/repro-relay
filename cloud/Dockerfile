@@ -1,13 +1,13 @@
-FROM public.ecr.aws/e1h7x4a2/plow-cloud-agents:base-8088c7f77f5ffd536a80c9dc302ebdb39e6be1d2@sha256:26d69e81faebc584a4d819f68f756e2d4917938409b0f8ff98488c93bdd34b78
+FROM public.ecr.aws/e1h7x4a2/plow-cloud-agents:base-51f83158a70a383f03a4d03dbd8b6ea102cf0361@sha256:253d7ed3409effa7fa59113d93b4b79bb731d8264cdaf4cd60294924d0110a2e
 LABEL org.opencontainers.image.title="Repro Relay" \
       org.opencontainers.image.source="https://github.com/lusknchars/repro-relay" \
       org.opencontainers.image.licenses="MIT"
 ENV AGENT_ID=repro-relay
-COPY --chmod=0644 runtime/persona.md /opt/hermes/plow-seed/persona.md
-COPY skills/ /opt/hermes/skills/
-COPY LICENSE NOTICE /usr/share/doc/repro-relay/
-COPY vendor/ /usr/share/doc/repro-relay/vendor/
-COPY vendor/client.pin /opt/plow/agent-index-client.pin
+COPY --chmod=0644 agent/runtime/persona.md /opt/hermes/plow-seed/persona.md
+COPY agent/skills/ /opt/hermes/skills/
+COPY agent/LICENSE agent/NOTICE /usr/share/doc/repro-relay/
+COPY agent/vendor/ /usr/share/doc/repro-relay/vendor/
+COPY agent/vendor/client.pin /opt/plow/agent-index-client.pin
 RUN set -eu; \
     sha="$(sed -n 's/^sha=//p' /opt/plow/agent-index-client.pin)"; \
     want="$(sed -n 's/^sha256=//p' /opt/plow/agent-index-client.pin)"; \
@@ -18,5 +18,5 @@ RUN set -eu; \
     chmod 0644 /opt/plow/agent-index-client.py; \
     find /opt/hermes/skills -type d -exec chmod 0755 {} +; \
     find /opt/hermes/skills -type f -exec chmod 0644 {} +
-COPY image/s6-overlay/ /etc/s6-overlay/
+COPY agent/image/s6-overlay/ /etc/s6-overlay/
 RUN chmod 0755 /etc/s6-overlay/s6-rc.d/agent-index/run /etc/s6-overlay/s6-rc.d/transport-watchdog/run

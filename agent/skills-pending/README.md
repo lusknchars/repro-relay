@@ -1,6 +1,6 @@
 # Skills not yet baked into the agent
 
-`agent/Dockerfile` copies only `agent/skills/` into the image. Skills in this
+`cloud/Dockerfile` copies only `agent/skills/` into the image. Skills in this
 directory are deliberately kept out of it.
 
 ## relay-pair
