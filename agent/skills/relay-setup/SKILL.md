@@ -25,19 +25,26 @@ Setup never blocks their work and is never a gate in front of an answer.
 ## One question at a time
 
 Ask in their language, wait, and `record` that answer before the next question.
-A conversation that stops halfway keeps every answer it already got.
+A conversation that stops halfway keeps every answer it already got. Record a no
+the same way you record a yes, so nobody is asked twice. `wanted` is
+what the person said. `state` is what you checked, so record it only from
+something that actually happened, and name that in `evidence`.
 
 1. Who they are and what they work on. Save it with `owner --name N --language L`.
-2. Whether they want their Mac used at all. Record topic `mac`. A no here ends
-   the questions about the Mac.
+2. Whether they want their Mac used at all. Record topic `mac`, `available` when
+   the `plow_` tools are really there and `unavailable` when they are not. A no
+   here ends the questions about the Mac.
 3. Which of the skills their Mac publishes they want. Call `plow_list_skills`
    and name what is actually there. Never guess one and never offer a skill that
    is not published. One topic per skill, named as the Mac names it.
 4. GitHub. Check it by running plain `gh auth status` through `plow_run_command`
-   and record what it printed as the evidence. Signed in is `available`. Logged
+   and record how it exited as the evidence, not what it printed, since that
+   output names an account and a masked token. Signed in is `available`. Logged
    out, or no `gh` on that Mac, is `needs_owner`.
-5. Which repositories on that Mac you may read. One topic per repository. You
-   read nothing outside what they name here.
+5. Which repositories on that Mac you may read. One topic per repository. The
+   record is what they told you, not a standing permission: work still happens
+   on a repository the owner names in that conversation, with Latch approving
+   each command.
 6. Memory and the harnesses, as below.
 7. Anything else they name.
 
