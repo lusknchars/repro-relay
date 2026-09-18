@@ -1455,6 +1455,7 @@ class ModelEditTests(unittest.TestCase):
         self.assertIn('flow style', str(error.exception))
         self.assertIn('providers.plow', str(error.exception))
         self.assertIn('Nothing was changed', str(error.exception))
+        self.assertIn('then run this again', str(error.exception))  # names a remedy, not just the problem
 
     def test_a_flow_style_models_mapping_is_refused(self):
         text = 'model:\n  default: anthropic/claude-sonnet-5\n  provider: plow\nproviders:\n  plow:\n    models: {}\n'
@@ -1463,6 +1464,7 @@ class ModelEditTests(unittest.TestCase):
         self.assertEqual(error.exception.code, 2)
         self.assertIn('flow style', str(error.exception))
         self.assertIn('providers.plow.models', str(error.exception))
+        self.assertIn('then run this again', str(error.exception))
 
     def test_a_flow_style_models_list_is_refused(self):
         text = 'model:\n  default: anthropic/claude-sonnet-5\n  provider: plow\nproviders:\n  plow:\n    models: []\n'
@@ -1471,6 +1473,7 @@ class ModelEditTests(unittest.TestCase):
         self.assertEqual(error.exception.code, 2)
         self.assertIn('flow style', str(error.exception))
         self.assertIn('providers.plow.models', str(error.exception))
+        self.assertIn('then run this again', str(error.exception))
 
     def test_a_flow_style_providers_block_is_refused(self):
         text = 'model:\n  default: anthropic/claude-sonnet-5\n  provider: plow\nproviders: {}\n'
@@ -1478,6 +1481,38 @@ class ModelEditTests(unittest.TestCase):
             plow_agent.set_default_model(text, 'anthropic/claude-opus-4')
         self.assertEqual(error.exception.code, 2)
         self.assertIn('flow style', str(error.exception))
+        self.assertIn('then run this again', str(error.exception))
+
+    def test_a_null_provider_body_is_refused_not_crashed(self):
+        # providers:\n  plow:\n (a present key with an explicit null value, not a missing one) made
+        # _expected_after_edit's providers.setdefault(...).setdefault(...) crash with AttributeError,
+        # since setdefault only fills in an *absent* key, not one already present-but-None -- surfacing to
+        # the owner as "stopped unexpectedly", not a refusal naming what is wrong.
+        text = 'model:\n  default: anthropic/claude-sonnet-5\n  provider: plow\nproviders:\n  plow:\n'
+        with self.assertRaises(plow_agent.DecisionNeeded) as error:
+            plow_agent.set_default_model(text, 'anthropic/claude-opus-4')
+        self.assertEqual(error.exception.code, 2)
+        self.assertIn('providers.plow', str(error.exception))
+        self.assertIn('empty', str(error.exception))
+        self.assertIn('Nothing was changed', str(error.exception))
+        self.assertIn('then run this again', str(error.exception))
+
+    def test_a_null_providers_block_is_refused_not_crashed(self):
+        text = 'model:\n  default: anthropic/claude-sonnet-5\n  provider: plow\nproviders:\n'
+        with self.assertRaises(plow_agent.DecisionNeeded) as error:
+            plow_agent.set_default_model(text, 'anthropic/claude-opus-4')
+        self.assertEqual(error.exception.code, 2)
+        self.assertIn('providers', str(error.exception))
+        self.assertIn('empty', str(error.exception))
+        self.assertIn('then run this again', str(error.exception))
+
+    def test_a_provider_missing_entirely_is_still_created_fresh_not_refused(self):
+        # A null body ("plow:" with nothing after it) is a decision to state; a genuinely absent provider
+        # is not the same shape and must keep working exactly as test_a_missing_provider_is_created_as_a_
+        # mapping already covers -- this pins that the new null check does not over-reach into that case.
+        text = 'model:\n  default: anthropic/claude-sonnet-5\n  provider: plow\nproviders:\n  other:\n    models: {}\n'
+        new_text = plow_agent.set_default_model(text, 'anthropic/claude-opus-4')
+        self.assertEqual(plow_agent.model_summary(new_text)['models'], ['anthropic/claude-opus-4'])
 
     def test_flow_style_is_never_a_problem_when_the_id_is_already_present(self):
         # No insertion is needed, so a flow-style models mapping that already has the id is never touched
@@ -1553,19 +1588,28 @@ class ModelEditTests(unittest.TestCase):
         self.assertNotIsInstance(error.exception, plow_agent.DecisionNeeded)
         self.assertIn('would not match the intended change', str(error.exception))
 
-    def test_a_flow_style_model_block_cannot_be_located_and_refuses(self):
-        # model: {...} parses fine -- model.default exists -- but the line-based editor assumes block style
-        # and finds nothing indented under a one-line flow mapping to edit.
+    def test_a_flow_style_model_block_is_refused_by_name_not_could_not_locate(self):
+        # model: {...} parses fine -- model.default exists -- but is written in flow style, the same
+        # unsupported shape as its four providers.* siblings: a clear, named DecisionNeeded (exit 2) beats
+        # the generic "Could not locate model.default" AgentError (exit 1), which reads as an internal
+        # error rather than a decision about the owner's own config.
         text = ('model: {default: anthropic/claude-sonnet-5, provider: plow}\n'
                 'providers:\n  plow:\n    models:\n      anthropic/claude-sonnet-5: {}\n')
-        with self.assertRaises(plow_agent.AgentError) as error:
+        with self.assertRaises(plow_agent.DecisionNeeded) as error:
             plow_agent.set_default_model(text, 'anthropic/claude-opus-4')
-        self.assertIn('Could not locate', str(error.exception))
+        self.assertEqual(error.exception.code, 2)
+        self.assertIn('flow style', str(error.exception))
+        self.assertIn('model', str(error.exception))
+        self.assertIn('then run this again', str(error.exception))
 
     def test_set_default_line_directly_refuses_when_it_cannot_locate_the_default_line(self):
-        lines = ['model: {default: x, provider: plow}\n']
+        # Not flow style (that is caught earlier, by name, before this is reached) -- genuinely no model:
+        # block at all, tested directly since load_model_config would already refuse this in the full
+        # set_default_model pipeline before _set_default_line ever ran.
+        lines = ['providers:\n', '  plow: {}\n']
         with self.assertRaises(plow_agent.AgentError) as error:
             plow_agent._set_default_line(lines, 'anthropic/claude-opus-4')
+        self.assertNotIsInstance(error.exception, plow_agent.DecisionNeeded)
         self.assertIn('Could not locate', str(error.exception))
 
 
@@ -1611,6 +1655,8 @@ class FakeContainer:
         self.gateway_up = True
         self.restart_fails = False
         self.corrupt_write = False
+        self.cp_fails = False
+        self.baseline_unreadable = False
         self._tmp_counter = 0
         self.calls = []
 
@@ -1625,6 +1671,8 @@ class FakeContainer:
         # a call naming the right binary but the wrong service falls through to the tripwire below instead
         # of being answered as if it were fine.
         if arguments[-2:] == ('/command/s6-svstat', plow_agent.GATEWAY_SERVICE):
+            if self.baseline_unreadable and self.restarts == 0:
+                return SimpleNamespace(returncode=1, stdout='')
             if not self.gateway_up:
                 return SimpleNamespace(returncode=0, stdout='down 0 seconds, normally up\n')
             # Real shape (verified against the running container on 2026-09-18): "up (pid 198 pgid 198)
@@ -1637,9 +1685,15 @@ class FakeContainer:
                 return SimpleNamespace(returncode=1, stdout='')
             self.gateway_pid += 1
             return SimpleNamespace(returncode=0, stdout='')
-        if 'with-contenv' not in arguments or 'hermes' not in arguments:
-            raise AssertionError(f'unexpected exec call, not run as hermes: {arguments}')
-        return self._hermes(arguments[arguments.index('hermes') + 1:], input)
+        # The exact consecutive wrapper, not "with-contenv and hermes are present somewhere": dropping
+        # s6-setuidgid (e.g. replacing it with env) would run every config read, write and backup as
+        # whatever user docker exec defaults to -- root -- instead of hermes, so that step is pinned too,
+        # not just the two ends of the chain.
+        wrap = ('with-contenv', 's6-setuidgid', 'hermes')
+        wrap_at = next((i for i in range(len(arguments) - 2) if arguments[i:i + 3] == wrap), None)
+        if wrap_at is None:
+            raise AssertionError(f'unexpected exec call, not run as hermes via with-contenv + s6-setuidgid: {arguments}')
+        return self._hermes(arguments[wrap_at + 3:], input)
 
     def _hermes(self, tail, input):
         if tail[0] == 'cat':
@@ -1664,7 +1718,7 @@ class FakeContainer:
         return SimpleNamespace(returncode=0, stdout=self.files[path])
 
     def _copy(self, source, destination):
-        if source not in self.files:
+        if self.cp_fails or source not in self.files:
             return SimpleNamespace(returncode=1, stdout='')
         self.files[destination] = self.files[source]
         return SimpleNamespace(returncode=0, stdout='')
@@ -1697,8 +1751,16 @@ class FakeContainer:
             # without nullglob leaves the literal pattern in "$1" when nothing matches, so [ -e "$1" ] fails
             # and nothing is printed -- fnmatch.filter against real file names naturally returns [] the same
             # way, never the pattern itself, since no real name is ever literally the unexpanded pattern.
+            #
+            # But that guard is script text, not a law of nature: if it is missing from the script, honour
+            # that honestly too. A real shell without it would still leave the literal, unexpanded pattern
+            # in "$1" on no match and printf it unconditionally, so a caller (list_backups) would then try
+            # to read/restore a "backup" that is really just the glob text -- not the clean "no backups
+            # exist" the guard exists to produce.
             pattern = script[len('set -- '):script.index(';')].strip()
             matches = sorted(fnmatch.filter(self.files, pattern))
+            if not matches and '[ -e "$1" ]' not in script:
+                matches = [pattern]
             return SimpleNamespace(returncode=0, stdout=''.join(name + '\n' for name in matches))
         if script.startswith('cat > '):
             target = script[len('cat > '):]
@@ -1752,9 +1814,10 @@ class RestartWaitTests(unittest.TestCase):
         self.assertEqual(plow_agent.wait_for_restart(111, read_pid=lambda: None, sleep=lambda s: None, timeout=4),
                          'timeout')
 
-    def test_a_pid_that_changes_again_before_being_confirmed_is_not_accepted(self):
-        # One sighting of a new pid, then a second, different pid: a crash-loop must not read as success just
-        # because *some* pid differed from the one before the restart.
+    def test_a_later_candidate_can_still_confirm_after_an_earlier_one_changed(self):
+        # 222 appears once and is abandoned when 333 appears next, but 333 itself is then read twice in a
+        # row: it genuinely stabilized, so this is a real success, not a crash loop. (Previously named
+        # "...is_not_accepted" while asserting 'confirmed' -- asserting the opposite of its own name.)
         seen = iter([222, 333, 333])
         self.assertEqual(plow_agent.wait_for_restart(111, read_pid=lambda: next(seen), sleep=lambda s: None,
                                                       timeout=30), 'confirmed')
@@ -1766,6 +1829,45 @@ class RestartWaitTests(unittest.TestCase):
                                              timeout=20, confirm_seconds=5)
         self.assertEqual(result, 'churning')
         self.assertLessEqual(sum(slept), 20)
+
+    def test_a_crash_loop_that_goes_down_between_respawns_still_reports_churning(self):
+        # Down between two distinct candidates must not erase the fact that more than one was already seen:
+        # otherwise a crash loop with visible down-gaps would report "did not come back up" (timeout)
+        # instead of "keeps restarting" (churning).
+        pids = iter([200, None, None, 300])
+
+        def read():
+            try:
+                return next(pids)
+            except StopIteration:
+                return None  # stays down forever after the seeded sequence is exhausted
+        result = plow_agent.wait_for_restart(111, read_pid=read, sleep=lambda s: None, timeout=30, confirm_seconds=5)
+        self.assertEqual(result, 'churning')
+
+    def test_confirm_seconds_defaults_to_a_real_gap_not_an_instant_recheck(self):
+        # A crash loop that respawns quickly could pass two back-to-back reads with no gap between them;
+        # confirm_seconds=0 would leave 201 tests green while removing the protection entirely.
+        slept = []
+        plow_agent.wait_for_restart(111, read_pid=lambda: 222, sleep=slept.append, timeout=10)
+        self.assertGreaterEqual(slept[0], 5)
+
+
+class RestartBaselineTests(unittest.TestCase):
+    """restart_and_wait() must never treat an unreadable pre-restart baseline as proof of anything: if
+    gateway_pid() cannot be read before the restart (a momentary read failure, or the gateway happening to
+    be down right then), every pid read afterward "differs" from None, so any sighting at all would
+    otherwise confirm -- reporting a switch that was never actually observed.
+    """
+
+    def test_an_unreadable_baseline_refuses_before_attempting_the_restart(self):
+        with patch.object(plow_agent, 'gateway_pid', return_value=None), \
+                patch.object(plow_agent, 'compose', side_effect=AssertionError('should not attempt the restart')):
+            with self.assertRaises(plow_agent.AgentError) as error:
+                plow_agent.restart_and_wait('/var/lib/hermes/config.yaml.backup-x')
+        self.assertNotIsInstance(error.exception, plow_agent.DecisionNeeded)
+        self.assertIn('could not be read before the restart', str(error.exception))
+        self.assertIn('config.yaml.backup-x', str(error.exception))
+        self.assertIn('--revert', str(error.exception))
 
 
 class GatewayPidTests(unittest.TestCase):
@@ -1820,6 +1922,17 @@ class BackupNamingTests(unittest.TestCase):
         self.assertNotEqual(first, second)
         self.assertTrue(first.startswith(f'{plow_agent.CONFIG_PATH}.before-revert-'))
         self.assertNotIn('.backup-', first)
+
+    def test_a_failing_cp_leaves_no_empty_stub_behind(self):
+        # mktemp creates the file first, then cp fills it; if cp fails, a bare failure used to leave an
+        # empty file at the mktemp'd name, which list_backups() would then find, select (it sorts newest
+        # first) and restore -- wedging every future --revert on an empty config.
+        container = FakeContainer()
+        container.cp_fails = True
+        with patch.object(plow_agent, 'compose', container):
+            with self.assertRaises(plow_agent.AgentError):
+                plow_agent.backup_config()
+        self.assertEqual(list(container.files), [plow_agent.CONFIG_PATH])
 
 
 @unittest.skipUnless(HAVE_YAML, 'PyYAML is not installed')
@@ -1886,14 +1999,19 @@ class ModelCommandTests(unittest.TestCase):
                          ['anthropic/claude-sonnet-5', 'anthropic/claude-haiku-4', 'anthropic/claude-opus-4'])
 
     def test_the_atomic_write_uses_a_unique_tmp_file_verified_before_the_rename(self):
-        # Pins the mechanism: a naive `cat > config.yaml` would leave this suite green without it.
+        # Scoped to write_config's own mktemp template (CONFIG_PATH.XXXXXX), not just "mktemp appears
+        # somewhere in the calls": backup_config() also goes through mktemp since M1, with a
+        # config.yaml.backup-<ts>-XXXXXX template, so a looser check here would stay green even if
+        # write_config's own mktemp/wc/mv were replaced with a naive `cat > config.yaml`.
         container = FakeContainer()
         run_model(container, id='anthropic/claude-haiku-4')
-        leaves = [call[call.index('hermes') + 1:][0] for call in container.calls
-                 if call[0] == 'exec' and 'hermes' in call]
-        self.assertIn('mktemp', leaves)
-        self.assertIn('wc', leaves)
-        self.assertIn('mv', leaves)
+        hermes_calls = [call[call.index('hermes') + 1:] for call in container.calls
+                        if call[0] == 'exec' and 'hermes' in call]
+        write_template = f'{plow_agent.CONFIG_PATH}.XXXXXX'
+        self.assertEqual([c for c in hermes_calls if c[:2] == ('mktemp', write_template)],
+                         [('mktemp', write_template)])
+        self.assertTrue(any(c[:2] == ('wc', '-c') for c in hermes_calls))
+        self.assertTrue(any(c[0] == 'mv' and c[-1] == plow_agent.CONFIG_PATH for c in hermes_calls))
 
     def test_a_truncated_write_is_refused_and_the_live_config_is_untouched(self):
         container = FakeContainer()
@@ -1907,6 +2025,24 @@ class ModelCommandTests(unittest.TestCase):
         leftover_tmp = [name for name in container.files
                         if name != plow_agent.CONFIG_PATH and '.backup-' not in name]
         self.assertEqual(leftover_tmp, [])
+
+    def test_a_failing_backup_leaves_no_stub_and_revert_still_works_afterwards(self):
+        container = FakeContainer()
+        container.files[f'{plow_agent.CONFIG_PATH}.backup-20260101T000000Z-aaaaaa'] = SAMPLE_MODEL_CONFIG.replace(
+            'default: anthropic/claude-sonnet-5', 'default: anthropic/claude-haiku-4')
+        container.cp_fails = True
+        code, out, err = run_model(container, id='anthropic/claude-opus-4')
+        self.assertEqual(code, 1)
+        # only the live config and the one pre-existing backup remain: no empty stub was left at the
+        # mktemp'd name, so it can never be selected as "the newest backup" by a later revert
+        self.assertEqual(sorted(container.files),
+                         sorted([plow_agent.CONFIG_PATH, f'{plow_agent.CONFIG_PATH}.backup-20260101T000000Z-aaaaaa']))
+        container.cp_fails = False
+        code2, out2, err2 = run_model(container, revert=True)
+        self.assertEqual(code2, 0)
+        self.assertEqual(err2, '')
+        self.assertEqual(plow_agent.model_summary(container.files[plow_agent.CONFIG_PATH])['default'],
+                         'anthropic/claude-haiku-4')
 
     def test_check_is_off_by_default_and_never_calls_speak(self):
         container = FakeContainer()
@@ -1954,6 +2090,17 @@ class ModelCommandTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn('could not be restarted', err)
         self.assertIn('--revert', err)
+        backups = [name for name in container.files if '.backup-' in name]
+        self.assertEqual(len(backups), 1)
+        self.assertIn(backups[0], err)
+
+    def test_an_unreadable_baseline_refuses_and_never_restarts_through_the_command(self):
+        container = FakeContainer()
+        container.baseline_unreadable = True
+        code, out, err = run_model(container, id='anthropic/claude-haiku-4')
+        self.assertEqual(code, 1)
+        self.assertIn('could not be read before the restart', err)
+        self.assertEqual(container.restarts, 0)
         backups = [name for name in container.files if '.backup-' in name]
         self.assertEqual(len(backups), 1)
         self.assertIn(backups[0], err)

@@ -695,8 +695,18 @@ _TRAILING_COMMENT = re.compile(r'(\s+#.*)$')
 
 def _set_default_line(lines, model_id):
     """lines with model.default's value replaced, in place, keeping a trailing comment on that line if it
-    has one. Raises AgentError when it cannot be located."""
+    has one.
+
+    Refuses (DecisionNeeded) when model: itself is written in flow style, the same unsupported shape as its
+    providers.* siblings, by name and with a remedy -- not the generic "Could not locate model.default"
+    AgentError, which reads as an internal error rather than a decision about the owner's own config.
+    Raises plain AgentError only when the default: line genuinely cannot be located some other way.
+    """
     model_index = _top_key_line(lines, 'model')
+    if model_index is not None and _is_flow_style(lines[model_index]):
+        raise DecisionNeeded('model is written in flow style ({...} or [...]) in the agent config; switching '
+                             'the default there is not supported. Edit it to block style yourself, then run '
+                             'this again. Nothing was changed.')
     start, end = (None, None) if model_index is None else _child_block(lines, model_index)
     default_index = None if model_index is None else _child_key_line(lines, start, end, 'default')
     if default_index is None:
@@ -742,7 +752,8 @@ def _ensure_model_id(lines, provider, model_id, original):
                         _model_entry_line(step * 3, model_id, as_list)]
     if _is_flow_style(lines[providers_index]):
         raise DecisionNeeded('providers is written in flow style ({...} or [...]) in the agent config; adding '
-                             'a new provider or model id there is not supported. Nothing was changed.')
+                             'a new provider or model id there is not supported. Edit it to block style '
+                             'yourself, then run this again. Nothing was changed.')
 
     p_start, p_end = _child_block(lines, providers_index)
     provider_line = _child_key_line(lines, p_start, p_end, provider)
@@ -753,7 +764,8 @@ def _ensure_model_id(lines, provider, model_id, original):
         return lines
     if _is_flow_style(lines[provider_line]):
         raise DecisionNeeded(f'providers.{provider} is written in flow style ({{...}} or [...]) in the agent '
-                             f'config; adding a new model id there is not supported. Nothing was changed.')
+                             'config; adding a new model id there is not supported. Edit it to block style '
+                             'yourself, then run this again. Nothing was changed.')
 
     pv_start, pv_end = _child_block(lines, provider_line)
     models_line = _child_key_line(lines, pv_start, pv_end, 'models')
@@ -763,7 +775,8 @@ def _ensure_model_id(lines, provider, model_id, original):
         return lines
     if _is_flow_style(lines[models_line]):
         raise DecisionNeeded(f'providers.{provider}.models is written in flow style ({{...}} or [...]) in the '
-                             f'agent config; adding a new model id there is not supported. Nothing was changed.')
+                             'agent config; adding a new model id there is not supported. Edit it to block '
+                             'style yourself, then run this again. Nothing was changed.')
 
     m_start, m_end = _child_block(lines, models_line)
     indent = _first_child_indent(lines, m_start, m_end, _line_indent(lines[models_line]) + step)
@@ -772,10 +785,26 @@ def _ensure_model_id(lines, provider, model_id, original):
 
 
 def _expected_after_edit(config, provider, model_id):
-    """The dict a correct edit must reparse to: config with only model.default and providers.<p>.models changed."""
+    """The dict a correct edit must reparse to: config with only model.default and providers.<p>.models changed.
+
+    Refuses (DecisionNeeded) rather than crashing when providers, or providers.<provider>, is present but
+    explicitly null ("providers:" or "plow:" with nothing after it): setdefault only fills in an *absent*
+    key, so a present-but-None one reached .get()/.setdefault() as None and raised AttributeError instead
+    of a refusal naming what is wrong. A genuinely absent provider is a different shape (still created
+    fresh, unrefused) and is not affected by either check below.
+    """
     config = copy.deepcopy(config)
     config['model']['default'] = model_id
-    provider_block = config.setdefault('providers', {}).setdefault(provider, {})
+    if 'providers' in config and config['providers'] is None:
+        raise DecisionNeeded('providers is empty in the agent config; give it a provider with a models: '
+                             'mapping yourself, or remove the providers: line so it can be created fresh, '
+                             'then run this again. Nothing was changed.')
+    providers = config.setdefault('providers', {})
+    if provider in providers and providers[provider] is None:
+        raise DecisionNeeded(f'providers.{provider} is empty in the agent config; give it a models: mapping '
+                             f'yourself, or remove the providers.{provider}: line so it can be created fresh, '
+                             'then run this again. Nothing was changed.')
+    provider_block = providers.setdefault(provider, {})
     models = provider_block.get('models')
     if models is None:
         provider_block['models'] = {model_id: {}}
@@ -847,6 +876,7 @@ def make_backup(kind):
         raise AgentError('The config backup could not be created inside the container. Nothing was changed.')
     backup = made.stdout.strip()
     if hermes_run('cp', CONFIG_PATH, backup).returncode:
+        hermes_run('rm', '-f', backup)
         raise AgentError('The config backup could not be written inside the container. Nothing was changed.')
     return backup
 
@@ -940,7 +970,12 @@ def wait_for_restart(previous_pid, read_pid, sleep=time.sleep, timeout=GATEWAY_T
             sleep(confirm_seconds)
             waited += confirm_seconds
             continue
-        candidate = None
+        # Only a read of the pre-restart pid itself means genuinely nothing has happened yet. A gap where
+        # the gateway is merely down (unreadable) must not erase a candidate already seen -- s6 often shows
+        # exactly that between one crash and the next respawn, and forgetting it here reports the generic
+        # "did not come back up" instead of "keeps restarting" for a crash loop with visible down-gaps.
+        if pid == previous_pid:
+            candidate = None
         sleep(step)
         waited += step
     return 'churning' if churned else 'timeout'
@@ -958,6 +993,15 @@ def restart_and_wait(backup):
     owner can recover with --revert.
     """
     previous = gateway_pid()
+    if previous is None:
+        # Every pid read afterward would "differ" from None, so any sighting at all would otherwise
+        # confirm -- reporting a switch that was never actually observed. Refuse before even attempting the
+        # restart rather than guess: the new config is already written, only the restart did not happen.
+        raise AgentError(f"The gateway's state could not be read before the restart, so it was not attempted "
+                         f"and a switch that was not observed is never reported as done. The new config is "
+                         f'written; the previous one is backed up at {backup}. Check `docker compose logs '
+                         'agent` in agent/, then run ./relay agent model again, or restore with '
+                         './relay agent model --revert.')
     if compose('exec', '-T', 'agent', '/command/s6-svc', '-r', GATEWAY_SERVICE, capture=True).returncode:
         raise AgentError(f'The gateway could not be restarted. The previous config is backed up at {backup}; '
                          'restore it with ./relay agent model --revert.')
@@ -1047,6 +1091,7 @@ def model_command(args):
     if args.id is None:
         return show_model()
     return switch_model(args.id, args.check)
+
 
 def signin_path():
     """The full-access account sign-in, resolved exactly as the pinned client's account_token resolves it."""
