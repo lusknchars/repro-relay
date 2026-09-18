@@ -80,5 +80,26 @@ class SetupTests(unittest.TestCase):
             self.assertTrue(all('build' in command for command in commands))
 
 
+    @patch.object(bootstrap, 'prerequisites', return_value=[])
+    @patch.object(bootstrap, 'environment', return_value={'DATABASE_URL': 'private-test-value'})
+    def test_command_shims_are_resolved_before_execution(self, *_):
+        """Windows ships npm as npm.cmd and CreateProcess runs no PATHEXT search,
+        so a bare 'npm' raises FileNotFoundError however well which() finds it."""
+        shims = {'cargo': r'C:\shims\cargo.EXE', 'npm': r'C:\shims\npm.CMD'}
+        with tempfile.TemporaryDirectory() as directory, patch.object(bootstrap, 'ROOT', Path(directory)), patch.object(bootstrap, 'health', return_value=True), patch.object(bootstrap, 'port_in_use', return_value=True), patch.object(bootstrap, 'install_dependencies'), patch.object(bootstrap.shutil, 'which', side_effect=lambda name, path=None: shims.get(name)), patch.object(bootstrap.subprocess, 'run') as run, patch.object(bootstrap.webbrowser, 'open'):
+            self.assertEqual(bootstrap.run_setup(self.args()), 0)
+            commands = [call.args[0] for call in run.call_args_list]
+            self.assertEqual([command[0] for command in commands], [shims['cargo'], shims['npm']])
+            self.assertEqual(commands[1][1:], ['run', 'build', '--prefix', 'web'])
+
+    @patch.object(bootstrap, 'prerequisites', return_value=[])
+    @patch.object(bootstrap, 'environment', return_value={'DATABASE_URL': 'private-test-value'})
+    def test_unresolvable_command_keeps_its_name_for_the_failure(self, *_):
+        """Falling back to the bare name leaves the reported failure legible."""
+        with tempfile.TemporaryDirectory() as directory, patch.object(bootstrap, 'ROOT', Path(directory)), patch.object(bootstrap, 'health', return_value=True), patch.object(bootstrap, 'port_in_use', return_value=True), patch.object(bootstrap, 'install_dependencies'), patch.object(bootstrap.shutil, 'which', return_value=None), patch.object(bootstrap.subprocess, 'run') as run, patch.object(bootstrap.webbrowser, 'open'):
+            self.assertEqual(bootstrap.run_setup(self.args()), 0)
+            self.assertEqual([call.args[0][0] for call in run.call_args_list], ['cargo', 'npm'])
+
+
 if __name__ == '__main__':
     unittest.main()
