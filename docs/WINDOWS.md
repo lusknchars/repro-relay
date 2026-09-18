@@ -38,6 +38,6 @@ Documentation elsewhere writes these as `./relay ...`, including [terminal tooli
 
 ## Not established on Windows
 
-Windows CI runs the mocked interface compatibility suite in Microsoft Edge and checks the native desktop crate. It does not run the PostgreSQL or Hermes suites there. See [runner configuration](HERMES-RUNNER.md).
+Windows CI runs the mocked interface compatibility suite in Microsoft Edge and checks the native desktop crate. See [runner configuration](HERMES-RUNNER.md). The database and Hermes suites have no green Windows run behind them yet.
 
-[Terminal tooling](../integrations/relay-terminal/README.md) records that no-follow file reads currently require POSIX, and that native Windows ledger access is unsupported and must not be advertised as tested. `relay ledger read` and `relay ledger state` depend on those reads.
+`relay ledger read` and `relay ledger state` have no green Windows run behind them yet, so this page makes no claim either way about them on Windows.
