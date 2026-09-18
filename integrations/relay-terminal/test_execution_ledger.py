@@ -9,6 +9,8 @@ from unittest.mock import patch
 
 import cli
 from execution_ledger import Ledger, MAX_FILE
+from fake_windows import reparse_point, symlinks_available, windows_host
+import private_files
 
 
 class LedgerTests(unittest.TestCase):
@@ -19,7 +21,9 @@ class LedgerTests(unittest.TestCase):
         self.root = self.directory / 'checkout'
         self.root.mkdir()
         self.file = self.root / 'code.txt'
-        self.file.write_text('first\nsecond\nthird\n')
+        # newline='' throughout: the ledger returns a file's bytes, so a fixture written in
+        # text mode on Windows would hold \r\n and stop being what these tests assert.
+        self.file.write_text('first\nsecond\nthird\n', newline='')
         self.database = self.directory / 'state' / 'ledger.sqlite3'
         self.anchor = {'plan': 'FIX-1', 'base': 'observed-fixture-base'}
         self.ledger = Ledger(self.root, self.database, self.anchor)
@@ -34,7 +38,7 @@ class LedgerTests(unittest.TestCase):
         self.assertEqual(self.ledger.read('code.txt', 1, 3, [first['receipt_id']])['decision'], 'allow')
         self.assertEqual(self.ledger.read('code.txt', 1, 2, ['LED-unknown'])['decision'], 'allow')
         # An external editor changes bytes, even if the requested lines match.
-        self.file.write_text('first\nsecond\nchanged\n')
+        self.file.write_text('first\nsecond\nchanged\n', newline='')
         fresh = self.ledger.read('code.txt', 1, 2, [first['receipt_id']])
         self.assertEqual(fresh['decision'], 'allow')
         self.assertEqual(fresh['request']['change_counter'], 1)
@@ -44,12 +48,12 @@ class LedgerTests(unittest.TestCase):
 
     def test_state_detects_external_change_deletion_and_restore(self):
         first = self.ledger.read('code.txt')
-        original = self.file.read_text()
+        original = self.file.read_bytes()
         self.file.write_text('external change')
         self.assertFalse(self.ledger.inform()['observations'][0]['fresh'])
         self.file.unlink()
         self.assertIsNone(self.ledger.inform()['observed_files']['code.txt']['sha256'])
-        self.file.write_text(original)
+        self.file.write_bytes(original)
         state = self.ledger.inform()
         self.assertEqual(state['observed_change_count'], 3)
         self.assertFalse(state['runtime_hook_connected'])
@@ -63,7 +67,7 @@ class LedgerTests(unittest.TestCase):
         restarted = Ledger(self.root, self.database, self.anchor)
         self.assertEqual(restarted.read('code.txt')['decision'], 'allow')
         self.assertEqual(restarted.read('code.txt', visible=[first['receipt_id']])['decision'], 'reuse')
-        self.assertEqual(self.database.stat().st_mode & 0o777, 0o600)
+        self.assertTrue(private_files.is_private(self.database))
         with self.assertRaises(ValueError):
             Ledger(self.root, self.database, {'plan': 'FIX-other'})
         other = self.directory / 'other'; other.mkdir()
@@ -71,13 +75,16 @@ class LedgerTests(unittest.TestCase):
 
     def test_failed_oversized_binary_and_unsafe_reads_are_not_recorded(self):
         outside = self.directory / 'outside'; outside.write_text('outside')
-        (self.root / 'link').symlink_to(outside)
-        (self.root / 'folder-link').symlink_to(self.directory, target_is_directory=True)
         (self.root / 'binary').write_bytes(b'binary\0data')
         (self.root / 'large').write_bytes(b'a' * (MAX_FILE + 1))
         (self.root / 'long-line').write_text('a' * 65537)
         (self.root / 'invalid-utf8').write_bytes(b'\xff')
-        for path in ('../outside', '/etc/passwd', '.git/config', 'link', 'folder-link/outside', 'binary', 'large', 'long-line', 'missing', 'invalid-utf8', 'code.txt/..'):
+        refused = ['../outside', '/etc/passwd', '.git/config', 'binary', 'large', 'long-line', 'missing', 'invalid-utf8', 'code.txt/..']
+        if symlinks_available():  # creating one needs SeCreateSymbolicLinkPrivilege on Windows
+            (self.root / 'link').symlink_to(outside)
+            (self.root / 'folder-link').symlink_to(self.directory, target_is_directory=True)
+            refused += ['link', 'folder-link/outside']
+        for path in refused:
             with self.subTest(path=path), self.assertRaises((ValueError, OSError)):
                 self.ledger.read(path)
         self.assertEqual(self.ledger.inform()['records'], 0)
@@ -86,8 +93,11 @@ class LedgerTests(unittest.TestCase):
             with self.assertRaises(ValueError): self.ledger.read('code.txt')
         self.assertEqual(self.ledger.inform()['records'], 0)
 
-    def test_storage_cannot_be_inside_checkout_or_follow_symlinks(self):
+    def test_storage_cannot_be_inside_the_checkout(self):
         with self.assertRaises(ValueError): Ledger(self.root, self.root / 'state.db', self.anchor)
+
+    @unittest.skipUnless(symlinks_available(), 'creating a link needs SeCreateSymbolicLinkPrivilege here')
+    def test_storage_cannot_follow_symlinks(self):
         link = self.directory / 'link'; link.symlink_to(self.database.parent, target_is_directory=True)
         with self.assertRaises(ValueError): Ledger(self.root, link / 'other.db', self.anchor)
         link_file = self.database.parent / 'link.db'; link_file.symlink_to(self.database)
@@ -174,6 +184,85 @@ class LedgerTests(unittest.TestCase):
         self.assertEqual(json.loads(output.getvalue())['argv'], ['npm', 'test'])
         plan['status'] = 'revoked'
         with self.assertRaises(ValueError): cli.repair_ledger(plan, self.root)
+
+
+class WindowsLedgerTests(unittest.TestCase):
+    """The ledger used to refuse Windows outright. It now reads there, with the same refusals."""
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.directory = pathlib.Path(self.temporary.name).resolve()
+        self.root = self.directory / 'checkout'
+        self.root.mkdir()
+        (self.root / 'code.txt').write_text('first\nsecond\nthird\n', newline='')
+        (self.root / 'src').mkdir()
+        (self.root / 'src/deep.txt').write_text('deep\n', newline='')
+        self.database = self.directory / 'state' / 'ledger.sqlite3'
+        self.anchor = {'plan': 'FIX-1', 'base': 'observed-fixture-base'}
+
+    def test_the_folder_the_ledger_makes_is_private_on_whatever_host_this_is(self):
+        # The ledger folder used to rely on mkdir's mode, which Windows ignores, so its
+        # privacy came from the platform rather than from anything this code did.
+        ledger = Ledger(self.root, self.database, self.anchor)
+        self.assertTrue(private_files.is_private(ledger.database.parent))
+        self.assertTrue(private_files.is_private(ledger.database))
+
+    def test_the_same_folder_is_private_where_a_mode_means_nothing(self):
+        with windows_host() as windows:
+            ledger = Ledger(self.root, self.database, self.anchor)
+            self.assertEqual(windows.principals(ledger.database.parent),
+                             ['runneradmin', 'NT AUTHORITY\\SYSTEM', 'BUILTIN\\Administrators'])
+            self.assertTrue(private_files.is_private(ledger.database.parent))
+
+    def test_a_windows_host_reads_the_ledger_instead_of_being_refused(self):
+        with windows_host():
+            ledger = Ledger(self.root, self.database, self.anchor)
+            self.assertTrue(private_files.is_private(self.database))
+            self.assertEqual(ledger.read('code.txt', 1, 2)['content'], 'first\nsecond\n')
+            self.assertEqual(ledger.read('src/deep.txt')['content'], 'deep\n')
+            self.assertEqual(ledger.inform()['observed_change_count'], 0)
+
+    def test_a_windows_read_never_reaches_for_a_flag_windows_does_not_have(self):
+        with windows_host():
+            self.assertFalse(hasattr(os, 'O_NOFOLLOW'))
+            self.assertNotIn(os.open, os.supports_dir_fd)
+            self.assertEqual(Ledger(self.root, self.database, self.anchor).read('code.txt')['decision'], 'allow')
+
+    @unittest.skipUnless(symlinks_available(), 'this host does not let this account create a link')
+    def test_links_reparse_points_and_escapes_are_still_refused_on_windows(self):
+        outside = self.directory / 'outside'
+        outside.write_text('outside')
+        (self.root / 'link').symlink_to(outside)
+        (self.root / 'folder-link').symlink_to(self.directory, target_is_directory=True)
+        with windows_host():
+            ledger = Ledger(self.root, self.database, self.anchor)
+            for path in ('../outside', 'link', 'folder-link/outside', '.git/config', 'missing', '/etc/passwd'):
+                with self.subTest(path=path), self.assertRaises((ValueError, OSError)):
+                    ledger.read(path)
+            with reparse_point(self.root / 'code.txt'), self.assertRaises(private_files.PrivacyError):
+                ledger.read('code.txt')
+            with reparse_point(self.root / 'src'), self.assertRaises(private_files.PrivacyError):
+                ledger.read('src/deep.txt')
+            self.assertEqual(ledger.inform()['records'], 0)
+
+    def test_an_edit_during_a_windows_read_rejects_the_partial_observation(self):
+        real_read = os.read
+        changed = False
+
+        def concurrent_read(descriptor, count):
+            nonlocal changed
+            chunk = real_read(descriptor, count)
+            if not changed:
+                changed = True
+                (self.root / 'code.txt').write_text('updated while reading')
+            return chunk
+        with windows_host():
+            ledger = Ledger(self.root, self.database, self.anchor)
+            with patch('execution_ledger.os.read', side_effect=concurrent_read):
+                with self.assertRaisesRegex(ValueError, 'changed during observation'):
+                    ledger.read('code.txt')
+            self.assertEqual(ledger.inform()['records'], 0)
 
 
 if __name__ == '__main__':

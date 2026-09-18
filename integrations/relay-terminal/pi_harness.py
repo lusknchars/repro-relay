@@ -8,6 +8,8 @@ import shutil
 import subprocess
 import sys
 
+import private_files
+
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 INTEGRATION = ROOT / 'integrations/pi-harness'
 PROFILE = ROOT / '.data/pi-agent'
@@ -94,7 +96,9 @@ def run(args):
         return 0 if state['installed'] and state['workspace'] == 'reachable' and (not args.provider or state['provider'] == 'ready') else 1
     if not state['installed'] or state['workspace'] != 'reachable':
         raise ValueError(state['next'])
-    PROFILE.mkdir(parents=True, exist_ok=True, mode=0o700)
+    # This code creates the profile folder, which holds Pi's own session and login state, so
+    # this code makes it private rather than leaving that to a mode Windows ignores.
+    private_files.make_private_directory(PROFILE)
     print('Starting Pi with Relay evidence tools. Use /relay to inspect or /relay-review to request a model review.\n'
           'Use /login for provider access. Pi usage stays in its session; Hermes is unchanged.', flush=True)
     print('Pi authentication profile: ' + args.profile + '. Relay session history stays separate.', flush=True)

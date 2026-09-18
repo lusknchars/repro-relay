@@ -5,6 +5,10 @@ services:
     platform: linux/amd64
     environment:
       AGENT_ID: repro-relay
+      # Which computer the owner installed from, one of macos, windows or linux. The
+      # installer sets it; started any other way, or by an agent from before this existed,
+      # it reads as unknown, which means not known rather than any particular computer.
+      RELAY_OWNER_PLATFORM: ${RELAY_OWNER_PLATFORM:-unknown}
     volumes:
       - type: bind
         source: ./plow-credentials

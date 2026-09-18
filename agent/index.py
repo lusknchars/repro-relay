@@ -13,6 +13,9 @@ import tempfile
 import urllib.request
 
 ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT.parent / 'integrations/relay-terminal'))
+import private_files  # noqa: E402  (found in the repository, beside the installer that writes these files)
+
 AGENT_ID = 'repro-relay'
 REPO = 'https://github.com/lusknchars/repro-relay'
 # The listing embeds YouTube, so the client takes a bare video ID and rejects a URL.
@@ -20,17 +23,25 @@ VIDEO = 'Q_BjDQ6bw68'
 
 
 def credentials(path):
-    flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0)
-    fd = os.open(path, flags)
-    with os.fdopen(fd) as file:
+    """The agent token, read only from a file this account alone can reach.
+
+    What that means is asked of the host rather than assumed: mode bits on POSIX, the
+    file's access list on Windows, where a mode of 0600 is not kept and never was proof.
+    """
+    with private_files.open_private(path) as file:
         info = os.fstat(file.fileno())
-        if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_uid != os.getuid():
-            raise ValueError('credential file must be owned by you with mode 0600 or 0400')
+        if not stat.S_ISREG(info.st_mode) or not private_files.is_private(path, info):
+            raise ValueError('credential file must be readable by you alone. Run '
+                             + private_files.how_to_protect(path) + ' and try again')
         raw = file.read(16385)
     if len(raw) > 16384:
         raise ValueError('credential file is too large')
+    try:
+        text = raw.decode('utf-8')
+    except UnicodeDecodeError:
+        raise ValueError('credential file is not UTF-8 text') from None
     found = {}
-    for line in raw.splitlines():
+    for line in text.splitlines():
         line = line.strip()
         if not line or line.startswith('#'):
             continue
@@ -52,7 +63,7 @@ def client(home):
     if not re.fullmatch('[0-9a-f]{40}', pin['sha']) or pin['path'] != 'standalone/agent_index_client.py':
         raise ValueError('invalid client pin')
     cache = home / '.relay-index-client'
-    cache.mkdir(mode=0o700, exist_ok=True)
+    private_files.make_private_directory(cache)
     dest = cache / (pin['sha'] + '.py')
     if dest.exists():
         data = dest.read_bytes()
@@ -67,7 +78,7 @@ def client(home):
         try:
             with os.fdopen(fd, 'wb') as file:
                 file.write(data)
-            os.replace(name, dest)
+            private_files.replace_atomically(name, dest)
         finally:
             if os.path.exists(name):
                 os.unlink(name)

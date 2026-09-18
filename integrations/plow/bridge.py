@@ -11,6 +11,9 @@ import sys
 import tempfile
 from urllib import error, parse, request
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "relay-terminal"))
+import private_files  # noqa: E402  (found next door, the way plow_agent finds this file)
+
 ADAPTER = "repro-relay-plow-v1"
 PLOW_ORIGIN = "https://api.plow.co"
 LIMIT = 1_048_576
@@ -18,6 +21,14 @@ LIMIT = 1_048_576
 
 class BridgeError(Exception):
     pass
+
+
+def protect_or_stop(path):
+    """Make a path private, or stop with the reason rather than a general failure."""
+    try:
+        private_files.protect(path)
+    except private_files.PrivacyError as error:
+        raise BridgeError(str(error)) from None
 
 
 def identifier(value):
@@ -65,16 +76,21 @@ class JsonHTTP:
 
 
 def private_credentials(path):
+    """The line token, read only from a file this account alone can reach.
+
+    What owner-only means is asked of the host: mode bits on POSIX, the file's access list
+    on Windows, where every file keeps mode 0o666 and no mode check could ever pass.
+    """
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-        with os.fdopen(fd, "r", encoding="utf-8") as source:
+        with private_files.open_private(path) as source:
             info = os.fstat(source.fileno())
-            if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_uid != os.getuid():
-                raise BridgeError("Plow credentials must be an owner-only regular file. Use chmod 600.")
-            raw = source.read(16_385)
+            if not stat.S_ISREG(info.st_mode) or not private_files.is_private(path, info):
+                raise BridgeError("Plow credentials must be a regular file only you can read. Run "
+                                  + private_files.how_to_protect(path) + " and try again.")
+            raw = source.read(16_385).decode("utf-8")
         if len(raw) > 16_384:
             raise BridgeError("Plow credential file exceeds the size limit.")
-    except (OSError, UnicodeError):
+    except (OSError, UnicodeError, private_files.PrivacyError):
         raise BridgeError("Plow credential file is unavailable. Use plow-agents login, then mint a line credential.") from None
     values = {}
     for line in raw.splitlines():
@@ -97,23 +113,36 @@ class ReceiptStore:
         self.directory = Path(directory)
 
     def write(self, attempt, value):
+        """Record one attempt, in a folder only this account can reach.
+
+        A link or a file where the folder should be is refused, because what that points at
+        belongs to someone else. Anything else is made private: this code makes that folder,
+        so its privacy is this code's to keep, and one left by an earlier run is brought up to
+        the same state rather than trusted to a mode Windows ignores.
+        """
         identifier(attempt)
-        self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-        info = self.directory.lstat()
-        if not stat.S_ISDIR(info.st_mode) or info.st_mode & 0o077 or info.st_uid != os.getuid():
-            raise BridgeError("Receipt directory must be owner-only and cannot be a symbolic link.")
+        if self.directory.is_symlink() or (self.directory.exists()
+                                           and not stat.S_ISDIR(self.directory.lstat().st_mode)):
+            raise BridgeError(f"Receipts need a real folder at {self.directory}, not a link or a file. "
+                              "Put one there, or point state_dir somewhere else, and try again.")
+        try:
+            private_files.make_private_directory(self.directory)
+        except private_files.PrivacyError as error:
+            raise BridgeError(str(error)) from None
         fd, name = tempfile.mkstemp(prefix=".receipt-", dir=self.directory)
         try:
-            with os.fdopen(fd, "w") as target:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="") as target:
                 json.dump(value, target)
                 target.flush()
                 os.fsync(target.fileno())
-            os.replace(name, self.directory / f"{attempt}.json")
-            directory_fd = os.open(self.directory, os.O_RDONLY)
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
+            private_files.replace_atomically(name, self.directory / f"{attempt}.json")
+            if not private_files.windows():
+                # Windows cannot open a folder to flush it; the file's own fsync is what it offers.
+                directory_fd = os.open(self.directory, os.O_RDONLY)
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
         finally:
             if os.path.exists(name):
                 os.unlink(name)

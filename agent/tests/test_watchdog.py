@@ -16,6 +16,13 @@ import unittest.mock
 import urllib.error
 import urllib.request
 
+if os.name != 'posix':
+    # The transport watchdog is an s6 service inside the Linux container and runs nowhere
+    # else. These tests read its descriptors, make fifos and set POSIX modes, because that
+    # is the platform it has. Asking them to pass on the owner's computer would be
+    # pretending the watchdog runs there.
+    raise unittest.SkipTest('the transport watchdog runs inside the Linux container')
+
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location(
     "transport_watchdog", ROOT / "image/s6-overlay/scripts/transport_watchdog.py")

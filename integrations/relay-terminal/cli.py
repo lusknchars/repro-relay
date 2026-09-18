@@ -12,6 +12,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from execution_ledger import Ledger
+import private_files
 
 TERMINAL = {'completed', 'failed', 'cancelled'}
 
@@ -83,7 +84,10 @@ def emit(value):
 
 
 def git(repo, *args):
-    result = subprocess.run(['git', '-C', str(repo), *args], capture_output=True, text=True, timeout=30)
+    # Git speaks UTF-8; decoding it with the console code page would quietly mangle a branch
+    # name, a path or a message rather than fail.
+    result = subprocess.run(['git', '-C', str(repo), *args], capture_output=True, text=True,
+                            encoding='utf-8', errors='replace', timeout=30)
     if result.returncode:
         raise ValueError('Git operation failed: ' + result.stderr.strip())
     return result.stdout.strip()
@@ -229,7 +233,23 @@ def selected_memory(api, override):
     return 'mem0' if profile['mem0'] else 'off'
 
 
+def readable_output():
+    """Print in UTF-8 on a Windows console, which answers in cp1252 by default.
+
+    The agent replies in the owner's own language, so an accented or non Latin answer would
+    otherwise stop the command with an encoding error or arrive as nonsense. Nothing changes
+    on macOS or Linux, which already print UTF-8.
+    """
+    if not private_files.windows():
+        return
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, 'reconfigure', None)
+        if reconfigure is not None:
+            reconfigure(encoding='utf-8', errors='replace')
+
+
 def main(argv=None):
+    readable_output()
     parser = argparse.ArgumentParser(prog='relay', description='Relay investigations and approved repairs from your terminal.')
     parser.add_argument('--api', default='http://127.0.0.1:8178/api/v1')
     sub = parser.add_subparsers(dest='action', required=True)

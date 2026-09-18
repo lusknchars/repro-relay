@@ -9,8 +9,35 @@ import stat
 import time
 import uuid
 
+import private_files
+
 MAX_FILE = 2 * 1024 * 1024
 MAX_RECORDS = 1000
+
+
+def observe(descriptor):
+    """Read an already opened file, and refuse what changed while it was being read.
+
+    The size and both timestamps are taken before and after, so an edit that lands mid read
+    is reported rather than recorded as an observation of something that no longer exists.
+    """
+    before = os.fstat(descriptor)
+    if not stat.S_ISREG(before.st_mode) or before.st_size > MAX_FILE:
+        raise ValueError('Ledger reads require a regular file no larger than 2 MiB.')
+    chunks = []
+    size = 0
+    while size <= MAX_FILE:
+        chunk = os.read(descriptor, min(65536, MAX_FILE + 1 - size))
+        if not chunk: break
+        chunks.append(chunk); size += len(chunk)
+    after = os.fstat(descriptor)
+    if size > MAX_FILE or (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+        raise ValueError('File changed during observation. Read it again.')
+    data = b''.join(chunks)
+    if b'\0' in data:
+        raise ValueError('Binary files are not supported by ledger reads.')
+    data.decode('utf8')
+    return data
 
 
 class Ledger:
@@ -22,7 +49,8 @@ class Ledger:
         self.database = self.database.resolve()
         if self.database.is_relative_to(self.root):
             raise ValueError('Keep the ledger outside the repair checkout.')
-        self.database.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        # This code creates the ledger folder, so this code makes it private.
+        private_files.make_private_directory(self.database.parent)
         if self.database.is_symlink():
             raise ValueError('Ledger database must not be a symlink.')
         self.anchor = anchor
@@ -38,7 +66,7 @@ class Ledger:
             if previous and previous[0] != self.identity:
                 raise ValueError('Ledger belongs to another worktree or repair contract.')
             db.execute("INSERT OR IGNORE INTO metadata VALUES('identity', ?)", (self.identity,))
-        os.chmod(self.database, 0o600)
+        private_files.protect(self.database)
 
     @contextlib.contextmanager
     def connect(self):
@@ -55,6 +83,8 @@ class Ledger:
         if (not relative or path.is_absolute() or '\\' in relative or ':' in relative
                 or any(part in {'', '.', '..', '.git'} for part in relative.split('/'))):
             raise ValueError('Use a relative file path inside the worktree, outside .git.')
+        if private_files.windows():
+            return self.windows_content(path)
         if not hasattr(os, 'O_NOFOLLOW') or os.open not in os.supports_dir_fd:
             raise ValueError('Protected ledger reads currently require a POSIX host with no-follow file access.')
         directory = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
@@ -64,26 +94,27 @@ class Ledger:
                 child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
                 os.close(directory); directory = child
             descriptor = os.open(path.parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
-            before = os.fstat(descriptor)
-            if not stat.S_ISREG(before.st_mode) or before.st_size > MAX_FILE:
-                raise ValueError('Ledger reads require a regular file no larger than 2 MiB.')
-            chunks = []
-            size = 0
-            while size <= MAX_FILE:
-                chunk = os.read(descriptor, min(65536, MAX_FILE + 1 - size))
-                if not chunk: break
-                chunks.append(chunk); size += len(chunk)
-            after = os.fstat(descriptor)
-            if size > MAX_FILE or (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (after.st_size, after.st_mtime_ns, after.st_ctime_ns):
-                raise ValueError('File changed during observation. Read it again.')
-            data = b''.join(chunks)
-            if b'\0' in data:
-                raise ValueError('Binary files are not supported by ledger reads.')
-            data.decode('utf8')
-            return data
+            return observe(descriptor)
         finally:
             if descriptor is not None: os.close(descriptor)
             os.close(directory)
+
+    def windows_content(self, path):
+        """The same read, made with the refusals Windows can make.
+
+        Windows has no O_NOFOLLOW and no directory descriptors, so each folder on the way is
+        refused if it is a link or a reparse point before the next one is opened, and the
+        file itself is opened through the same refusal. A link swapped in between the check
+        and the open is the one thing the descriptor walk stops and this cannot.
+        """
+        walked = self.root
+        for part in path.parts[:-1]:
+            walked = walked / part
+            private_files.refuse_link(walked)
+            if not walked.is_dir():
+                raise ValueError('Use a relative file path inside the worktree, outside .git.')
+        with private_files.open_private(walked / path.parts[-1]) as handle:
+            return observe(handle.fileno())
 
     def sync(self, db, path, fingerprint):
         previous = db.execute('SELECT fingerprint, changes FROM files WHERE path=?', (path,)).fetchone()
