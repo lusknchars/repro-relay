@@ -224,26 +224,28 @@ def same_folder(one, other):
         return Path(one).resolve() == Path(other).resolve()
 
 
-def choose_line(lines, ask, wanted=None, interactive=True):
+def choose_line(lines, ask, wanted=None, interactive=True, command='./relay agent'):
     """Select a free line. Occupied lines are never taken from their agent.
 
     Free lines are listed in uid order, so a position means the same line on the next run.
+    command names the command whose rerun would choose a line, so a stop names the one the owner ran.
     """
     free = sorted((line for line in lines if not line.get('agent_uid')), key=lambda line: line['uid'])
     if not free:
         held = len(lines) - len(free)
         detail = f'{held} line(s) already answer as an agent. ' if held else 'This account holds no assistant line. '
-        raise DecisionNeeded(detail + 'Run `./relay agent --new-line` to have Plow provision one, '
+        raise DecisionNeeded(detail + f'Run `{command} --new-line` to have Plow provision one, '
                              'or retire an existing agent with `plow-agents revoke <line>` first.')
     if wanted is not None:
         chosen = find_line(free, wanted)
         if chosen is None:
-            raise choose_later(f'No free line matches --line {wanted}. The free lines are:', free)
+            raise choose_later(f'No free line matches --line {wanted}. The free lines are:', free, command)
         return chosen
     if len(free) == 1:
         return free[0]
     if not interactive:
-        raise choose_later('Several free lines are available, and there is no terminal to ask which one to use:', free)
+        raise choose_later('Several free lines are available, and there is no terminal to ask which one to use:',
+                           free, command)
     return ask(free)
 
 
@@ -276,9 +278,9 @@ def line_choices(free):
                      for position, line in enumerate(free, 1))
 
 
-def choose_later(reason, free):
+def choose_later(reason, free, command='./relay agent'):
     """A stop that lists the free lines and the exact command that picks one without asking."""
-    return DecisionNeeded(f'{reason}\n{line_choices(free)}\nChoose one with: ./relay agent --line <position>')
+    return DecisionNeeded(f'{reason}\n{line_choices(free)}\nChoose one with: {command} --line <position>')
 
 
 def existing_line(path, identity):
@@ -303,12 +305,15 @@ def existing_line(path, identity):
     return line
 
 
-def refuse_other_line(line, args):
-    """On a resume, --new-line or a --line naming another line cannot apply: this folder's agent keeps its line."""
+def refuse_other_line(line, args, advice='To use another line, install in a new folder.'):
+    """On a resume, --new-line or a --line naming another line cannot apply: this folder's agent keeps its line.
+
+    advice is how the owner would get another line, which differs for an agent this machine hosts for somebody else.
+    """
     wanted = getattr(args, 'line', None)
     if getattr(args, 'new_line', False) or (wanted is not None and not names_line(line, wanted)):
         label = ' '.join(part for part in (line.get('display_name') or line['uid'], line.get('provider_key')) if part)
-        raise DecisionNeeded(f'This folder already runs an agent on {label}. To use another line, install in a new folder.')
+        raise DecisionNeeded(f'This folder already runs an agent on {label}. {advice}')
 
 
 def names_line(line, wanted):
@@ -541,7 +546,7 @@ def reported_usage():
     return parse_usage(compose('logs', '--no-color', 'agent', capture=True).stdout)
 
 
-def ask_for_line(options):
+def ask_for_line(options, command='./relay agent'):
     print('\nSeveral free lines are available:', flush=True)
     print(line_choices(options), flush=True)
     while True:
@@ -549,7 +554,7 @@ def ask_for_line(options):
             answer = input('Choose a line number: ').strip()
         except EOFError:
             print(flush=True)
-            raise choose_later('No line was chosen. The free lines are:', options) from None
+            raise choose_later('No line was chosen. The free lines are:', options, command) from None
         if answer.isdecimal() and 1 <= int(answer) <= len(options):
             return options[int(answer) - 1]
         print('Enter one of the listed numbers.', flush=True)
@@ -1176,7 +1181,7 @@ def announce_line(line):
     print(f'Line .............. {line.get("display_name") or line["uid"]} {line.get("provider_key") or ""}', flush=True)
 
 
-def credential_for_new_line(args, path=None):
+def credential_for_new_line(args, path=None, command='./relay agent'):
     """Sign in when needed, choose a free line and mint its credential. Returns the line.
 
     The credential is the installed agent's unless another agent's own path is named. Whichever it is,
@@ -1193,8 +1198,9 @@ def credential_for_new_line(args, path=None):
         with noting_signin(signin_path(), signin_marker()):
             client['login'](SimpleNamespace(api_base=ORIGIN, token_file=None, new_line=args.new_line))
         token = client['account_token'](SimpleNamespace(token_file=None))
-    line = choose_line(client['account_lines'](ORIGIN, token), ask_for_line, getattr(args, 'line', None),
-                       interactive=bool(sys.stdin and sys.stdin.isatty()))
+    line = choose_line(client['account_lines'](ORIGIN, token), lambda options: ask_for_line(options, command),
+                       getattr(args, 'line', None), interactive=bool(sys.stdin and sys.stdin.isatty()),
+                       command=command)
     announce_line(line)
     outcome = ensure_credential(path, line, identity, lambda target, uid: mint_credential(client, target, uid))
     print(f'Credential ........ {outcome}', flush=True)
