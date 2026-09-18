@@ -1490,6 +1490,30 @@ providers:
       anthropic/claude-haiku-4: {}
 '''
 
+# The live config, verbatim from the running container before the provider switch was done by hand on
+# 2026-09-18: the model block carries the base_url and key_env that only Plow uses, and the plow provider
+# block carries its own name, base_url, key_env and stale timeout beside its models. Nothing here is
+# idealized; a fixture that dropped those keys would let a switch that cannot handle them pass.
+LIVE_MODEL_CONFIG = '''model:
+  default: anthropic/claude-sonnet-5
+  provider: plow
+  base_url: ${PLOW_API_BASE}/v1
+  key_env: HERMES_CUSTOM_PLOW_API_KEY
+providers:
+  plow:
+    name: plow
+    base_url: https://api.plow.co/v1
+    key_env: HERMES_CUSTOM_PLOW_API_KEY
+    stale_timeout_seconds: 55
+    models:
+      anthropic/claude-sonnet-5:
+        prompt_caching: true
+'''
+
+# What was added by hand to make the agent answer on Kimi with no Plow credits at all.
+KIMI_BLOCK = {'name': 'kimi', 'base_url': 'https://api.moonshot.ai/v1', 'key_env': 'MOONSHOT_API_KEY',
+              'models': {'kimi-k2.7-code': {}}}
+
 # Exercises what a minimal text edit must leave untouched: a comment, a folded block with non-ASCII text,
 # `enabled: yes` and `version: 1.10` (both of which yaml.safe_dump would silently renormalise), and an
 # anchor with a merge key -- all outside the two lines a switch actually edits.
@@ -1751,6 +1775,170 @@ class ModelEditTests(unittest.TestCase):
             plow_agent._set_default_line(lines, 'anthropic/claude-opus-4')
         self.assertNotIsInstance(error.exception, plow_agent.DecisionNeeded)
         self.assertIn('Could not locate', str(error.exception))
+
+
+@unittest.skipUnless(HAVE_YAML, 'PyYAML is not installed')
+class ProviderEditTests(unittest.TestCase):
+    """provider_summary() and set_provider(): pure functions over the config's raw YAML text.
+
+    Measured against the live config above and the hand switch that made the agent answer on Kimi with no
+    Plow credits: the provider block that was added, and the model.base_url and model.key_env pair that was
+    removed so that no call could fall back to Plow.
+    """
+
+    KIMI = plow_agent.PROVIDERS['kimi']
+    PLOW = plow_agent.PROVIDERS['plow']
+    RESTORE = {'base_url': '${PLOW_API_BASE}/v1', 'key_env': 'HERMES_CUSTOM_PLOW_API_KEY',
+               'default': 'anthropic/claude-sonnet-5'}
+
+    def test_reads_the_provider_its_model_its_key_variable_and_the_known_providers(self):
+        self.assertEqual(plow_agent.provider_summary(LIVE_MODEL_CONFIG),
+                         {'provider': 'plow', 'default': 'anthropic/claude-sonnet-5',
+                          'key_env': 'HERMES_CUSTOM_PLOW_API_KEY', 'known': ['plow']})
+
+    def test_switching_to_kimi_writes_exactly_the_block_the_hand_switch_wrote(self):
+        new_text = plow_agent.set_provider(LIVE_MODEL_CONFIG, self.KIMI, 'kimi-k2.7-code')
+        parsed = _safe_load(new_text)
+        self.assertEqual(parsed['providers']['kimi'], KIMI_BLOCK)
+        self.assertEqual(parsed['model']['provider'], 'kimi')
+        self.assertEqual(parsed['model']['default'], 'kimi-k2.7-code')
+
+    def test_switching_away_from_plow_removes_the_pair_that_could_fall_back_to_plow(self):
+        new_text = plow_agent.set_provider(LIVE_MODEL_CONFIG, self.KIMI, 'kimi-k2.7-code')
+        model = _safe_load(new_text)['model']
+        self.assertNotIn('base_url', model)
+        self.assertNotIn('key_env', model)
+        self.assertNotIn('${PLOW_API_BASE}', new_text.split('providers:')[0])
+
+    def test_the_plow_provider_block_itself_is_left_alone(self):
+        new_text = plow_agent.set_provider(LIVE_MODEL_CONFIG, self.KIMI, 'kimi-k2.7-code')
+        self.assertEqual(_safe_load(new_text)['providers']['plow'], _safe_load(LIVE_MODEL_CONFIG)['providers']['plow'])
+
+    def test_the_switch_to_kimi_is_the_whole_file_byte_for_byte(self):
+        # The live config as the switch leaves it, written out in full: two lines rewritten, two removed,
+        # one block added, and every other byte, including the plow block's stale timeout and its per model
+        # setting, exactly where it was.
+        self.assertEqual(plow_agent.set_provider(LIVE_MODEL_CONFIG, self.KIMI, 'kimi-k2.7-code'),
+                         'model:\n'
+                         '  default: kimi-k2.7-code\n'
+                         '  provider: kimi\n'
+                         'providers:\n'
+                         '  plow:\n'
+                         '    name: plow\n'
+                         '    base_url: https://api.plow.co/v1\n'
+                         '    key_env: HERMES_CUSTOM_PLOW_API_KEY\n'
+                         '    stale_timeout_seconds: 55\n'
+                         '    models:\n'
+                         '      anthropic/claude-sonnet-5:\n'
+                         '        prompt_caching: true\n'
+                         '  kimi:\n'
+                         '    name: kimi\n'
+                         '    base_url: https://api.moonshot.ai/v1\n'
+                         '    key_env: MOONSHOT_API_KEY\n'
+                         '    models:\n'
+                         '      kimi-k2.7-code: {}\n')
+
+    def test_a_round_trip_back_to_plow_leaves_the_file_as_it_started_apart_from_the_new_block(self):
+        switched = plow_agent.set_provider(LIVE_MODEL_CONFIG, self.KIMI, 'kimi-k2.7-code')
+        back = plow_agent.set_provider(switched, self.PLOW, self.RESTORE['default'], restore=self.RESTORE)
+        parsed, started = _safe_load(back), _safe_load(LIVE_MODEL_CONFIG)
+        self.assertEqual(parsed['model'], started['model'])
+        self.assertEqual(parsed['providers']['plow'], started['providers']['plow'])
+        self.assertEqual(parsed['providers']['kimi'], KIMI_BLOCK)  # the one thing deliberately added
+        opcodes = difflib.SequenceMatcher(None, LIVE_MODEL_CONFIG.splitlines(keepends=True),
+                                          back.splitlines(keepends=True)).get_opcodes()
+        changed = [(tag, ''.join(back.splitlines(keepends=True)[j1:j2]))
+                   for tag, i1, i2, j1, j2 in opcodes if tag != 'equal']
+        self.assertEqual([tag for tag, _ in changed], ['insert'])
+        self.assertEqual(changed[0][1], '  kimi:\n    name: kimi\n    base_url: https://api.moonshot.ai/v1\n'
+                                        '    key_env: MOONSHOT_API_KEY\n    models:\n      kimi-k2.7-code: {}\n')
+
+    def test_switching_back_restores_the_pair_that_was_removed(self):
+        switched = plow_agent.set_provider(LIVE_MODEL_CONFIG, self.KIMI, 'kimi-k2.7-code')
+        back = plow_agent.set_provider(switched, self.PLOW, self.RESTORE['default'], restore=self.RESTORE)
+        model = _safe_load(back)['model']
+        self.assertEqual(model['base_url'], '${PLOW_API_BASE}/v1')  # the variable, not an expanded URL
+        self.assertEqual(model['key_env'], 'HERMES_CUSTOM_PLOW_API_KEY')
+        self.assertIn('base_url: ${PLOW_API_BASE}/v1\n', back)
+
+    def test_a_provider_block_already_there_keeps_its_own_settings_and_only_gains_the_model(self):
+        text = LIVE_MODEL_CONFIG + ('  kimi:\n    name: kimi\n    base_url: https://proxy.example/v1\n'
+                                    '    key_env: MOONSHOT_API_KEY\n    models:\n      kimi-k2.6: {}\n')
+        new_text = plow_agent.set_provider(text, self.KIMI, 'kimi-k2.7-code')
+        block = _safe_load(new_text)['providers']['kimi']
+        self.assertEqual(block['base_url'], 'https://proxy.example/v1')  # theirs, not this command's
+        self.assertEqual(sorted(block['models']), ['kimi-k2.6', 'kimi-k2.7-code'])
+
+    def test_a_provider_block_without_a_base_url_is_refused_by_name(self):
+        text = LIVE_MODEL_CONFIG + '  kimi:\n    key_env: MOONSHOT_API_KEY\n    models:\n      kimi-k2.6: {}\n'
+        with self.assertRaises(plow_agent.DecisionNeeded) as error:
+            plow_agent.set_provider(text, self.KIMI, 'kimi-k2.7-code')
+        self.assertEqual(error.exception.code, 2)
+        self.assertIn('providers.kimi', str(error.exception))
+        self.assertIn('base_url', str(error.exception))
+        self.assertIn('then run this again', str(error.exception))
+
+    def test_a_null_provider_block_is_refused_not_crashed(self):
+        text = LIVE_MODEL_CONFIG + '  kimi:\n'
+        with self.assertRaises(plow_agent.DecisionNeeded) as error:
+            plow_agent.set_provider(text, self.KIMI, 'kimi-k2.7-code')
+        self.assertEqual(error.exception.code, 2)
+        self.assertIn('providers.kimi', str(error.exception))
+
+    def test_a_flow_style_providers_block_is_refused_before_anything_is_written(self):
+        text = 'model:\n  default: anthropic/claude-sonnet-5\n  provider: plow\nproviders: {}\n'
+        with self.assertRaises(plow_agent.DecisionNeeded) as error:
+            plow_agent.set_provider(text, self.KIMI, 'kimi-k2.7-code')
+        self.assertEqual(error.exception.code, 2)
+        self.assertIn('flow style', str(error.exception))
+
+    def test_switching_to_plow_without_a_plow_block_says_what_writes_one(self):
+        text = ('model:\n  default: kimi-k2.7-code\n  provider: kimi\n'
+                'providers:\n  kimi:\n    base_url: https://api.moonshot.ai/v1\n    key_env: MOONSHOT_API_KEY\n'
+                '    models:\n      kimi-k2.7-code: {}\n')
+        with self.assertRaises(plow_agent.DecisionNeeded) as error:
+            plow_agent.set_provider(text, self.PLOW, 'anthropic/claude-sonnet-5', restore=self.RESTORE)
+        self.assertEqual(error.exception.code, 2)
+        self.assertIn('providers.plow', str(error.exception))
+        self.assertIn(f'{RELAY} agent', str(error.exception))
+
+    def test_a_missing_providers_block_is_created_with_the_provider_in_it(self):
+        text = 'model:\n  default: anthropic/claude-sonnet-5\n  provider: plow\n'
+        new_text = plow_agent.set_provider(text, self.KIMI, 'kimi-k2.7-code')
+        self.assertEqual(_safe_load(new_text)['providers']['kimi'], KIMI_BLOCK)
+
+    def test_a_config_that_will_not_parse_is_refused_with_nothing_written(self):
+        for bad in ('not: valid: yaml: [', 'model: not-a-mapping\n', ''):
+            with self.subTest(bad=bad), self.assertRaises(plow_agent.DecisionNeeded) as error:
+                plow_agent.set_provider(bad, self.KIMI, 'kimi-k2.7-code')
+            self.assertEqual(error.exception.code, 2)
+
+    def test_a_duplicate_provider_key_makes_the_edit_not_match_and_refuses(self):
+        # The same trap set_default_model's reparse check exists for: YAML keeps the last of two duplicate
+        # keys while the line editor rewrites the first, so the switch would silently not take effect.
+        text = LIVE_MODEL_CONFIG.replace('  provider: plow\n', '  provider: plow\n  provider: plow\n')
+        with self.assertRaises(plow_agent.AgentError) as error:
+            plow_agent.set_provider(text, self.KIMI, 'kimi-k2.7-code')
+        self.assertNotIsInstance(error.exception, plow_agent.DecisionNeeded)
+        self.assertIn('would not match the intended change', str(error.exception))
+
+    def test_everything_else_in_an_exotic_config_survives_the_switch(self):
+        text = EXOTIC_MODEL_CONFIG.replace('  plow:\n', '  plow:\n    base_url: https://api.plow.co/v1\n'
+                                                        '    key_env: HERMES_CUSTOM_PLOW_API_KEY\n')
+        new_text = plow_agent.set_provider(text, self.KIMI, 'kimi-k2.7-code')
+        self.assertIn('# Hermes runtime configuration', new_text)
+        self.assertIn('José Núñez', new_text)
+        self.assertIn('enabled: yes', new_text)
+        self.assertIn('version: 1.10', new_text)
+        self.assertIn('<<: *shared_defaults', new_text)
+
+    def test_an_unknown_provider_name_names_the_ones_it_knows(self):
+        for name in ('', None, 'openai'):
+            with self.subTest(name=name), self.assertRaises(plow_agent.DecisionNeeded) as error:
+                plow_agent.provider_entry(name)
+            self.assertEqual(error.exception.code, 2)
+            self.assertIn('kimi', str(error.exception))
+            self.assertIn('plow', str(error.exception))
 
 
 class ModelIdValidationTests(unittest.TestCase):

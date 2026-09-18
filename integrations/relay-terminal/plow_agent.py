@@ -49,6 +49,24 @@ ERROR_INVALID_PARAMETER = 87  # what Windows reports for a process id that is no
 GATEWAY_SERVICE = '/run/service/hermes-gateway'
 MODEL_ID = re.compile(r'[^/\s]+/[^/\s]+')
 MODEL_CHECK_PROMPT = 'Reply in one short sentence: which model are you, and who made you?'
+ENV_FILE = AGENT / '.env'  # untracked, and the file Compose reads for the values compose.yml passes in
+ENV_LABEL = 'agent/.env'
+ENV_LIMIT = 65536
+ENV_NAME = re.compile(r'[A-Za-z_][A-Za-z0-9_]*')
+SAFE_VALUE = re.compile(r'[A-Za-z0-9][\w./:-]{0,127}')  # a provider name or a model id, on one line, unquoted
+CONTAINER_ENVIRONMENT = '/run/s6/container_environment'  # where the image keeps what with-contenv hands a service
+PROVIDER_VARIABLE = 'HERMES_PROVIDER'  # read by the image's own boot script; agent/compose.yml passes it in
+MODEL_VARIABLE = 'HERMES_MODEL'
+DEFAULT_PROVIDER = 'plow'  # what an install that says nothing about providers runs on, today and after this
+MODEL_LIST_TIMEOUT = 30
+# Every provider this command knows how to configure. Plow has no entry of its own beyond its name: its key
+# is the agent credential the install already mints, and the values its model block needs come back from a
+# backup that carried them rather than from anything written here. Adding a provider is one entry plus one
+# line in agent/compose.yml for its key.
+PROVIDERS = {
+    'plow': {'name': 'plow'},
+    'kimi': {'name': 'kimi', 'base_url': 'https://api.moonshot.ai/v1', 'key_env': 'MOONSHOT_API_KEY'},
+}
 
 
 class AgentError(Exception):
@@ -821,30 +839,63 @@ def _model_entry_line(indent, model_id, as_list):
 _TRAILING_COMMENT = re.compile(r'(\s+#.*)$')
 
 
+def _set_child_line(lines, parent, key, value, insert=True):
+    """lines with parent.key set to value, in place, keeping a trailing comment on that line if it has one.
+
+    When the key is not there at all it is added at the end of that block, unless insert is False, which is
+    how model.default says it must already exist.
+
+    Refuses (DecisionNeeded) when the parent block itself is written in flow style, the same unsupported
+    shape as its providers.* siblings, by name and with a remedy -- not the generic "Could not locate"
+    AgentError, which reads as an internal error rather than a decision about the owner's own config.
+    Raises plain AgentError only when the line genuinely cannot be located or added some other way.
+    """
+    parent_index = _top_key_line(lines, parent)
+    if parent_index is not None and _is_flow_style(lines[parent_index]):
+        raise DecisionNeeded(f'{parent} is written in flow style ({{...}} or [...]) in the agent config; changing '
+                             f'{parent}.{key} there is not supported. Edit it to block style yourself, then run '
+                             'this again. Nothing was changed.')
+    start, end = (None, None) if parent_index is None else _child_block(lines, parent_index)
+    at = None if parent_index is None else _child_key_line(lines, start, end, key)
+    if at is None:
+        if parent_index is None or not insert:
+            raise AgentError(f'Could not locate {parent}.{key} in the config text to edit it. Nothing was changed.')
+        indent = _first_child_indent(lines, start, end, _line_indent(lines[parent_index]) + _indent_step(lines))
+        while end > start and not lines[end - 1].strip():  # a blank line at the end of the block stays at the end
+            end -= 1
+        lines[end:end] = [f'{" " * indent}{key}: {value}\n']
+        return lines
+    comment_match = _TRAILING_COMMENT.search(lines[at])
+    comment = comment_match.group(1) if comment_match else ''
+    lines[at] = re.sub(rf'^([ \t]*{re.escape(key)}:).*$', lambda m: f'{m.group(1)} {value}{comment}',
+                       lines[at], count=1)
+    return lines
+
+
+def _remove_child_line(lines, parent, key):
+    """lines with parent.key, and anything written under it, removed in place. Absent already: unchanged.
+
+    Blank lines after the removed block are kept: they belong to whatever follows, not to the key going
+    away, and this edit changes as little of the owner's file as it can.
+    """
+    parent_index = _top_key_line(lines, parent)
+    if parent_index is None or _is_flow_style(lines[parent_index]):
+        return lines
+    start, end = _child_block(lines, parent_index)
+    at = _child_key_line(lines, start, end, key)
+    if at is None:
+        return lines
+    _, last = _child_block(lines, at)
+    while last > at + 1 and not lines[last - 1].strip():
+        last -= 1
+    del lines[at:last]
+    return lines
+
+
 def _set_default_line(lines, model_id):
     """lines with model.default's value replaced, in place, keeping a trailing comment on that line if it
-    has one.
-
-    Refuses (DecisionNeeded) when model: itself is written in flow style, the same unsupported shape as its
-    providers.* siblings, by name and with a remedy -- not the generic "Could not locate model.default"
-    AgentError, which reads as an internal error rather than a decision about the owner's own config.
-    Raises plain AgentError only when the default: line genuinely cannot be located some other way.
-    """
-    model_index = _top_key_line(lines, 'model')
-    if model_index is not None and _is_flow_style(lines[model_index]):
-        raise DecisionNeeded('model is written in flow style ({...} or [...]) in the agent config; switching '
-                             'the default there is not supported. Edit it to block style yourself, then run '
-                             'this again. Nothing was changed.')
-    start, end = (None, None) if model_index is None else _child_block(lines, model_index)
-    default_index = None if model_index is None else _child_key_line(lines, start, end, 'default')
-    if default_index is None:
-        raise AgentError('Could not locate model.default in the config text to edit it. Nothing was changed.')
-    line = lines[default_index]
-    comment_match = _TRAILING_COMMENT.search(line)
-    comment = comment_match.group(1) if comment_match else ''
-    lines[default_index] = re.sub(r'^([ \t]*default:).*$', lambda m: f'{m.group(1)} {model_id}{comment}',
-                                  line, count=1)
-    return lines
+    has one. The default: line must already exist; nothing here creates a model block."""
+    return _set_child_line(lines, 'model', 'default', model_id, insert=False)
 
 
 def _is_flow_style(line):
@@ -963,6 +1014,181 @@ def set_default_model(text, model_id):
     lines = text.splitlines(keepends=True)
     lines = _set_default_line(lines, model_id)
     lines = _ensure_model_id(lines, provider, model_id, original)
+    new_text = ''.join(lines)
+
+    try:
+        reparsed = yaml.safe_load(new_text)
+    except yaml.YAMLError as error:
+        raise AgentError(f'The edited config did not parse ({yaml_problem(error)}). Nothing was written.') from None
+    if reparsed != expected:
+        raise AgentError('The edited config would not match the intended change exactly. Nothing was written.')
+    return new_text
+
+
+def provider_entry(name):
+    """One provider this command knows how to configure, or a refusal naming the ones it does."""
+    if not name:
+        raise DecisionNeeded(f'No provider was given. This command knows {", ".join(PROVIDERS)}.')
+    entry = PROVIDERS.get(name)
+    if entry is None:
+        raise DecisionNeeded(f'"{name}" is not a provider this command knows how to set up. It knows '
+                             f'{", ".join(PROVIDERS)}. Nothing was changed.')
+    return entry
+
+
+def provider_summary(text):
+    """The provider the agent is configured to call, the model it defaults to, the variable that holds that
+    provider's key, and every provider the config knows about, from the raw config text.
+
+    The key variable is the provider's own when its block names one, and the model block's otherwise, which
+    is where Plow keeps it.
+    """
+    config = load_model_config(text)
+    model = config['model']
+    providers = config.get('providers') if isinstance(config.get('providers'), dict) else {}
+    block = providers.get(model['provider'])
+    block = block if isinstance(block, dict) else {}
+    return {'provider': model['provider'], 'default': model['default'],
+            'key_env': block.get('key_env') or model.get('key_env'), 'known': list(providers)}
+
+
+def _scalar(value):
+    """One value as YAML text on a single line, quoted only where YAML itself needs the quotes.
+
+    safe_dump ends a bare scalar document with an explicit ... marker, which is not part of the value.
+    """
+    yaml = yaml_module()
+    text = yaml.safe_dump(value, default_flow_style=True, width=10 ** 6).strip()
+    if text.endswith('\n...'):
+        text = text[:-len('\n...')].strip()
+    if not text or '\n' in text:
+        raise AgentError('A value for the agent config could not be written on one line. Nothing was changed.')
+    return text
+
+
+def _provider_lines(entry, model_id, indent, step):
+    """The block one provider is written as: its name, where its calls go, which variable holds its key, and
+    the model this switch is for."""
+    inner = indent + step
+    return [f'{" " * indent}{_scalar(entry["name"])}:\n',
+            f'{" " * inner}name: {_scalar(entry["name"])}\n',
+            f'{" " * inner}base_url: {_scalar(entry["base_url"])}\n',
+            f'{" " * inner}key_env: {_scalar(entry["key_env"])}\n',
+            f'{" " * inner}models:\n',
+            f'{" " * (inner + step)}{_scalar(model_id)}: {{}}\n']
+
+
+def _ensure_provider_block(lines, entry, model_id, original):
+    """lines with providers.<provider> present and carrying model_id, in place.
+
+    A provider that is not in the config yet is written whole. One that is already there is left exactly as
+    the owner has it and only gains the model id, so a base_url or key_env they changed themselves survives
+    the switch. The shapes this cannot write into are refused by name in _expected_provider first; the flow
+    style ones, which only the text can show, are refused here.
+    """
+    name = entry['name']
+    providers = original.get('providers')
+    if isinstance(providers, dict) and isinstance(providers.get(name), dict):
+        return _ensure_model_id(lines, name, model_id, original)
+    step = _indent_step(lines)
+    providers_index = _top_key_line(lines, 'providers')
+    if providers_index is None:
+        if lines and not lines[-1].endswith('\n'):
+            lines[-1] += '\n'
+        return lines + ['providers:\n'] + _provider_lines(entry, model_id, step, step)
+    if _is_flow_style(lines[providers_index]):
+        raise DecisionNeeded('providers is written in flow style ({...} or [...]) in the agent config; adding a '
+                             'provider there is not supported. Edit it to block style yourself, then run this '
+                             'again. Nothing was changed.')
+    start, end = _child_block(lines, providers_index)
+    indent = _first_child_indent(lines, start, end, step)
+    while end > start and not lines[end - 1].strip():
+        end -= 1
+    lines[end:end] = _provider_lines(entry, model_id, indent, step)
+    return lines
+
+
+def _expected_provider(config, entry, model_id, restore):
+    """The dict a correct switch must reparse to: config with model.provider, model.default, that provider's
+    block and the Plow only model.base_url/model.key_env pair changed, and nothing else.
+
+    restore is None for a provider other than Plow, and the pair is then removed, which is what the image's
+    own boot script does so that no call can fall back to Plow. Switching back to Plow passes the pair its
+    config actually carried, read from a backup.
+    """
+    name = entry['name']
+    config = copy.deepcopy(config)
+    model = config['model']
+    model['provider'] = name
+    model['default'] = model_id
+    if restore is None:
+        model.pop('base_url', None)
+        model.pop('key_env', None)
+    else:
+        model['base_url'] = restore['base_url']
+        model['key_env'] = restore['key_env']
+    if 'providers' in config and config['providers'] is None:
+        raise DecisionNeeded('providers is empty in the agent config; give it a provider with a models: '
+                             'mapping yourself, or remove the providers: line so it can be created fresh, '
+                             'then run this again. Nothing was changed.')
+    providers = config.setdefault('providers', {})
+    block = providers.get(name)
+    if name in providers and not isinstance(block, dict):
+        raise DecisionNeeded(f'providers.{name} in the agent config is not a block of settings. Remove that line '
+                             'so this command can write the provider itself, or fix it yourself, then run this '
+                             'again. Nothing was changed.')
+    if block is None:
+        if 'base_url' not in entry:
+            raise DecisionNeeded(f'The agent config has no providers.{name} block, and this command does not carry '
+                                 f'{name} settings of its own to write one. Start the agent again with '
+                                 f'{relay_command()} agent, which writes that block at boot, then run this again. '
+                                 'Nothing was changed.')
+        providers[name] = {'name': name, 'base_url': entry['base_url'], 'key_env': entry['key_env'],
+                           'models': {model_id: {}}}
+        return config
+    if restore is None:
+        missing = [key for key in ('base_url', 'key_env') if not block.get(key)]
+        if missing:
+            raise DecisionNeeded(f'providers.{name} in the agent config has no ' + ' and no '.join(missing) +
+                                 f', so the agent would not know where to send its calls. Give it those, or remove '
+                                 f'the providers.{name} block so this command writes it, then run this again. '
+                                 'Nothing was changed.')
+    models = block.get('models')
+    if models is None:
+        block['models'] = {model_id: {}}
+    elif isinstance(models, dict):
+        models.setdefault(model_id, {})
+    elif isinstance(models, list):
+        if model_id not in models:
+            models.append(model_id)
+    else:
+        raise DecisionNeeded(f"The agent config's providers.{name}.models is neither a mapping nor a list. "
+                             'Nothing was changed.')
+    return config
+
+
+def set_provider(text, entry, model_id, restore=None):
+    """Config text switched to one provider: model.provider and model.default, that provider's own block,
+    and the model.base_url and model.key_env pair that only Plow uses.
+
+    A minimal text edit for the same reason set_default_model is one: everything the owner wrote elsewhere
+    survives untouched. The result is re-parsed and compared against the original parse with only the
+    intended changes applied; anything else differing refuses, writing nothing.
+    """
+    yaml = yaml_module()
+    original = load_model_config(text)
+    expected = _expected_provider(original, entry, model_id, restore)
+
+    lines = text.splitlines(keepends=True)
+    lines = _set_default_line(lines, _scalar(model_id))
+    lines = _set_child_line(lines, 'model', 'provider', _scalar(entry['name']))
+    if restore is None:
+        lines = _remove_child_line(lines, 'model', 'base_url')
+        lines = _remove_child_line(lines, 'model', 'key_env')
+    else:
+        lines = _set_child_line(lines, 'model', 'base_url', _scalar(restore['base_url']))
+        lines = _set_child_line(lines, 'model', 'key_env', _scalar(restore['key_env']))
+    lines = _ensure_provider_block(lines, entry, model_id, original)
     new_text = ''.join(lines)
 
     try:
