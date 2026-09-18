@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import cli
 from execution_ledger import Ledger, MAX_FILE
-from fake_windows import reparse_point, windows_host
+from fake_windows import reparse_point, symlinks_available, windows_host
 import private_files
 
 
@@ -207,6 +207,7 @@ class WindowsLedgerTests(unittest.TestCase):
             self.assertNotIn(os.open, os.supports_dir_fd)
             self.assertEqual(Ledger(self.root, self.database, self.anchor).read('code.txt')['decision'], 'allow')
 
+    @unittest.skipUnless(symlinks_available(), 'this host does not let this account create a link')
     def test_links_reparse_points_and_escapes_are_still_refused_on_windows(self):
         outside = self.directory / 'outside'
         outside.write_text('outside')

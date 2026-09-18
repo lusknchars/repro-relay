@@ -91,6 +91,23 @@ class FakeWindows:
         return account if separator and rights == 'F' else None
 
 
+def symlinks_available():
+    """Whether this host lets this account create a symbolic link.
+
+    Asked by making one rather than assumed: Windows refuses without the create symbolic
+    link privilege, so a test that needs a real link says so instead of failing.
+    """
+    import tempfile
+    with tempfile.TemporaryDirectory() as directory:
+        target = Path(directory) / 'target'
+        target.write_bytes(b'x')
+        try:
+            (Path(directory) / 'link').symlink_to(target)
+            return True
+        except (OSError, NotImplementedError):
+            return False
+
+
 @contextlib.contextmanager
 def missing(module, *names):
     """Take attributes off a module for the duration, the way another host simply does not have them."""

@@ -1,4 +1,5 @@
 import importlib.util
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -11,7 +12,7 @@ spec = importlib.util.spec_from_file_location('relay_index', ROOT / 'index.py')
 index = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(index)
 
-from fake_windows import windows_host  # noqa: E402  (the installer's own Windows fakes)
+from fake_windows import symlinks_available, windows_host  # noqa: E402  (the installer's own Windows fakes)
 import private_files  # noqa: E402
 
 
@@ -20,15 +21,18 @@ class IndexWrapper(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'credentials'
             path.write_text('PLOW_API_BASE=https://api.plow.co\nPLOW_AGENT_TOKEN="$(not-a-command)"\n')
-            path.chmod(0o600)
+            private_files.protect(path)  # however this host makes a file private
             self.assertEqual(index.credentials(path)['PLOW_AGENT_TOKEN'], '$(not-a-command)')
-            path.chmod(0o644)
-            with self.assertRaises(ValueError):
-                index.credentials(path)
-            path.chmod(0o600)
+            if os.name == 'posix':
+                # Opening it to other accounts is a mode change here; the Windows refusal is
+                # in WindowsCredentialTests, where the access list says it.
+                path.chmod(0o644)
+                with self.assertRaises(ValueError):
+                    index.credentials(path)
+                private_files.protect(path)
             link = Path(folder) / 'link'
             link.symlink_to(path)
-            with self.assertRaises(OSError):
+            with self.assertRaises((OSError, ValueError)):  # ELOOP here, a refusal by name on Windows
                 index.credentials(link)
 
     def test_credentials_reject_wrong_origin_and_duplicates(self):
@@ -37,7 +41,7 @@ class IndexWrapper(unittest.TestCase):
             for body in ['PLOW_API_BASE=https://example.com\nPLOW_AGENT_TOKEN=x',
                          'PLOW_API_BASE=https://api.plow.co\nPLOW_AGENT_TOKEN=x\nPLOW_AGENT_TOKEN=y']:
                 path.write_text(body)
-                path.chmod(0o600)
+                private_files.protect(path)
                 with self.assertRaises(ValueError):
                     index.credentials(path)
 
@@ -92,6 +96,7 @@ class WindowsCredentialTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 index.credentials(self.path)
 
+    @unittest.skipUnless(symlinks_available(), 'this host does not let this account create a link')
     def test_a_link_where_the_credential_should_be_is_refused(self):
         link = self.path.with_name('link')
         link.symlink_to(self.path)

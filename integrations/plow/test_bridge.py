@@ -8,7 +8,7 @@ import threading
 import unittest
 
 from bridge import ADAPTER, Bridge, BridgeError, JsonHTTP, ReceiptStore, digest, from_config, private_credentials
-from fake_windows import windows_host  # bridge puts the installer's own folder on the path
+from fake_windows import symlinks_available, windows_host  # bridge puts the installer's own folder on the path
 import private_files
 
 
@@ -202,11 +202,14 @@ class BoundaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "credentials"
             path.write_text("PLOW_API_BASE=https://api.plow.co\nPLOW_AGENT_TOKEN=test-token\n")
-            path.chmod(0o600)
+            private_files.protect(path)  # however this host makes a file private
             self.assertEqual(private_credentials(path), "test-token")
-            path.chmod(0o644)
-            with self.assertRaises(BridgeError): private_credentials(path)
-            path.chmod(0o600)
+            if os.name == "posix":
+                # Opening it to other accounts is a mode change here; WindowsBoundaryTests
+                # covers the same refusal where an access list decides it.
+                path.chmod(0o644)
+                with self.assertRaises(BridgeError): private_credentials(path)
+                private_files.protect(path)
             path.write_text("PLOW_API_BASE=https://other.example\nPLOW_AGENT_TOKEN=test-token\n")
             with self.assertRaises(BridgeError): private_credentials(path)
 
@@ -263,6 +266,7 @@ class WindowsBoundaryTests(unittest.TestCase):
             with self.assertRaises(BridgeError):
                 private_credentials(self.path)
 
+    @unittest.skipUnless(symlinks_available(), "this host does not let this account create a link")
     def test_a_link_where_the_credential_should_be_is_refused(self):
         link = self.path.with_name("link")
         link.symlink_to(self.path)

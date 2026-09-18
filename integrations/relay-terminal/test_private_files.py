@@ -13,7 +13,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from fake_windows import FakeWindows, held_by_another_process, reparse_point, windows_host
+from fake_windows import (FakeWindows, held_by_another_process, reparse_point, symlinks_available,
+                          windows_host)
 import private_files
 
 
@@ -24,9 +25,12 @@ class PlatformTests(unittest.TestCase):
             with self.subTest(platform=platform), patch.object(sys, 'platform', platform):
                 self.assertEqual(private_files.host_platform(), expected)
 
-    def test_the_command_is_typed_the_way_this_host_types_it(self):
-        self.assertEqual(private_files.relay_command(), './relay')
+    def test_the_command_is_typed_the_way_each_host_types_it(self):
+        for platform in ('darwin', 'linux'):
+            with self.subTest(platform=platform), patch.object(sys, 'platform', platform):
+                self.assertEqual(private_files.relay_command(), './relay')
         with windows_host():
+            # cmd.exe and PowerShell do not run ./relay, which is why the owner types this.
             self.assertEqual(private_files.relay_command(), 'python relay')
 
     def test_the_home_folder_comes_from_the_variable_each_host_keeps_it_in(self):
@@ -38,6 +42,44 @@ class PlatformTests(unittest.TestCase):
             self.assertIsNone(private_files.home_directory())
 
 
+class AnyHostTests(unittest.TestCase):
+    """What holds however this host decides access."""
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.directory = Path(self.temporary.name)
+        self.file = self.directory / 'credential'
+        self.file.write_text('PLOW_AGENT_TOKEN=agt_fixture_token\n')
+
+    def test_protect_raises_and_never_returns_quietly_when_it_cannot(self):
+        with self.assertRaises(private_files.PrivacyError) as error:
+            private_files.protect(self.directory / 'absent')
+        self.assertIn('absent', str(error.exception))
+
+    def test_replace_atomically_moves_the_finished_file_into_place(self):
+        source, target = self.directory / 'new', self.directory / 'credential'
+        source.write_text('replacement\n')
+        private_files.replace_atomically(source, target)
+        self.assertEqual(target.read_text(), 'replacement\n')
+        self.assertFalse(source.exists())
+
+    def test_a_replace_that_cannot_happen_names_both_paths(self):
+        with self.assertRaises(private_files.PrivacyError) as error:
+            private_files.replace_atomically(self.directory / 'absent', self.directory / 'credential')
+        self.assertIn('absent', str(error.exception))
+        self.assertIn('credential', str(error.exception))
+
+    def test_protect_then_is_private_agree_on_whatever_host_this_is(self):
+        private_files.protect(self.file)
+        self.assertTrue(private_files.is_private(self.file))
+        folder = self.directory / 'state'
+        folder.mkdir()
+        private_files.protect(folder)
+        self.assertTrue(private_files.is_private(folder))
+
+
+@unittest.skipUnless(os.name == 'posix', 'mode bits decide access here')
 class PosixPrivacyTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -72,11 +114,6 @@ class PosixPrivacyTests(unittest.TestCase):
                 self.file.chmod(mode)
                 self.assertTrue(private_files.is_private(self.file))
 
-    def test_protect_raises_and_never_returns_quietly_when_it_cannot(self):
-        with self.assertRaises(private_files.PrivacyError) as error:
-            private_files.protect(self.directory / 'absent')
-        self.assertIn('absent', str(error.exception))
-
     def test_a_drive_that_takes_the_change_and_does_nothing_is_caught(self):
         # A memory stick or a network share accepts chmod and keeps the file open to everyone.
         self.file.chmod(0o666)
@@ -102,19 +139,6 @@ class PosixPrivacyTests(unittest.TestCase):
         link.symlink_to(self.file)
         with self.assertRaises(OSError):
             private_files.open_private(link)
-
-    def test_replace_atomically_moves_the_finished_file_into_place(self):
-        source, target = self.directory / 'new', self.directory / 'credential'
-        source.write_text('replacement\n')
-        private_files.replace_atomically(source, target)
-        self.assertEqual(target.read_text(), 'replacement\n')
-        self.assertFalse(source.exists())
-
-    def test_a_replace_that_cannot_happen_names_both_paths(self):
-        with self.assertRaises(private_files.PrivacyError) as error:
-            private_files.replace_atomically(self.directory / 'absent', self.directory / 'credential')
-        self.assertIn('absent', str(error.exception))
-        self.assertIn('credential', str(error.exception))
 
 
 class WindowsPrivacyTests(unittest.TestCase):
@@ -191,6 +215,7 @@ class WindowsPrivacyTests(unittest.TestCase):
             missing = self.directory / 'never-written'
             self.assertFalse(private_files.is_private(missing))
 
+    @unittest.skipUnless(symlinks_available(), 'this host does not let this account create a link')
     def test_open_private_refuses_a_link_and_a_reparse_point(self):
         link = self.directory / 'link'
         link.symlink_to(self.file)

@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 import bootstrap
-from fake_windows import windows_host
+from fake_windows import FakeWindows, windows_host
 import private_files
 
 WINDOWS_PATH = r'C:\Program Files\nodejs;C:\Windows\system32'
@@ -84,12 +84,16 @@ class SetupTests(unittest.TestCase):
     @patch.object(bootstrap, 'prerequisites', return_value=[])
     @patch.object(bootstrap, 'environment', return_value={'DATABASE_URL':'private-test-value'})
     def test_repeat_setup_reuses_service_and_preserves_database(self, *_):
-        with tempfile.TemporaryDirectory() as directory, patch.object(bootstrap, 'ROOT', Path(directory)), patch.object(bootstrap, 'health', return_value=True), patch.object(bootstrap, 'port_in_use', return_value=True), patch.object(bootstrap, 'install_dependencies'), patch.object(bootstrap.subprocess, 'run') as run, patch.object(bootstrap.subprocess, 'Popen') as spawn, patch.object(bootstrap.webbrowser, 'open') as browser:
+        # Making .data/setup private is a subprocess call on Windows, and this test replaces
+        # subprocess wholesale, so icacls is answered rather than left to a bare mock.
+        host = FakeWindows(user=private_files.account_name(),
+                           fallback=lambda command, **options: SimpleNamespace(returncode=0, stdout='', stderr=''))
+        with tempfile.TemporaryDirectory() as directory, patch.object(bootstrap, 'ROOT', Path(directory)), patch.object(bootstrap, 'health', return_value=True), patch.object(bootstrap, 'port_in_use', return_value=True), patch.object(bootstrap, 'install_dependencies'), patch.object(bootstrap.subprocess, 'run', side_effect=host.run) as run, patch.object(bootstrap.subprocess, 'Popen') as spawn, patch.object(bootstrap.webbrowser, 'open') as browser:
             for _ in range(2):
                 self.assertEqual(bootstrap.run_setup(self.args()), 0)
             spawn.assert_not_called(); browser.assert_not_called()
             self.assertFalse((Path(directory) / '.data/setup/setup.lock').exists())
-            commands = [call.args[0] for call in run.call_args_list]
+            commands = [call.args[0] for call in run.call_args_list if call.args[0][0] != 'icacls']
             self.assertFalse(any('docker' in command for command in commands))
             self.assertTrue(all('build' in command for command in commands))
 

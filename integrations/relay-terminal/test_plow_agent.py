@@ -31,6 +31,10 @@ from fake_windows import FakeWindows, held_by_another_process, windows_host
 import plow_agent
 import private_files
 
+# How this host types the repository command. The installer renders it per platform, so a
+# test that spelled one of them would pass on its author's machine and fail on the others.
+RELAY = private_files.relay_command()
+
 
 def denial_is_enforced():
     """Whether a file its owner denied themselves really cannot be read here.
@@ -143,7 +147,10 @@ class Installation:
         self.terminal = False  # whether stdin is a terminal the installer may ask on
         self.logs = 'plow-init: configured from /var/lib/plow as cht_1\n'  # what `compose logs` shows
         self.reply = 'I am Reach.'  # speak()'s answer, or an exception to raise
-        self.windows = None  # a FakeWindows when the install is being run on that host
+        # Whatever host this runs on, the installer makes files private; on Windows that is an
+        # icacls call, and this harness owns subprocess.run. A Windows test replaces this fake
+        # with its own; here it answers as the account this host actually signs in as.
+        self.windows = FakeWindows(user=private_files.account_name())
         self.calls = []
         self.out, self.err = io.StringIO(), io.StringIO()
 
@@ -194,7 +201,7 @@ class Installation:
         return self.reply
 
     def subprocess_run(self, command, **options):
-        if self.windows is not None and command and command[0] == 'icacls':
+        if command and command[0] == 'icacls':
             return self.windows.run(command, **options)
         return self.docker(command, **options)
 
@@ -269,7 +276,7 @@ class InstallFlowTests(unittest.TestCase):
             self.assertFalse(install.credential.exists())
         self.assertNotIn('mint', install.calls)
         self.assertNotIn('compose up -d --build', install.calls)
-        self.assertIn('./relay agent --line <position>', install.err.getvalue())
+        self.assertIn(f'{RELAY} agent --line <position>', install.err.getvalue())
 
     def test_line_flag_installs_on_the_named_line(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -287,6 +294,7 @@ class InstallFlowTests(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, 'The installer asked a question.'):
                 install.run()
 
+    @unittest.skipUnless(os.name == 'posix', 'opening a file to other accounts with a mode')
     def test_identity_reports_an_unusable_credential_as_an_agent_error(self):
         with tempfile.TemporaryDirectory() as directory:
             credential = Path(directory) / 'plow-credentials'
@@ -297,20 +305,21 @@ class InstallFlowTests(unittest.TestCase):
                 plow_agent.identity(credential)
             with self.assertRaises(plow_agent.AgentError) as missing:
                 plow_agent.identity(Path(directory) / 'absent')
-        self.assertIn('chmod 600', str(error.exception))
+        self.assertIn(private_files.how_to_protect(credential), str(error.exception))
         for local in (error.exception, missing.exception):
             self.assertNotIsInstance(local, plow_agent.PlowUnreachable)
 
 
 class CredentialVerificationTests(unittest.TestCase):
     """existing_line() with the real identity() and bridge; only the HTTP opener is faked."""
-    UNREACHABLE = 'Could not verify the existing credential with Plow right now. It was left untouched; run ./relay agent again later.'
+    UNREACHABLE = ('Could not verify the existing credential with Plow right now. It was left untouched; '
+                   f'run {RELAY} agent again later.')
 
     def verify(self, **opener):
         with tempfile.TemporaryDirectory() as directory:
             credential = Path(directory) / 'plow-credentials'
             credential.write_text('PLOW_API_BASE=https://api.plow.co\nPLOW_AGENT_TOKEN=agt_fixture_token\n')
-            credential.chmod(0o600)
+            private_files.protect(credential)  # however this host does that
             original = credential.read_bytes()
             with patch.object(urllib.request.OpenerDirector, 'open', **opener), \
                     self.assertRaises(plow_agent.AgentError) as error:
@@ -339,7 +348,7 @@ class CredentialVerificationTests(unittest.TestCase):
                 message = self.verify(side_effect=failure)
                 self.assertTrue(message.endswith(f'could not be verified with Plow. API returned HTTP {code}; no automatic '
                                                  'retry was made. It was left untouched. If that agent was retired, remove '
-                                                 'the file yourself first, then run ./relay agent again.'), message)
+                                                 f'the file yourself first, then run {RELAY} agent again.'), message)
                 self.assertNotIn('reconcile', message)
 
     def test_a_busy_or_failing_plow_never_suggests_removing_the_credential(self):
@@ -355,8 +364,9 @@ class CredentialVerificationTests(unittest.TestCase):
                 self.assertEqual(self.verify(side_effect=failure),
                                  f'Could not verify the existing credential with Plow: the secure connection could not be '
                                  f'verified ({reason}); if this Python has no certificates, python3 -m pip install certifi '
-                                 'provides them. It was left untouched; run ./relay agent again once that is fixed.')
+                                 f'provides them. It was left untouched; run {RELAY} agent again once that is fixed.')
 
+    @unittest.skipUnless(os.name == 'posix', 'opening a file to other accounts with a mode')
     def test_a_credential_file_problem_is_named_without_suggesting_removal(self):
         with tempfile.TemporaryDirectory() as directory:
             credential = Path(directory) / 'plow-credentials'
@@ -366,8 +376,9 @@ class CredentialVerificationTests(unittest.TestCase):
                     self.assertRaises(plow_agent.AgentError) as error:
                 plow_agent.existing_line(credential, plow_agent.identity)
         self.assertEqual(str(error.exception), f'The existing credential {credential} could not be used: Plow credentials '
-                                               f'must be a regular file only you can read. Run chmod 600 {credential} '
-                                               'and try again. It was left untouched.')
+                                               'must be a regular file only you can read. Run '
+                                               f'{private_files.how_to_protect(credential)} and try again. '
+                                               'It was left untouched.')
 
 
 class ResumeFlagTests(unittest.TestCase):
@@ -443,7 +454,7 @@ class LineSelectionTests(unittest.TestCase):
             plow_agent.choose_line(lines, ask=lambda options: self.fail('asked'), interactive=False)
         self.assertEqual(error.exception.code, 2)
         self.assertIn('  1. Alder +15550000001 (ln_a)\n  2. Birch +15550000002 (ln_b)', str(error.exception))
-        self.assertIn('./relay agent --line <position>', str(error.exception))
+        self.assertIn(f'{RELAY} agent --line <position>', str(error.exception))
 
     def test_a_single_free_line_needs_no_terminal(self):
         chosen = plow_agent.choose_line([line('ln_1'), line('ln_2', agent='ag_2')],
@@ -456,13 +467,13 @@ class LineSelectionTests(unittest.TestCase):
                 plow_agent.choose_line([line('ln_1', agent='ag_1')], ask=lambda options: self.fail('asked'),
                                        wanted=wanted, interactive=False)
             self.assertEqual(error.exception.code, 2)
-            self.assertIn('./relay agent --new-line', str(error.exception))
+            self.assertIn(f'{RELAY} agent --new-line', str(error.exception))
 
     def test_end_of_input_while_asking_is_a_decision_not_an_eoferror(self):
         with patch('builtins.input', side_effect=EOFError), contextlib.redirect_stdout(io.StringIO()), \
                 self.assertRaises(plow_agent.DecisionNeeded) as error:
             plow_agent.ask_for_line([line('ln_a', name='Alder'), line('ln_b', name='Birch')])
-        self.assertIn('./relay agent --line <position>', str(error.exception))
+        self.assertIn(f'{RELAY} agent --line <position>', str(error.exception))
 
 
 class CredentialTests(unittest.TestCase):
@@ -665,7 +676,7 @@ class FailureTests(unittest.TestCase):
             install = Installation(directory)
             install.up = subprocess.TimeoutExpired(['docker', 'compose', 'up', '-d', '--build'], 1800)
             self.assertEqual(install.run(), 1)
-        self.assertEqual(install.err.getvalue(), 'The first download is still running or stalled. Run ./relay agent again '
+        self.assertEqual(install.err.getvalue(), f'The first download is still running or stalled. Run {RELAY} agent again '
                                                  'to continue; Docker keeps what it already downloaded.\n')
 
     def test_an_unexpected_failure_is_logged_and_explained_in_one_sentence(self):
@@ -678,7 +689,7 @@ class FailureTests(unittest.TestCase):
             log = install.root / '.data/agent/install.log'
             text = log.read_text()
             self.assertFalse((install.root / '.data/agent/install.lock').exists())
-        sentence = f'The install stopped unexpectedly. Details: {log}. Running ./relay agent again is safe.'
+        sentence = f'The install stopped unexpectedly. Details: {log}. Running {RELAY} agent again is safe.'
         self.assertEqual(install.err.getvalue().splitlines(), [sentence, sentence])
         self.assertEqual(len(re.findall(r'^=== \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ ===$', text, re.MULTILINE)), 2)
         self.assertEqual(text.count('Traceback (most recent call last):'), 2)
@@ -706,7 +717,7 @@ class FailureTests(unittest.TestCase):
                 self.assertEqual(plow_agent.run_agent(SimpleNamespace(agent_action='status')), 1)
             log = root / '.data/agent/install.log'
             self.assertIn('FileNotFoundError: docker', log.read_text())
-        self.assertEqual(err.getvalue(), f'./relay agent status stopped unexpectedly. Details: {log}. Running it again is safe.\n')
+        self.assertEqual(err.getvalue(), f'{RELAY} agent status stopped unexpectedly. Details: {log}. Running it again is safe.\n')
 
     def test_the_log_is_private_to_the_owner(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -722,7 +733,7 @@ class FailureTests(unittest.TestCase):
             (install.root / '.data/agent').write_text('a file where the folder should be')
             self.assertEqual(install.run(), 1)
         self.assertEqual(install.err.getvalue(), 'The install stopped unexpectedly and the details could not be saved. '
-                                                 'Running ./relay agent again is safe.\n')
+                                                 f'Running {RELAY} agent again is safe.\n')
 
     def test_an_unsaved_log_in_another_action_names_that_action(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -733,7 +744,7 @@ class FailureTests(unittest.TestCase):
                     patch.dict(os.environ, {'XDG_CONFIG_HOME': str(root / 'config')}), \
                     contextlib.redirect_stderr(io.StringIO()) as err:
                 self.assertEqual(plow_agent.run_agent(SimpleNamespace(agent_action='stop')), 1)
-        self.assertEqual(err.getvalue(), './relay agent stop stopped unexpectedly and the details could not be saved. '
+        self.assertEqual(err.getvalue(), f'{RELAY} agent stop stopped unexpectedly and the details could not be saved. '
                                          'Running it again is safe.\n')
 
     def test_an_interruption_keeps_its_message_and_writes_no_log(self):
@@ -853,7 +864,7 @@ class DockerGuardTests(unittest.TestCase):
             with self.subTest(fresh=fresh):
                 message = self.refused(FakeDocker(services=f'{self.agent}\trelay-two\texited\n'), fresh)
                 self.assertEqual(message, "This folder's agent already runs under the Docker project 'relay-two'. Put "
-                                          "COMPOSE_PROJECT_NAME=relay-two in agent/.env so every ./relay agent command uses it.")
+                                          f"COMPOSE_PROJECT_NAME=relay-two in agent/.env so every {RELAY} agent command uses it.")
 
     def test_this_folders_agent_under_two_projects_asks_to_keep_one(self):
         docker = FakeDocker(containers=f'{self.agent}\trunning\n',
@@ -938,16 +949,28 @@ class InstallGuardTests(unittest.TestCase):
         self.assertNotIn('compose up -d --build', install.calls)
         self.assertIn(f'A stopped agent from {other} exists', install.err.getvalue())
 
-    def test_a_started_agent_records_its_project_and_folder_privately(self):
+    def test_a_started_agent_records_the_project_folder_and_computer_it_ran_on(self):
+        # The platform is whatever this host is, so the expectation follows the host rather
+        # than naming one. All three are covered, because recording the wrong one silently is
+        # the whole failure this key exists to prevent.
+        for platform, expected in (('darwin', 'macos'), ('linux', 'linux'), ('win32', 'windows')):
+            with self.subTest(platform=platform), tempfile.TemporaryDirectory() as directory:
+                install = Installation(directory)
+                install.docker.project = 'relay-two'
+                with patch.object(sys, 'platform', platform):
+                    self.assertEqual(install.run(), 0)
+                saved = json.loads((install.root / '.data/agent/install.json').read_text())
+                self.assertEqual(saved, {'project': 'relay-two', 'agent_dir': str(install.agent.resolve()),
+                                         'platform': expected})
+
+    def test_a_started_agent_records_that_privately(self):
         with tempfile.TemporaryDirectory() as directory:
             install = Installation(directory)
-            install.docker.project = 'relay-two'
             self.assertEqual(install.run(), 0)
-            record = install.root / '.data/agent/install.json'
-            saved = json.loads(record.read_text())
-            self.assertTrue(private_files.is_private(record))
-        self.assertEqual(saved, {'project': 'relay-two', 'agent_dir': str(install.agent.resolve()),
-                                 'platform': 'macos'})
+            # Through whatever this host used to make it private, which on Windows is the
+            # icacls this harness answered.
+            with patch.object(subprocess, 'run', install.subprocess_run):
+                self.assertTrue(private_files.is_private(install.root / '.data/agent/install.json'))
 
     def test_an_agent_docker_could_not_start_records_nothing(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -995,7 +1018,7 @@ class InstallGuardTests(unittest.TestCase):
                 self.assertEqual(install.calls, [])
                 self.assertEqual(install.err.getvalue(), "This folder's agent already runs under the Docker project "
                                                          "'relay-two'. Put COMPOSE_PROJECT_NAME=relay-two in agent/.env so "
-                                                         "every ./relay agent command uses it.\n")
+                                                         f"every {RELAY} agent command uses it.\n")
 
 
 class CopiedCredentialTests(unittest.TestCase):
@@ -1022,7 +1045,7 @@ class CopiedCredentialTests(unittest.TestCase):
         self.assertEqual(error.exception.code, 1)
         self.assertEqual(str(error.exception), f'This credential already belongs to the agent in {self.other}. One credential '
                                                f'runs in one place: remove that agent with docker compose down in {self.other}, '
-                                               'or delete agent/plow-credentials here so ./relay agent mints this folder its own.')
+                                               f'or delete agent/plow-credentials here so {RELAY} agent mints this folder its own.')
         self.assertEqual(docker.commands, [FakeDocker.CONFIG, SERVICES])
 
     def test_other_credentials_unreadable_ones_and_this_folder_are_ignored(self):
@@ -2558,12 +2581,12 @@ class WindowsWordingTests(unittest.TestCase):
         self.assertIn('python relay agent --line <position>', told)
         self.assertNotIn('./relay', told)
 
-    def test_the_same_message_still_says_relay_on_this_host(self):
+    def test_the_same_message_is_typed_for_this_host_when_nothing_is_faked(self):
         with tempfile.TemporaryDirectory() as directory:
             install = Installation(directory)
             install.lines = [line('ln_a', name='Alder'), line('ln_b', name='Birch')]
             self.assertEqual(install.run(), 2)
-        self.assertIn('./relay agent --line <position>', install.err.getvalue())
+        self.assertIn(f'{RELAY} agent --line <position>', install.err.getvalue())
 
 
 if __name__ == '__main__':
