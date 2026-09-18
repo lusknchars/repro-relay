@@ -16,7 +16,7 @@ RUN set -eu; \
       "https://raw.githubusercontent.com/plow-pbc/agent-index-client/${sha}/${path}"; \
     echo "$want  /opt/plow/agent-index-client.py" | sha256sum -c -; \
     chmod 0644 /opt/plow/agent-index-client.py; \
-    find /opt/hermes/skills/relay-reach -type d -exec chmod 0755 {} +; \
-    find /opt/hermes/skills/relay-reach -type f -exec chmod 0644 {} +
+    find /opt/hermes/skills -type d -exec chmod 0755 {} +; \
+    find /opt/hermes/skills -type f -exec chmod 0644 {} +
 COPY image/s6-overlay/ /etc/s6-overlay/
 RUN chmod 0755 /etc/s6-overlay/s6-rc.d/agent-index/run /etc/s6-overlay/s6-rc.d/transport-watchdog/run
