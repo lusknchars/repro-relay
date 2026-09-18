@@ -8,6 +8,9 @@ import shutil
 import subprocess
 import sys
 
+# integrations/pi-harness/test_pi.py loads this file by path, so this directory is not
+# already on sys.path there and a plain import of its sibling would fail.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import private_files
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
