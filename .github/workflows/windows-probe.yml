@@ -27,10 +27,20 @@ jobs:
         run: python relay agent --help
       - name: The installer test suite on Windows
         continue-on-error: true
-        run: python -m unittest discover -s integrations/relay-terminal -p "test_*.py" 2>&1 | tail -40
+        run: |
+          python -m unittest discover -s integrations/relay-terminal -p "test_*.py" > out.txt 2>&1 || true
+          grep -E '^(ERROR|FAIL):' out.txt | sed -E 's/ \(.*//' | sort | uniq -c | sort -rn
+          echo '--- distinct exception lines ---'
+          grep -E '^[A-Za-z_.]*(Error|Exception):' out.txt | sort | uniq -c | sort -rn | head -20
+          tail -3 out.txt
       - name: The agent test suite on Windows
         continue-on-error: true
-        run: python -m unittest discover -s agent/tests -p "test_*.py" 2>&1 | tail -30
+        run: |
+          python -m unittest discover -s agent/tests -p "test_*.py" > agent.txt 2>&1 || true
+          grep -E '^(ERROR|FAIL):' agent.txt | sed -E 's/ \(.*//' | sort | uniq -c | sort -rn
+          echo '--- distinct exception lines ---'
+          grep -E '^[A-Za-z_.]*(Error|Exception):' agent.txt | sort | uniq -c | sort -rn | head -20
+          tail -3 agent.txt
       - name: What chmod 0600 actually does here
         continue-on-error: true
         run: |
