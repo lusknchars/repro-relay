@@ -215,7 +215,10 @@ class WindowsPrivacyTests(unittest.TestCase):
             self.assertEqual(windows.calls[-1], ['icacls', str(self.file)])  # it read back what it did
             self.assertFalse(private_files.is_private(self.file))
         self.assertIn(str(self.file), str(error.exception))
-        self.assertIn('icacls', str(error.exception))
+        # What icacls actually printed, not only the command that would fix it: a host that
+        # disagrees with this code has to be able to say so from the other side of CI.
+        self.assertIn('icacls exited 0 and reported:', str(error.exception))
+        self.assertIn('OWNER RIGHTS:(F)', str(error.exception))
 
     def test_protect_raises_when_icacls_itself_cannot_be_run(self):
         with windows_host(), patch.object(subprocess, 'run', side_effect=FileNotFoundError(2, 'icacls')):

@@ -21,13 +21,14 @@ import tempfile
 import time
 from types import ModuleType, SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import urllib.error
 import urllib.parse
 import urllib.request
 
 import cli
-from fake_windows import FakeWindows, held_by_another_process, symlinks_available, windows_host
+from fake_windows import (FakeWindows, client_write, held_by_another_process, pinned_client_double,
+                          symlinks_available, windows_host)
 import plow_agent
 import private_files
 
@@ -2476,6 +2477,39 @@ class WindowsCredentialTests(unittest.TestCase):
             self.assertFalse(destination.exists())
             self.assertEqual(list(destination.parent.glob('.plow-agents.*')), [])
         self.assertIn('DELETE', [method for method, _ in plow.sent])
+
+
+class PortableClientWrite(unittest.TestCase):
+    """Replacing the client's own write happens only on Windows, so it is run here anyway.
+
+    The contract tests reach it through the real pinned client, which is a real function with
+    real globals and so happens to accept the replacement. This asks the question directly, so
+    that it is intent rather than luck, and so a host that never runs the branch still proves it.
+    """
+
+    def test_windows_gives_the_client_a_write_it_can_finish(self):
+        client = pinned_client_double(mint=Mock())
+        with windows_host():
+            self.assertIs(plow_agent.portable_private_write(client), client)
+        self.assertIs(client_write(client), plow_agent.windows_write_private)
+
+    def test_this_host_leaves_the_client_its_own_write(self):
+        client = pinned_client_double(mint=Mock())
+        self.assertIs(plow_agent.portable_private_write(client), client)
+        self.assertIsNot(client_write(client), plow_agent.windows_write_private)
+
+    def test_the_replacement_writes_a_private_file_and_says_why_when_it_cannot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            written = plow_agent.windows_write_private(
+                str(Path(directory) / 'agent' / 'plow-credentials'), 'PLOW_AGENT_TOKEN=agt_fixture_token\n')
+            self.assertEqual(Path(written).read_bytes(), b'PLOW_AGENT_TOKEN=agt_fixture_token\n')
+            self.assertTrue(private_files.is_private(written))
+            self.assertTrue(private_files.is_private(Path(written).parent))
+            with patch.object(private_files, 'write_privately',
+                              side_effect=private_files.PrivacyError('a drive that cannot keep one account apart')):
+                with self.assertRaises(plow_agent.AgentError) as error:
+                    plow_agent.windows_write_private(str(Path(directory) / 'other'), 'x')
+            self.assertIn('one account apart', str(error.exception))
 
 
 class OwnerPlatformTests(unittest.TestCase):

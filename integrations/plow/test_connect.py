@@ -10,7 +10,9 @@ import urllib.parse
 import urllib.request
 import connect
 from bridge import BridgeError
-import private_files  # connect puts the installer's own folder on the path
+# connect puts the installer's own folder on the path, which is where these live.
+from fake_windows import client_write, pinned_client_double, recorder, windows_host
+import private_files
 
 
 def pinned_client():
@@ -53,8 +55,11 @@ class AutoConnectTests(unittest.TestCase):
         (self.root/'.data/tools').mkdir(parents=True)
         (self.root/'.data/tools/plow-agents').touch()
         (self.root/'.data/plow-credentials').touch()
-        self.official={'account_token':Mock(return_value='fixture-private-token'),
-                       'account_lines':Mock(return_value=[{'uid':'ln_fixture','agent_uid':'agent_fixture','display_name':'Fixture assistant'}]),'mint':Mock()}
+        # A client whose functions are real ones in their own namespace, as run_path's are:
+        # official_client() replaces one of them through __globals__ on Windows, and a Mock
+        # has none, so with Mocks that replacement was a path no host but Windows ever ran.
+        self.official=pinned_client_double(account_token=Mock(return_value='fixture-private-token'),
+                       account_lines=Mock(return_value=[{'uid':'ln_fixture','agent_uid':'agent_fixture','display_name':'Fixture assistant'}]),mint=Mock())
         self.client=Mock()
         self.client.call.side_effect=[(200,{'line':{'uid':'ln_fixture'}}),(200,{'has_more':False,'data':[{'uid':'cht_fixture','status':'active','participants':[{'type':'agent','relationship':'self','line':{'uid':'ln_fixture','provider_type':'imessage'}},{'type':'member','role':'owner'}]}]})]
         self.bridge=Mock();self.bridge.doctor.return_value={'plow_grant_checked':True}
@@ -67,7 +72,7 @@ class AutoConnectTests(unittest.TestCase):
         self.assertTrue(private_files.is_private(saved))
         self.assertEqual(result['line_name'],'Fixture assistant')
         self.assertNotIn('fixture-private-token',json.dumps(result)+saved.read_text())
-        self.official['mint'].assert_not_called()
+        recorder(self.official,'mint').assert_not_called()
     def test_existing_other_chat_is_preserved(self):
         directory=self.root/'.data/plow';directory.mkdir()
         config=directory/'bridge.json';config.write_text('{"line_id":"ln_other","chat_id":"cht_other"}')
@@ -75,13 +80,13 @@ class AutoConnectTests(unittest.TestCase):
         with self.assertRaises(BridgeError):connect.connect()
         self.assertEqual(original,config.read_bytes())
     def test_multiple_lines_require_selection(self):
-        self.official['account_lines'].return_value=[{'uid':'one'},{'uid':'two'}]
+        recorder(self.official,'account_lines').return_value=[{'uid':'one'},{'uid':'two'}]
         with self.assertRaises(BridgeError):connect.connect()
         self.client.call.assert_not_called()
     def test_occupied_line_without_credentials_is_not_replaced(self):
         (self.root/'.data/plow-credentials').unlink()
         with self.assertRaises(BridgeError):connect.connect()
-        self.official['mint'].assert_not_called()
+        recorder(self.official,'mint').assert_not_called()
     def test_other_credential_identity_is_not_rebound(self):
         self.client.call.side_effect=[(200,{'line':{'uid':'ln_other'}})]
         with self.assertRaises(BridgeError):connect.connect()
@@ -114,5 +119,48 @@ class OfficialClientMintTests(unittest.TestCase):
         http.assert_called_once_with(connect.ORIGIN, 'agt_fixture_token')
         self.assertIn(('POST', '/v1/agents'), plow.sent)
         self.assertNotIn('DELETE', [method for method, _ in plow.sent])
+
+
+class PortableClientWrite(unittest.TestCase):
+    """Replacing the client's own write happens only on Windows, so it is run here anyway.
+
+    By faking the platform rather than waiting for a Windows host. This branch has been bitten
+    three times now by a path only one platform runs, and running it everywhere is the only
+    defence that has held.
+    """
+
+    def client(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        (root / '.data/tools').mkdir(parents=True)
+        (root / '.data/tools/plow-agents').touch()
+        return root, pinned_client_double(mint=Mock())
+
+    def test_windows_gives_the_client_a_write_it_can_finish(self):
+        root, double = self.client()
+        with windows_host(), patch.object(connect, 'ROOT', root), \
+                patch.object(connect.runpy, 'run_path', return_value=double):
+            returned = connect.official_client()
+        self.assertIs(client_write(returned), connect.write_private)
+
+    def test_this_host_leaves_the_client_its_own_write(self):
+        root, double = self.client()
+        with patch.object(connect, 'ROOT', root), \
+                patch.object(connect.runpy, 'run_path', return_value=double):
+            returned = connect.official_client()
+        self.assertIsNot(client_write(returned), connect.write_private)
+
+    def test_the_replacement_writes_a_private_file_and_says_why_when_it_cannot(self):
+        root, _ = self.client()
+        written = connect.write_private(str(root / 'plow-credentials'), 'PLOW_AGENT_TOKEN=agt_fixture_token\n')
+        self.assertEqual(Path(written).read_bytes(), b'PLOW_AGENT_TOKEN=agt_fixture_token\n')
+        self.assertTrue(private_files.is_private(written))
+        with patch.object(private_files, 'write_privately',
+                          side_effect=private_files.PrivacyError('a drive that cannot keep one account apart')):
+            with self.assertRaises(BridgeError) as error:
+                connect.write_private(str(root / 'other'), 'x')
+        self.assertIn('one account apart', str(error.exception))
+
 
 if __name__=='__main__':unittest.main()

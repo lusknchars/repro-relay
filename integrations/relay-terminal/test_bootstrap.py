@@ -165,8 +165,12 @@ class WindowsSetupTests(unittest.TestCase):
                                  return_value={'PATH': WINDOWS_PATH, 'DATABASE_URL': 'fixture'}), \
                     patch.object(bootstrap, 'health', side_effect=[False, True]), \
                     patch.object(bootstrap, 'port_in_use', return_value=False), \
-                    patch.object(bootstrap.subprocess, 'Popen'):
+                    patch.object(bootstrap.subprocess, 'Popen') as spawn:
                 self.assertEqual(bootstrap.run_setup(self.args()), 0)
+                # The name Windows gives the built service, and no session of its own, which
+                # Windows has no equivalent for.
+                self.assertEqual(spawn.call_args.args[0], [str(root / 'target/debug/relay-api.exe')])
+                self.assertFalse(spawn.call_args.kwargs['start_new_session'])
                 state = root / '.data/setup'
                 self.assertTrue(private_files.is_private(state))
                 self.assertTrue(private_files.is_private(state / 'service.log'))

@@ -112,6 +112,43 @@ class FakeWindows:
         return account if separator and rights == wanted else None
 
 
+def pinned_client_double(**recorders):
+    """The pinned Plow client the way runpy.run_path hands one back.
+
+    Here for the same reason as the rest of this module: replacing the client's own
+    write_private is something the installer and the bridge do only on Windows, so without a
+    double that can take the replacement it is a path the other hosts never run. A Mock
+    cannot take it, because the replacement goes into the function's __globals__.
+
+    Its functions are real ones living in a module namespace of their own, each handing off
+    to the recorder of the same name so a test can still assert on calls. What comes back is
+    a copy of that namespace, as run_path's is, so the only way to see the replacement is
+    through __globals__, exactly as with the real client. A test cannot pass by watching the
+    copy and then fail against the thing itself.
+    """
+    namespace = {'write_private': _client_write_private}
+    for name, recorder in recorders.items():
+        namespace['_' + name] = recorder
+        exec(f'def {name}(*arguments, **options):\n'
+             f'    return _{name}(*arguments, **options)\n', namespace)
+    return dict(namespace)
+
+
+def _client_write_private(path, body):
+    """What the client would write with itself, standing in for the code this never runs."""
+    raise AssertionError('the double\'s own write_private was called; nothing here should write a file')
+
+
+def recorder(client, name):
+    """The Mock behind one of the double's functions, for asserting on how it was called."""
+    return client[name].__globals__['_' + name]
+
+
+def client_write(client):
+    """Whichever write_private the client's own functions would reach for now."""
+    return client['mint'].__globals__['write_private']
+
+
 def symlinks_available():
     """Whether this host lets this account create a symbolic link.
 
