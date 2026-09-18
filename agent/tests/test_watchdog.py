@@ -5,7 +5,10 @@ import inspect
 import json
 import os
 from pathlib import Path
+import re
 import signal
+import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -21,6 +24,25 @@ spec.loader.exec_module(watchdog)
 
 NOW = dt.datetime(2026, 9, 16, 12, 0, tzinfo=dt.timezone.utc)
 PID, STARTED = 198, 38119734
+
+
+class Blocked(BaseException):
+    """A read that must never block did. Not an Exception, so no except clause hides it."""
+
+
+@contextmanager
+def deadline(seconds=5):
+    """Turn a read that blocks into a failure rather than a hung suite."""
+    def ring(number, frame):
+        raise Blocked("the call blocked")
+
+    previous = signal.signal(signal.SIGALRM, ring)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
 
 
 def minutes_ago(n):
@@ -119,7 +141,7 @@ class HealthRule(unittest.TestCase):
             deep = Path(folder) / "deep.json"
             deep.write_text('{"a":' * 100000 + "1" + "}" * 100000)
             for path in (link, fifo, big, deep):
-                with self.subTest(path=path.name):
+                with self.subTest(path=path.name), deadline(5):
                     self.assertIsNone(watchdog.load_state(path))
             self.assertEqual(watchdog.load_state(real)["pid"], PID)
 
@@ -169,23 +191,31 @@ def mcp_line(at, body, server="plow"):
     return f"2026-09-17 {at} WARNING tools.mcp_tool: MCP server '{server}' {body}"
 
 
-class Blocked(BaseException):
-    """A read that must never block did. Not an Exception, so no except clause hides it."""
+def timed_reading(path, tail, limit=10):
+    """(seconds, state, stamp) for one mcp_status call, measured in a child process.
 
-
-@contextmanager
-def deadline(seconds=5):
-    """Turn a read that blocks into a failure rather than a hung suite."""
-    def ring(number, frame):
-        raise Blocked("the call blocked")
-
-    previous = signal.signal(signal.SIGALRM, ring)
-    signal.setitimer(signal.ITIMER_REAL, seconds)
+    A pattern that backtracks runs inside the regex engine, where a signal cannot
+    interrupt it, so a runaway would hang this suite instead of failing it. The
+    child is killed at `limit` and that becomes a failure with a plain reason.
+    """
+    code = (
+        "import importlib.util, sys, time\n"
+        "spec = importlib.util.spec_from_file_location('w', sys.argv[1])\n"
+        "module = importlib.util.module_from_spec(spec)\n"
+        "spec.loader.exec_module(module)\n"
+        "started = time.perf_counter()\n"
+        "state, stamp = module.mcp_status(sys.argv[2], tail=int(sys.argv[3]))\n"
+        "print(time.perf_counter() - started, state, stamp.isoformat() if stamp else '')\n")
+    module = str(ROOT / "image/s6-overlay/scripts/transport_watchdog.py")
     try:
-        yield
-    finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
-        signal.signal(signal.SIGALRM, previous)
+        done = subprocess.run([sys.executable, "-I", "-c", code, module, str(path), str(tail)],
+                              capture_output=True, text=True, timeout=limit)
+    except subprocess.TimeoutExpired:
+        raise AssertionError(f"mcp_status did not finish within {limit}s on one line")
+    if done.returncode:
+        raise AssertionError(f"mcp_status failed in the child: {done.stderr.strip()[:200]}")
+    spent, state, stamp = done.stdout.split(" ", 2)
+    return float(spent), state, stamp.strip()
 
 
 def logged(folder, text):
@@ -227,17 +257,35 @@ class MacSessionLog(unittest.TestCase):
             self.assertEqual(watchdog.mcp_status(logged(folder, both)),
                              ("degraded", at(18, 27, 49, 111)))
 
-    def test_a_quarter_megabyte_hostile_line_costs_almost_nothing(self):
-        hostile = "2026-09-17 18:29:00,000 WARNING tools.mcp_tool: MCP server 'plow' " + "(state: " * 34000
-        self.assertGreater(len(hostile.encode()), 256 * 1024)
-        text = "\n".join([PARKED, hostile]) + "\n"
+    def test_quarter_megabyte_hostile_lines_cost_almost_nothing(self):
+        start = "2026-09-17 18:29:00,000 WARNING tools.mcp_tool: MCP server 'plow' "
+        for shape, hostile in (("open parentheses", start + "(state: " * 34000),
+                               ("half written changes", start + "(state: a -> b " * 18000)):
+            with self.subTest(shape=shape):
+                self.assertGreater(len(hostile.encode()), 256 * 1024)
+                text = "\n".join([PARKED, hostile]) + "\n"
+                with tempfile.TemporaryDirectory() as folder:
+                    path = logged(folder, text)
+                    spent, state, stamp = timed_reading(path, len(text.encode()) + 1)
+                self.assertEqual((state, stamp), ("parked", at(18, 28, 25, 446).isoformat()))
+                self.assertLess(spent, 0.5, f"the pattern spent {spent:.1f}s on one line")
+
+    def test_every_repetition_in_the_line_pattern_has_an_upper_bound(self):
+        pattern = watchdog.MCP_LINE.pattern
+        for unbounded in ('*', '+'):
+            self.assertNotIn(unbounded, pattern,
+                             f"an unbounded {unbounded} can be made to backtrack for minutes")
+        self.assertEqual(re.findall(r'\{\d+,\}', pattern), [],
+                         'a repetition with no upper bound can be made to backtrack for minutes')
+
+    def test_a_change_far_from_the_server_name_is_not_a_reading(self):
+        distant = ("2026-09-17 18:29:00,000 WARNING tools.mcp_tool: MCP server 'plow' "
+                   + "x" * 1000 + "(state: parked -> connected)")
         with tempfile.TemporaryDirectory() as folder:
-            path = logged(folder, text)
-            started = time.perf_counter()
-            answer = watchdog.mcp_status(path, tail=len(text.encode()) + 1)
-            spent = time.perf_counter() - started
-        self.assertEqual(answer, ("parked", at(18, 28, 25, 446)))
-        self.assertLess(spent, 0.5, f"the pattern spent {spent:.1f}s on one line")
+            self.assertEqual(watchdog.mcp_status(logged(folder, distant + "\n")), (None, None))
+            near = "\n".join([PARKED, distant]) + "\n"
+            self.assertEqual(watchdog.mcp_status(logged(folder, near)),
+                             ("parked", at(18, 28, 25, 446)))
 
     def test_a_missing_or_unsafe_log_and_one_without_the_server_read_as_nothing(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -616,6 +664,22 @@ class Dimensions(unittest.TestCase):
         self.assertEqual([line for line in self.lines if "transport" in line], [])
         self.assertEqual(self.restarts, [])
 
+    def test_a_change_younger_than_the_grace_holds_the_episode_and_its_counters(self):
+        session, reachable = ["parked", down_since(7)], [False]
+        dog, mac = watchdog.watchers(lambda: (session[0], session[1]), lambda: reachable[0])
+        self.check(dog, mac, 0, gateway())          # Latch does not answer: told once, no restart
+        reachable[0] = True
+        self.check(dog, mac, 1, gateway())          # stuck: the gateway is restarted
+        self.check(dog, mac, 4, gateway())          # the restart did not revive it
+        self.assertEqual((mac.dog.failed, mac.reported, mac.notified), (1, True, True))
+        said = len(self.lines)
+        session[:] = ["degraded", later(3)]         # the session changed again a moment ago
+        self.check(dog, mac, 5, gateway())
+        self.check(dog, mac, 6, gateway())
+        self.assertEqual((mac.dog.failed, mac.reported, mac.notified), (1, True, True))
+        self.assertEqual(self.lines[said:], [])
+        self.assertEqual((self.sent, len(self.restarts)), ([watchdog.LATCH_ALERT_TEXT], 1))
+
     def test_a_probe_that_flips_never_resets_what_the_mac_has_counted(self):
         flips = []
 
@@ -934,6 +998,7 @@ class Loop(unittest.TestCase):
                 watchdog.main(configured=lambda: ("https://api.plow.co", "tok", "cht_owner", LATCH_URL),
                               sleep=stop, log=lambda message: None)
         self.assertEqual(made, [("https://api.plow.co", "tok", "cht_owner")])
+
 
 if __name__ == "__main__":
     unittest.main()
