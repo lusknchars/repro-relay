@@ -32,6 +32,7 @@ check:
 	$(MAKE) context-check
 	$(MAKE) tools-check
 	$(MAKE) terminal-check
+	$(MAKE) hosted-check
 	$(MAKE) pi-check
 	python3 -m unittest discover -s integrations/mem0-memory -p 'test_*.py' -v
 	python3 -m unittest discover -s integrations/hermes-assessment -p 'test_*.py' -v
@@ -65,6 +66,9 @@ tools-check:
 
 terminal-check:
 	python3 -m unittest discover -s integrations/relay-terminal -p 'test_*.py' -v
+
+hosted-check:
+	python3 -m unittest discover -s hosted -p 'test_*.py' -v
 
 pi-check:
 	python3 -m unittest discover -s integrations/pi-harness -p 'test_*.py' -v
