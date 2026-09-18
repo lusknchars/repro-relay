@@ -179,6 +179,10 @@ def create(host, args, person):
     plow_agent.remember_install(folder / 'install.json', project, folder)
     await_ready(host, folder)
     report_limits(host, project, folder)
+    # A sign in this run created is taken off the machine again, exactly as the installer does. Leaving it
+    # would leave an account token here, and leave a note in the installed agent's own state that ./relay
+    # agent would later act on. Sign in yourself with plow-agents login and every create reuses that instead.
+    plow_agent.settle_signin(plow_agent.signin_path(), plow_agent.signin_marker(), minted=not resuming)
     print(f'\nGive {args.name or person} this number: {line.get("provider_key") or line["uid"]}', flush=True)
     print('They text it to talk to their agent. Nothing is installed on their computer.', flush=True)
     print(f'Next: ./relay hosted status {person}, ./relay hosted stop {person}', flush=True)

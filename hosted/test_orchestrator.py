@@ -195,6 +195,9 @@ class Creation:
         self.root = Path(directory)
         (self.root / 'agent').mkdir()
         self.docker = FakeDocker()
+        self.signin = self.root / 'config/plow/token'  # the account sign in, where the pinned client keeps it
+        self.signin.parent.mkdir(parents=True)
+        self.signin.write_text('acct_fixture_token\n')
         self.lines = [line('ln_1')]  # one free line, so a create that names none is not a choice
         self.preflight = lambda: []
         self.minted = []
@@ -203,11 +206,18 @@ class Creation:
         self.out, self.err = io.StringIO(), io.StringIO()
 
     def official(self):
-        return {'account_token': lambda args: 'acct_fixture_token', 'login': self.login,
+        return {'account_token': self.account_token, 'login': self.login,
                 'account_lines': lambda base, token: self.lines, 'mint': self.mint}
+
+    def account_token(self, args):
+        if not self.signin.exists():
+            raise SystemExit('plow-agents: no account token')
+        return self.signin.read_text().strip()
 
     def login(self, args):
         self.logged_in += 1
+        self.signin.parent.mkdir(parents=True, exist_ok=True)
+        self.signin.write_text('acct_fixture_token\n')
 
     def mint(self, args):
         if args.agent_api_base != plow_agent.ORIGIN:
@@ -243,7 +253,9 @@ class Creation:
         with contextlib.ExitStack() as stack:
             for name, value in fakes.items():
                 stack.enter_context(patch.object(plow_agent, name, value))
-            stack.enter_context(patch.dict(os.environ, self.docker.environ, clear=False))
+            stack.enter_context(patch.object(plow_agent, 'ROOT', self.root))
+            stack.enter_context(patch.dict(os.environ, dict(self.docker.environ,
+                                                            XDG_CONFIG_HOME=str(self.root / 'config')), clear=False))
             if not self.docker.environ.get('COMPOSE_PROJECT_NAME'):
                 os.environ.pop('COMPOSE_PROJECT_NAME', None)
             stack.enter_context(patch('builtins.input', side_effect=AssertionError('The tool asked a question.')))
@@ -487,6 +499,24 @@ class CreationTests(unittest.TestCase):
         self.assertIn('symlink', self.made.said())
         self.assertEqual(self.made.minted, [])
         self.assertEqual(list(target.iterdir()), [])
+
+    def test_a_create_that_had_to_sign_in_takes_that_sign_in_off_the_machine_again(self):
+        self.made.signin.unlink()
+        self.assertEqual(self.made.create('dana'), 0)
+        self.assertEqual(self.made.logged_in, 1)
+        self.assertFalse(self.made.signin.exists())
+        self.assertIn('Sign-in', self.made.printed())
+
+    def test_a_create_that_used_a_sign_in_already_there_keeps_it(self):
+        self.assertEqual(self.made.create('dana'), 0)
+        self.assertEqual(self.made.logged_in, 0)
+        self.assertTrue(self.made.signin.exists())
+
+    def test_a_create_leaves_no_sign_in_note_for_the_installed_agent_to_act_on(self):
+        # The note lives in the installed agent's own state, where ./relay agent would later read it.
+        self.made.signin.unlink()
+        self.made.create('dana')
+        self.assertFalse((self.made.root / '.data/agent/signin-created.sha256').exists())
 
     def test_docker_that_is_not_ready_stops_before_creating_anything(self):
         self.made.preflight = lambda: ['Start Docker Desktop and wait.']

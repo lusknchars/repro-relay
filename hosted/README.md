@@ -42,6 +42,11 @@ another.
 and you name one with `--line`. `--new-line` asks Plow to provision one. Creating the same person
 twice mints nothing: it says what already exists and stops.
 
+`create` signs you in to Plow when it has to, and takes that sign in off this machine again when
+it finishes, exactly as the installer does, so an account token does not sit here between runs. If
+you are creating several agents in a row, run `plow-agents login` yourself first. Every create then
+reuses that sign in and none of them removes it.
+
 `stop` keeps everything: the line, the credential and the memory volume. `start` brings that same
 agent back on the line it already has. Stopping is meant to be undone, which is why `start` exists
 at all: without it the only way back would be to remove the person and create them again, and that
