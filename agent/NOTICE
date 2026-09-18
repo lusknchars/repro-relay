@@ -1,7 +1,7 @@
 Repro Relay application content is MIT licensed, copyright 2026 Lucas Oliveira.
 
 This image derives from plow-pbc/plow-hermes-agent at
-8088c7f77f5ffd536a80c9dc302ebdb39e6be1d2. Its upstream runtime and bundled
+51f83158a70a383f03a4d03dbd8b6ea102cf0361. Its upstream runtime and bundled
 dependencies retain their own licenses.
 
 The agent-index s6 service and vendor/client.pin are copied unchanged from

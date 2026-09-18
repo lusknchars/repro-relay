@@ -519,7 +519,7 @@ class CreationTests(unittest.TestCase):
                                  'memswap_limit': orchestrator.LIMITS['memory'],
                                  'pids_limit': str(orchestrator.LIMITS['processes']), 'privileged': 'false'})
         text = (self.made.folder() / 'compose.yml').read_text()
-        self.assertIn(f'build: {self.made.root / "agent"}', text)
+        self.assertIn(f'context: {self.made.root}\n      dockerfile: cloud/Dockerfile', text)
         self.assertIn('max-size:', text)
 
     def test_create_reports_the_limits_docker_says_the_container_got(self):

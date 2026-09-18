@@ -1,9 +1,9 @@
 name: Plow agent
 on:
   push:
-    paths: ['agent/**', '.github/workflows/agent.yml']
+    paths: ['agent/**', 'cloud/**', '.github/workflows/agent.yml']
   pull_request:
-    paths: ['agent/**', '.github/workflows/agent.yml']
+    paths: ['agent/**', 'cloud/**', '.github/workflows/agent.yml']
   workflow_dispatch:
 permissions:
   contents: read

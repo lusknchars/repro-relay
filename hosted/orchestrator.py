@@ -45,10 +45,12 @@ LIMITS = {'cpus': 1, 'memory': '2g', 'processes': 512, 'log_size': '10m', 'log_f
 
 COMPOSE_FILE = """\
 # Written by ./relay hosted create for {person}. Editing it changes only this one agent.
-# It builds the same image as agent/, so every hosted agent runs what this repository builds.
+# It builds the same image as agent/compose.yml, so every hosted agent runs what this repository builds.
 services:
   agent:
-    build: {context}
+    build:
+      context: {context}
+      dockerfile: cloud/Dockerfile
     image: {image}
     platform: linux/amd64
     environment:
@@ -254,7 +256,7 @@ def prepare(host, person, project):
     folder = registry.private_folder(unlinked(host.root, registry.folder_for(host.root, person)))
     write_private(folder / '.env', f'COMPOSE_PROJECT_NAME={project}\n')
     write_private(folder / 'compose.yml', COMPOSE_FILE.format(
-        person=person, context=host.root / 'agent', image=IMAGE, limits=limit_lines(LIMITS),
+        person=person, context=host.root, image=IMAGE, limits=limit_lines(LIMITS),
         log_size=LIMITS['log_size'], log_files=LIMITS['log_files']))
     return folder
 

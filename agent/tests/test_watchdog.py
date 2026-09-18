@@ -720,7 +720,7 @@ class ServiceWiring(unittest.TestCase):
         self.assertIn("exec /opt/hermes/.venv/bin/python3 -I -S /etc/s6-overlay/scripts/transport_watchdog.py", text)
 
     def test_the_image_makes_the_run_script_executable(self):
-        chmods = [line for line in (ROOT / "Dockerfile").read_text().splitlines()
+        chmods = [line for line in (ROOT.parent / "cloud" / "Dockerfile").read_text().splitlines()
                   if line.startswith("RUN chmod 0755 ")]
         self.assertTrue(any("/etc/s6-overlay/s6-rc.d/transport-watchdog/run" in line for line in chmods))
 
