@@ -144,7 +144,7 @@ class Installation:
             raise self.verified
         return self.verified
 
-    def compose(self, *arguments, capture=False):
+    def compose(self, *arguments, capture=False, input=None):
         self.calls.append(' '.join(('compose',) + arguments))
         if arguments[0] == 'up':
             if isinstance(self.up, BaseException):
@@ -1517,37 +1517,57 @@ class ModelIdValidationTests(unittest.TestCase):
 
 
 class FakeContainer:
-    """docker compose exec/ps/logs behind ./relay agent model. No shell parsing: dispatches on argv shape.
+    """docker compose exec/ps behind ./relay agent model. No shell parsing: dispatches on argv shape.
 
-    files simulates everything beside the agent config inside /var/lib/hermes; any call this does not
-    recognise fails the test, and real docker is never touched.
+    files simulates everything beside the agent config inside /var/lib/hermes. gateway_pid/gateway_up and
+    restart_fails simulate s6-svstat and s6-svc -r. corrupt_write simulates a truncated stream reaching the
+    temp file. Any call this does not recognise fails the test, and real docker is never touched.
     """
 
-    def __init__(self, config=SAMPLE_MODEL_CONFIG, running=True):
+    def __init__(self, config=SAMPLE_MODEL_CONFIG, running=True, gateway_pid=1000):
         self.running = running
         self.files = {plow_agent.CONFIG_PATH: config}
         self.restarts = 0
-        self.ready_log = 'plow-init: configured from /var/lib/plow as cht_1\n'
+        self.gateway_pid = gateway_pid
+        self.gateway_up = True
+        self.restart_fails = False
+        self.corrupt_write = False
+        self._tmp_counter = 0
         self.calls = []
 
     def __call__(self, *arguments, capture=False, input=None):
         self.calls.append(arguments)
         if arguments[0] == 'ps':
             return SimpleNamespace(returncode=0, stdout=('cid123\n' if self.running else ''))
-        if arguments[0] == 'logs':
-            return SimpleNamespace(returncode=0, stdout=self.ready_log)
         if arguments[0] != 'exec':
             raise AssertionError(f'unexpected compose call: {arguments}')
+        if '/command/s6-svstat' in arguments:
+            if not self.gateway_up:
+                return SimpleNamespace(returncode=0, stdout='down 0 seconds, normally up\n')
+            return SimpleNamespace(returncode=0, stdout=f'up (pid {self.gateway_pid}) 5 seconds, normally up\n')
         if '/command/s6-svc' in arguments:
             self.restarts += 1
+            if self.restart_fails:
+                return SimpleNamespace(returncode=1, stdout='')
+            self.gateway_pid += 1
             return SimpleNamespace(returncode=0, stdout='')
         if 'with-contenv' not in arguments or 'hermes' not in arguments:
             raise AssertionError(f'unexpected exec call, not run as hermes: {arguments}')
-        tail = arguments[arguments.index('hermes') + 1:]
+        return self._hermes(arguments[arguments.index('hermes') + 1:], input)
+
+    def _hermes(self, tail, input):
         if tail[0] == 'cat':
             return self._read(tail[1])
         if tail[0] == 'cp':
             return self._copy(tail[1], tail[2])
+        if tail[0] == 'mktemp':
+            return self._mktemp(tail[1])
+        if tail[:2] == ('wc', '-c'):
+            return self._wc(tail[2])
+        if tail[0] == 'mv':
+            return self._move(tail[1], tail[2])
+        if tail[0] == 'rm':
+            return self._remove(tail[-1])
         if tail[:2] == ('sh', '-c'):
             return self._shell(tail[2], input)
         raise AssertionError(f'unexpected hermes command: {tail}')
@@ -1563,27 +1583,74 @@ class FakeContainer:
         self.files[destination] = self.files[source]
         return SimpleNamespace(returncode=0, stdout='')
 
+    def _mktemp(self, template):
+        self._tmp_counter += 1
+        name = template.replace('XXXXXX', f'{self._tmp_counter:06d}')
+        self.files[name] = ''
+        return SimpleNamespace(returncode=0, stdout=name + '\n')
+
+    def _wc(self, path):
+        if path not in self.files:
+            return SimpleNamespace(returncode=1, stdout='')
+        size = len(self.files[path].encode('utf-8'))
+        return SimpleNamespace(returncode=0, stdout=f'{size} {path}\n')
+
+    def _move(self, source, destination):
+        if source not in self.files:
+            return SimpleNamespace(returncode=1, stdout='')
+        self.files[destination] = self.files.pop(source)
+        return SimpleNamespace(returncode=0, stdout='')
+
+    def _remove(self, path):
+        self.files.pop(path, None)
+        return SimpleNamespace(returncode=0, stdout='')
+
     def _shell(self, script, input):
         if script.startswith('ls -1 '):
             backups = sorted(name for name in self.files if re.fullmatch(
                 re.escape(plow_agent.CONFIG_PATH) + r'\.backup-.+', name))
             return SimpleNamespace(returncode=0, stdout=''.join(name + '\n' for name in backups))
         if script.startswith('cat > '):
-            self.files[plow_agent.CONFIG_PATH] = input
+            target = script[len('cat > '):]
+            self.files[target] = input[:-5] if self.corrupt_write and input else input
             return SimpleNamespace(returncode=0, stdout='')
         raise AssertionError(f'unexpected shell script: {script}')
 
 
 def run_model(container, **options):
+    """run_agent(agent_action='model', ...) with the same tripwires Installation.run() gives the install flow:
+    no question asked, no terminal assumed, and os.environ restored so trust_certifi() cannot leak
+    SSL_CERT_FILE into the rest of the suite."""
     out, err = io.StringIO(), io.StringIO()
     arguments = dict(agent_action='model', id=None, check=False, revert=False)
     arguments.update(options)
-    with patch.object(plow_agent, 'compose', container), contextlib.redirect_stdout(out), \
-            contextlib.redirect_stderr(err):
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(patch.object(plow_agent, 'compose', container))
+        stack.enter_context(patch.dict(os.environ, {}))
+        stack.enter_context(patch('builtins.input', side_effect=AssertionError('./relay agent model asked a question.')))
+        stack.enter_context(patch('sys.stdin', SimpleNamespace(isatty=lambda: False)))
+        stack.enter_context(contextlib.redirect_stdout(out))
+        stack.enter_context(contextlib.redirect_stderr(err))
         code = plow_agent.run_agent(SimpleNamespace(**arguments))
     return code, out.getvalue(), err.getvalue()
 
 
+class RestartWaitTests(unittest.TestCase):
+    """wait_for_restart(): pure polling logic, independent of compose/svstat."""
+
+    def test_a_new_pid_reports_success(self):
+        self.assertTrue(plow_agent.wait_for_restart(111, read_pid=lambda: 222, sleep=lambda s: None, timeout=10))
+
+    def test_the_same_pid_keeps_waiting_then_times_out(self):
+        slept = []
+        self.assertFalse(plow_agent.wait_for_restart(111, read_pid=lambda: 111, sleep=slept.append, timeout=6))
+        self.assertLessEqual(sum(slept), 6)
+
+    def test_no_pid_yet_also_times_out(self):
+        self.assertFalse(plow_agent.wait_for_restart(111, read_pid=lambda: None, sleep=lambda s: None, timeout=4))
+
+
+@unittest.skipUnless(HAVE_YAML, 'PyYAML is not installed')
 class ModelCommandTests(unittest.TestCase):
     def test_prints_the_default_provider_and_known_models(self):
         code, out, err = run_model(FakeContainer())
@@ -1633,9 +1700,10 @@ class ModelCommandTests(unittest.TestCase):
         self.assertEqual(container.restarts, 1)
         self.assertEqual(plow_agent.model_summary(container.files[plow_agent.CONFIG_PATH])['default'],
                          'anthropic/claude-haiku-4')
-        backups = [name for name in container.files if name != plow_agent.CONFIG_PATH]
-        self.assertEqual(len(backups), 1)
-        self.assertEqual(plow_agent.model_summary(container.files[backups[0]])['default'], 'anthropic/claude-sonnet-5')
+        others = [name for name in container.files if name != plow_agent.CONFIG_PATH]
+        self.assertEqual(len(others), 1)  # exactly the backup; the mktemp file was renamed away, not left behind
+        self.assertRegex(others[0], r'\.backup-\d{8}T\d{6}Z$')
+        self.assertEqual(plow_agent.model_summary(container.files[others[0]])['default'], 'anthropic/claude-sonnet-5')
 
     def test_switching_to_a_new_id_adds_it_to_the_provider_inside_the_container(self):
         container = FakeContainer()
@@ -1644,6 +1712,29 @@ class ModelCommandTests(unittest.TestCase):
         summary = plow_agent.model_summary(container.files[plow_agent.CONFIG_PATH])
         self.assertEqual(summary['models'],
                          ['anthropic/claude-sonnet-5', 'anthropic/claude-haiku-4', 'anthropic/claude-opus-4'])
+
+    def test_the_atomic_write_uses_a_unique_tmp_file_verified_before_the_rename(self):
+        # Pins the mechanism: a naive `cat > config.yaml` would leave this suite green without it.
+        container = FakeContainer()
+        run_model(container, id='anthropic/claude-haiku-4')
+        leaves = [call[call.index('hermes') + 1:][0] for call in container.calls
+                 if call[0] == 'exec' and 'hermes' in call]
+        self.assertIn('mktemp', leaves)
+        self.assertIn('wc', leaves)
+        self.assertIn('mv', leaves)
+
+    def test_a_truncated_write_is_refused_and_the_live_config_is_untouched(self):
+        container = FakeContainer()
+        container.corrupt_write = True
+        original = container.files[plow_agent.CONFIG_PATH]
+        code, out, err = run_model(container, id='anthropic/claude-haiku-4')
+        self.assertEqual(code, 1)
+        self.assertIn('not written completely', err)
+        self.assertEqual(container.files[plow_agent.CONFIG_PATH], original)
+        self.assertEqual(container.restarts, 0)
+        leftover_tmp = [name for name in container.files
+                        if name != plow_agent.CONFIG_PATH and '.backup-' not in name]
+        self.assertEqual(leftover_tmp, [])
 
     def test_check_is_off_by_default_and_never_calls_speak(self):
         container = FakeContainer()
@@ -1661,23 +1752,49 @@ class ModelCommandTests(unittest.TestCase):
         model_line = out.index(plow_agent.status_line('Model', 'anthropic/claude-sonnet-5 -> anthropic/claude-haiku-4'))
         self.assertGreater(out.index('I am Reach.'), model_line)
 
-    def test_a_gateway_that_never_becomes_ready_is_a_plain_error_but_keeps_the_backup(self):
+    def test_check_failing_does_not_fail_a_landed_switch(self):
         container = FakeContainer()
-        container.ready_log = 'plow-init: credential rejected -- parking; no gateway will start\n'
+        with patch.object(plow_agent, 'speak', side_effect=plow_agent.AgentError('did not answer')):
+            code, out, err = run_model(container, id='anthropic/claude-haiku-4', check=True)
+        self.assertEqual(code, 0)
+        self.assertEqual(err, '')
+        self.assertIn('the switch itself landed', out)
+
+    def test_check_with_an_empty_reply_says_so_without_failing(self):
+        container = FakeContainer()
+        with patch.object(plow_agent, 'speak', return_value='   '):
+            code, out, err = run_model(container, id='anthropic/claude-haiku-4', check=True)
+        self.assertEqual(code, 0)
+        self.assertIn('the switch itself landed', out)
+
+    def test_the_restart_command_failing_names_the_backup_and_revert(self):
+        container = FakeContainer()
+        container.restart_fails = True
         code, out, err = run_model(container, id='anthropic/claude-haiku-4')
         self.assertEqual(code, 1)
-        self.assertIn('parking; no gateway will start', err)
-        backups = [name for name in container.files if name != plow_agent.CONFIG_PATH]
+        self.assertIn('could not be restarted', err)
+        self.assertIn('--revert', err)
+        backups = [name for name in container.files if '.backup-' in name]
         self.assertEqual(len(backups), 1)
+        self.assertIn(backups[0], err)
 
-    def test_wait_ready_polls_logs_since_the_restart_not_a_fixed_window(self):
+    def test_the_gateway_not_reporting_a_new_pid_names_the_backup_and_revert(self):
         container = FakeContainer()
-        run_model(container, id='anthropic/claude-haiku-4')
-        logs_calls = [call for call in container.calls if call[0] == 'logs']
-        self.assertEqual(len(logs_calls), 1)
-        since = logs_calls[0][logs_calls[0].index('--since') + 1]
-        self.assertNotEqual(since, '15m')
-        self.assertRegex(since, r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ')
+        with patch.object(plow_agent, 'wait_for_restart', return_value=False):
+            code, out, err = run_model(container, id='anthropic/claude-haiku-4')
+        self.assertEqual(code, 1)
+        self.assertIn('did not come back up', err)
+        self.assertIn('--revert', err)
+        backups = [name for name in container.files if '.backup-' in name]
+        self.assertEqual(len(backups), 1)
+        self.assertIn(backups[0], err)
+
+    def test_restart_waits_for_a_new_pid_not_just_the_restart_command(self):
+        container = FakeContainer()
+        code, out, err = run_model(container, id='anthropic/claude-haiku-4')
+        self.assertEqual(code, 0)
+        svstat_calls = [call for call in container.calls if '/command/s6-svstat' in call]
+        self.assertGreaterEqual(len(svstat_calls), 2)  # once before the restart, at least once after
 
     def test_revert_restores_the_newest_backup_and_restarts(self):
         container = FakeContainer()
@@ -1693,6 +1810,28 @@ class ModelCommandTests(unittest.TestCase):
         self.assertEqual(plow_agent.model_summary(container.files[plow_agent.CONFIG_PATH])['default'],
                          'anthropic/claude-haiku-4')
 
+    def test_revert_backs_up_the_config_it_replaces(self):
+        container = FakeContainer()
+        # far in the past, so the fresh safety backup (a real UTC timestamp) always sorts as the newest
+        container.files[f'{plow_agent.CONFIG_PATH}.backup-20200101T000000Z'] = SAMPLE_MODEL_CONFIG.replace(
+            'default: anthropic/claude-sonnet-5', 'default: anthropic/claude-haiku-4')
+        code, out, err = run_model(container, revert=True)
+        self.assertEqual(code, 0)
+        backups = sorted(name for name in container.files if '.backup-' in name)
+        self.assertEqual(len(backups), 2)  # the one reverted from, plus a fresh backup of the pre-revert state
+        self.assertEqual(plow_agent.model_summary(container.files[backups[-1]])['default'], 'anthropic/claude-sonnet-5')
+
+    def test_revert_uses_the_same_atomic_write_as_a_switch(self):
+        container = FakeContainer()
+        container.files[f'{plow_agent.CONFIG_PATH}.backup-20200101T000000Z'] = SAMPLE_MODEL_CONFIG.replace(
+            'default: anthropic/claude-sonnet-5', 'default: anthropic/claude-haiku-4')
+        run_model(container, revert=True)
+        leaves = [call[call.index('hermes') + 1:][0] for call in container.calls
+                 if call[0] == 'exec' and 'hermes' in call]
+        self.assertIn('mktemp', leaves)
+        self.assertIn('wc', leaves)
+        self.assertIn('mv', leaves)
+
     def test_revert_with_no_backup_refuses_with_exit_2(self):
         container = FakeContainer()
         code, out, err = run_model(container, revert=True)
@@ -1700,12 +1839,27 @@ class ModelCommandTests(unittest.TestCase):
         self.assertIn('No config backup', err)
         self.assertEqual(container.restarts, 0)
 
+    def test_a_broken_backup_listing_is_a_real_failure_not_no_backups(self):
+        container = FakeContainer()
+        real_shell = container._shell
+
+        def failing_shell(script, input):
+            if script.startswith('ls -1 '):
+                return SimpleNamespace(returncode=127, stdout='')
+            return real_shell(script, input)
+        container._shell = failing_shell
+        code, out, err = run_model(container, revert=True)
+        self.assertEqual(code, 1)
+        self.assertIn('Could not list config backups', err)
+        self.assertNotIn('No config backup exists', err)
+
     def test_revert_still_works_when_the_live_config_cannot_be_parsed(self):
         container = FakeContainer(config='not: valid: yaml: [')
         container.files[f'{plow_agent.CONFIG_PATH}.backup-20260917T120000Z'] = SAMPLE_MODEL_CONFIG
         code, out, err = run_model(container, revert=True)
         self.assertEqual(code, 0)
         self.assertIn(plow_agent.status_line('Model', 'unknown -> anthropic/claude-sonnet-5'), out)
+
 
 class CommandLineTests(unittest.TestCase):
     def test_model_id_and_flags_reach_the_installer(self):
@@ -1735,6 +1889,12 @@ class DocumentationTests(unittest.TestCase):
         self.assertIn('./relay agent', section)
         self.assertNotIn('curl', section)
         self.assertNotIn('https://', section)
+
+    def test_readme_teaches_the_model_command(self):
+        readme = (plow_agent.ROOT / 'README.md').read_text()
+        start = readme.index('## Quick start')
+        section = readme[start:readme.index('\n## ', start + 1)]
+        self.assertIn('./relay agent model', section)
 
     def test_agent_readme_teaches_the_same_command(self):
         readme = (plow_agent.ROOT / 'agent/README.md').read_text()

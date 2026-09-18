@@ -37,6 +37,7 @@ One command: it checks Docker, signs you in to Plow (you send one activation tex
 ./relay agent status              # agent, line, Plow setup and reported usage
 ./relay agent test "Summarise my open work"
 ./relay agent stop                # stop it, keeping memory and identity
+./relay agent model               # see or change the model the agent runs on
 ```
 
 Needs Docker Desktop running, Python 3, and the phone that owns your Plow account. The agent's model access comes from Plow, so no provider key is required.

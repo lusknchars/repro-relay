@@ -815,33 +815,77 @@ def backup_config():
 
 
 def write_config(text):
-    """Replace the config's content atomically: a temporary file beside it, then a rename, as the hermes user."""
-    tmp = CONFIG_PATH + '.tmp'
-    result = hermes_run('sh', '-c', f'cat > {tmp} && mv {tmp} {CONFIG_PATH}', input=text)
-    if result.returncode:
-        raise AgentError('The new config could not be written inside the container.')
+    """Replace the config atomically: a unique temp file beside it (mktemp, so two runs cannot interleave),
+    verified by byte count before the rename, as the hermes user. `cat > tmp && mv` alone cannot tell a
+    truncated stream from a clean end, so nothing is renamed onto the live config until the byte count matches.
+    """
+    made = hermes_run('mktemp', f'{CONFIG_PATH}.XXXXXX')
+    if made.returncode or not made.stdout.strip():
+        raise AgentError('A temporary file for the new config could not be created inside the container.')
+    tmp = made.stdout.strip()
+    written = hermes_run('sh', '-c', f'cat > {tmp}', input=text)
+    expected = str(len(text.encode('utf-8')))
+    size = hermes_run('wc', '-c', tmp)
+    actual = size.stdout.split()[0] if size.returncode == 0 and size.stdout.split() else None
+    if written.returncode or actual != expected:
+        hermes_run('rm', '-f', tmp)
+        raise AgentError('The new config was not written completely inside the container. Nothing was replaced.')
+    if hermes_run('mv', tmp, CONFIG_PATH).returncode:
+        hermes_run('rm', '-f', tmp)
+        raise AgentError('The new config could not be installed inside the container.')
 
 
 def list_backups():
     """Every config backup beside the config, oldest first; a fixed-width UTC suffix sorts lexicographically."""
     result = hermes_run('sh', '-c', f'ls -1 {CONFIG_PATH}.backup-* 2>/dev/null')
+    if result.returncode not in (0, 1, 2) or (result.returncode and result.stdout.strip()):
+        raise AgentError('Could not list config backups inside the container. Check `docker compose logs agent` in agent/.')
     return sorted(name.strip() for name in result.stdout.splitlines() if name.strip())
 
 
-def restart_and_wait():
-    """Ask s6 to restart the gateway, as the transport watchdog does, then wait for it the way the installer does.
+GATEWAY_TIMEOUT = 180
 
-    The gateway runs as hermes, but restarting it needs s6's own control files, so this runs as the container's
-    default user rather than through hermes_run. `--since` this moment, not a fixed window: the gateway was
-    already configured before this restart, so an older `plow-init: configured` line must never pass for the
-    new one.
+
+def gateway_pid():
+    """The gateway's current pid according to s6-svstat, or None when it is not reported up."""
+    result = compose('exec', '-T', 'agent', '/command/s6-svstat', GATEWAY_SERVICE, capture=True)
+    if result.returncode:
+        return None
+    match = re.match(r'up \(pid (\d+)\)', result.stdout.strip())
+    return int(match.group(1)) if match else None
+
+
+def wait_for_restart(previous_pid, read_pid, sleep=time.sleep, timeout=GATEWAY_TIMEOUT, step=2):
+    """Poll read_pid() until it reports a pid other than previous_pid, or time runs out."""
+    waited = 0
+    while True:
+        pid = read_pid()
+        if pid is not None and pid != previous_pid:
+            return True
+        if waited >= timeout:
+            return False
+        sleep(step)
+        waited += step
+
+
+def restart_and_wait(backup):
+    """Ask s6 to restart the gateway, as the transport watchdog does, then wait for a new pid to appear.
+
+    wait_ready's `plow-init: configured` marker cannot verify this: plow-init writes it once at container
+    boot, and restarting only the gateway never re-emits it, so watching for it here would poll for the
+    full timeout on every successful switch. s6-svstat's own pid is the real signal that it actually
+    restarted. This runs without the hermes wrapper, like the transport watchdog's own restart call: s6's
+    control files need the container's default user, not hermes. Both failures below name the backup so the
+    owner can recover with --revert.
     """
-    since = f'{datetime.now(timezone.utc):%Y-%m-%dT%H:%M:%SZ}'
+    previous = gateway_pid()
     if compose('exec', '-T', 'agent', '/command/s6-svc', '-r', GATEWAY_SERVICE, capture=True).returncode:
-        raise AgentError('The gateway could not be restarted. Check `docker compose logs agent` in agent/.')
-    state, detail = wait_ready(lambda: compose('logs', '--no-color', '--since', since, 'agent', capture=True).stdout)
-    if state != 'ready':
-        raise AgentError(detail)
+        raise AgentError(f'The gateway could not be restarted. The previous config is backed up at {backup}; '
+                         'restore it with ./relay agent model --revert.')
+    if not wait_for_restart(previous, gateway_pid):
+        raise AgentError(f'The gateway did not come back up within {GATEWAY_TIMEOUT} seconds after the restart. '
+                         f'Check `docker compose logs agent` in agent/. The previous config is backed up at '
+                         f'{backup}; restore it with ./relay agent model --revert.')
 
 
 def show_model():
@@ -854,6 +898,19 @@ def show_model():
     return 0
 
 
+def report_check():
+    """After a switch: one prompt through speak(), so a wrong id shows up at once. A failed call or an empty
+    reply never turns a landed switch into a failure; it says the switch landed and the check did not."""
+    try:
+        reply = speak(MODEL_CHECK_PROMPT)
+    except AgentError:
+        reply = ''
+    if reply.strip():
+        print(reply, flush=True)
+    else:
+        print(status_line('Check', 'no reply from the agent; the switch itself landed'), flush=True)
+
+
 def switch_model(model_id, check):
     """Back the live config up, set its default to model_id, restart the gateway, and print the transition."""
     validate_model_id(model_id)
@@ -861,30 +918,34 @@ def switch_model(model_id, check):
     text = read_config()
     old = model_summary(text)['default']
     new_text = set_default_model(text, model_id)
-    backup_config()
+    backup = backup_config()
     write_config(new_text)
-    restart_and_wait()
+    restart_and_wait(backup)
     print(status_line('Model', f'{old} -> {model_id}'), flush=True)
     if check:
-        print(speak(MODEL_CHECK_PROMPT), flush=True)
+        report_check()
     return 0
 
 
 def revert_model():
-    """Restore the newest config backup, restart the gateway, and print what came back."""
+    """Restore the newest config backup the same atomic way a switch writes, and print what came back.
+
+    Backs up the config being replaced first, so a mistaken revert is itself reversible.
+    """
     require_agent_running()
     backups = list_backups()
     if not backups:
         raise DecisionNeeded('No config backup exists to revert to. ./relay agent model <id> makes one before '
                              'it switches; run that first.')
     newest = backups[-1]
-    new_default = model_summary(read_config(newest))['default']
+    backup_text = read_config(newest)
+    new_default = model_summary(backup_text)['default']
     old = 'unknown'
     with contextlib.suppress(AgentError):
         old = model_summary(read_config())['default']
-    if hermes_run('cp', newest, CONFIG_PATH).returncode:
-        raise AgentError('The backup could not be restored inside the container.')
-    restart_and_wait()
+    safety_backup = backup_config()
+    write_config(backup_text)
+    restart_and_wait(safety_backup)
     print(status_line('Model', f'{old} -> {new_default}'), flush=True)
     return 0
 
@@ -896,6 +957,9 @@ def model_command(args):
     if args.id is None:
         return show_model()
     return switch_model(args.id, args.check)
+
+
+
 
 def signin_path():
     """The full-access account sign-in, resolved exactly as the pinned client's account_token resolves it."""
