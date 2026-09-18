@@ -480,8 +480,9 @@ def mint_credential(client, path, uid):
                                    api_base=ORIGIN, agent_api_base=ORIGIN))
 
 
-def compose(*arguments, capture=False, input=None):
-    return subprocess.run(['docker', 'compose', *arguments], cwd=AGENT,
+def compose(*arguments, capture=False, input=None, cwd=None):
+    """Compose in the installed agent's folder, or in another agent's own folder when one is named."""
+    return subprocess.run(['docker', 'compose', *arguments], cwd=cwd or AGENT,
                           capture_output=capture, text=True, timeout=1800, input=input)
 
 
@@ -1175,8 +1176,13 @@ def announce_line(line):
     print(f'Line .............. {line.get("display_name") or line["uid"]} {line.get("provider_key") or ""}', flush=True)
 
 
-def credential_for_new_line(args):
-    """Sign in when needed, choose a free line and mint its credential. Returns the line."""
+def credential_for_new_line(args, path=None):
+    """Sign in when needed, choose a free line and mint its credential. Returns the line.
+
+    The credential is the installed agent's unless another agent's own path is named. Whichever it is,
+    ensure_credential still refuses to write over a credential that belongs to another line.
+    """
+    path = path or CREDENTIAL
     client = official()
     try:
         token = client['account_token'](SimpleNamespace(token_file=None))
@@ -1190,7 +1196,7 @@ def credential_for_new_line(args):
     line = choose_line(client['account_lines'](ORIGIN, token), ask_for_line, getattr(args, 'line', None),
                        interactive=bool(sys.stdin and sys.stdin.isatty()))
     announce_line(line)
-    outcome = ensure_credential(CREDENTIAL, line, identity, lambda path, uid: mint_credential(client, path, uid))
+    outcome = ensure_credential(path, line, identity, lambda target, uid: mint_credential(client, target, uid))
     print(f'Credential ........ {outcome}', flush=True)
     return line
 

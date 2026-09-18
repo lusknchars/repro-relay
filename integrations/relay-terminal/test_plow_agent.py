@@ -2227,6 +2227,62 @@ class ModelCommandTests(unittest.TestCase):
         self.assertIn(plow_agent.status_line('Model', 'unknown -> anthropic/claude-sonnet-5'), out)
 
 
+class AnotherFolderTests(unittest.TestCase):
+    """The installer works in agent/. These are the only two seams that let a second agent live somewhere else,
+    and both keep agent/ as the answer when no folder is named."""
+
+    def test_compose_runs_in_the_installed_agents_folder_unless_another_is_named(self):
+        calls = []
+
+        def run(command, **options):
+            calls.append((command, options))
+            return SimpleNamespace(returncode=0, stdout='')
+
+        with patch.object(subprocess, 'run', run):
+            plow_agent.compose('ps', '--quiet', capture=True)
+            plow_agent.compose('up', '-d', cwd='/fixture/dana')
+        self.assertEqual([command for command, _ in calls],
+                         [['docker', 'compose', 'ps', '--quiet'], ['docker', 'compose', 'up', '-d']])
+        self.assertEqual([options['cwd'] for _, options in calls], [plow_agent.AGENT, '/fixture/dana'])
+        self.assertEqual([options['capture_output'] for _, options in calls], [True, False])
+
+    def minting(self, directory, path=None):
+        """credential_for_new_line() with Plow faked, minting either where it is told or where it defaults to."""
+        minted = []
+
+        def mint(args):
+            minted.append(args.credential_file)
+            Path(args.credential_file).write_text('PLOW_AGENT_TOKEN=agt_fixture_token\n')
+
+        client = {'account_token': lambda args: 'acct_fixture_token', 'login': lambda args: None,
+                  'account_lines': lambda base, token: [line('ln_1')], 'mint': mint}
+        arguments = SimpleNamespace(new_line=False, line=None)
+        with patch.object(plow_agent, 'official', lambda: client), \
+                patch.object(plow_agent, 'CREDENTIAL', Path(directory) / 'agent/plow-credentials'), \
+                patch.object(plow_agent, 'identity', lambda path: {'line': line('ln_1')}), \
+                contextlib.redirect_stdout(io.StringIO()):
+            chosen = plow_agent.credential_for_new_line(arguments, path) if path else \
+                plow_agent.credential_for_new_line(arguments)
+        return chosen, minted
+
+    def test_a_new_lines_credential_is_minted_into_the_folder_it_is_given(self):
+        with tempfile.TemporaryDirectory() as directory:
+            elsewhere = Path(directory) / 'dana/plow-credentials'
+            elsewhere.parent.mkdir(parents=True)
+            chosen, minted = self.minting(directory, elsewhere)
+            self.assertEqual(minted, [str(elsewhere)])
+            self.assertTrue(elsewhere.exists())
+            self.assertFalse((Path(directory) / 'agent/plow-credentials').exists())
+        self.assertEqual(chosen['uid'], 'ln_1')
+
+    def test_without_a_folder_it_still_mints_into_the_installed_agents_credential(self):
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / 'agent').mkdir()
+            chosen, minted = self.minting(directory)
+            self.assertEqual(minted, [str(Path(directory) / 'agent/plow-credentials')])
+        self.assertEqual(chosen['uid'], 'ln_1')
+
+
 class CommandLineTests(unittest.TestCase):
     def test_model_id_and_flags_reach_the_installer(self):
         received = []
