@@ -169,12 +169,12 @@ def run_setup(args):
                     raise RuntimeError('Port 8178 became occupied. No process was stopped.')
                 env['PORT'] = '8178'
                 env['REPRO_PORT'] = '8178'
-                binary = ROOT / ('target/debug/relay-api.exe' if os.name == 'nt' else 'target/debug/relay-api')
+                binary = ROOT / ('target/debug/relay-api.exe' if private_files.windows() else 'target/debug/relay-api')
                 logfile = state / 'service.log'
                 fd = os.open(logfile, os.O_CREAT | os.O_APPEND | os.O_WRONLY, 0o600)
                 private_files.protect(logfile)
                 with os.fdopen(fd, 'ab') as output:
-                    process = subprocess.Popen([str(binary)], cwd=ROOT, env=env, stdin=subprocess.DEVNULL, stdout=output, stderr=output, start_new_session=os.name != 'nt')
+                    process = subprocess.Popen([str(binary)], cwd=ROOT, env=env, stdin=subprocess.DEVNULL, stdout=output, stderr=output, start_new_session=not private_files.windows())
                 (state / 'service.pid').write_text(str(process.pid))
                 deadline = time.monotonic() + 30
                 while not health():

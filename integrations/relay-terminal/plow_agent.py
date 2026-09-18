@@ -19,11 +19,15 @@ import ssl
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 import traceback
 from types import SimpleNamespace
 import urllib.error
 import urllib.request
+
+import private_files
+from private_files import host_platform, relay_command
 
 ROOT = Path(__file__).resolve().parents[2]
 AGENT = ROOT / 'agent'
@@ -38,6 +42,10 @@ PARKED = 'parking; no gateway will start'
 CONTAINER_PATH = '/command:/usr/local/bin:/usr/bin:/bin'
 FIRST_PROMPT = 'Reply in one short sentence: say who you are and what you can do with meeting notes.'
 CONFIG_PATH = '/var/lib/hermes/config.yaml'
+OWNER_PLATFORM = 'RELAY_OWNER_PLATFORM'  # the same name agent/compose.yml passes into the container
+OWNER_PLATFORM_UNKNOWN = 'unknown'  # what the container is told when nothing said which computer this is
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000  # the least OpenProcess right that answers "does this id exist"
+ERROR_INVALID_PARAMETER = 87  # what Windows reports for a process id that is not in use
 GATEWAY_SERVICE = '/run/service/hermes-gateway'
 MODEL_ID = re.compile(r'[^/\s]+/[^/\s]+')
 MODEL_CHECK_PROMPT = 'Reply in one short sentence: which model are you, and who made you?'
@@ -109,10 +117,10 @@ def refuse_split_agent(agents, folder, name):
         listed = ', '.join(f"'{project}'" for project in projects)
         raise AgentError(f"This folder's agent exists under more than one Docker project ({listed}). Remove the one you "
                          'do not use with docker compose -p <project> down in agent/, which keeps its memory volume, '
-                         'then run ./relay agent again.')
+                         f'then run {relay_command()} agent again.')
     if others:
         raise AgentError(f"This folder's agent already runs under the Docker project '{others[0]}'. "
-                         f'Put COMPOSE_PROJECT_NAME={others[0]} in agent/.env so every ./relay agent command uses it.')
+                         f'Put COMPOSE_PROJECT_NAME={others[0]} in agent/.env so every {relay_command()} agent command uses it.')
 
 
 def refuse_other_agents(run, folder, name):
@@ -160,11 +168,25 @@ def installed_here(record, name, folder):
 
 
 def remember_install(record, name, folder):
-    """Record, owner-only, the project and resolved agent/ folder a successful `compose up` used."""
+    """Record, owner-only, the project, the resolved agent/ folder and the computer a `compose up` used.
+
+    The platform is one of 'macos', 'windows' or 'linux'. A record written before this
+    existed has no platform key at all, which reads as not known rather than as any
+    particular computer.
+    """
     record.parent.mkdir(parents=True, exist_ok=True)
     with os.fdopen(os.open(record, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w') as output:
-        json.dump({'project': name, 'agent_dir': str(Path(folder).resolve())}, output)
-    os.chmod(record, 0o600)
+        json.dump({'project': name, 'agent_dir': str(Path(folder).resolve()),
+                   'platform': host_platform()}, output)
+    protect_or_stop(record)
+
+
+def protect_or_stop(path, executable=False):
+    """Make a path private, or stop with the reason. Nothing here is worth leaving readable."""
+    try:
+        private_files.protect(path, executable=executable)
+    except private_files.PrivacyError as error:
+        raise AgentError(str(error)) from None
 
 
 def refuse_copied_credential(agents, folder):
@@ -176,7 +198,7 @@ def refuse_copied_credential(agents, folder):
         if working_dir and not same_folder(working_dir, folder) and agent_uid(Path(working_dir) / 'plow-credentials') == uid:
             raise AgentError(f'This credential already belongs to the agent in {working_dir}. One credential runs in one '
                              f'place: remove that agent with docker compose down in {working_dir}, or delete '
-                             'agent/plow-credentials here so ./relay agent mints this folder its own.')
+                             f'agent/plow-credentials here so {relay_command()} agent mints this folder its own.')
 
 
 def agent_uid(path):
@@ -211,7 +233,7 @@ def docker_rows(run, command, what, fields):
         result = None
     if result is None or result.returncode:
         raise AgentError(f'Docker did not list its {what}, so the install stopped before starting the agent. '
-                         'Run ./relay agent again.')
+                         f'Run {relay_command()} agent again.')
     return [([part.strip() for part in text.split('\t')] + [''] * fields)[:fields]
             for text in result.stdout.splitlines() if text.strip()]
 
@@ -233,7 +255,7 @@ def choose_line(lines, ask, wanted=None, interactive=True):
     if not free:
         held = len(lines) - len(free)
         detail = f'{held} line(s) already answer as an agent. ' if held else 'This account holds no assistant line. '
-        raise DecisionNeeded(detail + 'Run `./relay agent --new-line` to have Plow provision one, '
+        raise DecisionNeeded(detail + f'Run `{relay_command()} agent --new-line` to have Plow provision one, '
                              'or retire an existing agent with `plow-agents revoke <line>` first.')
     if wanted is not None:
         chosen = find_line(free, wanted)
@@ -278,7 +300,7 @@ def line_choices(free):
 
 def choose_later(reason, free):
     """A stop that lists the free lines and the exact command that picks one without asking."""
-    return DecisionNeeded(f'{reason}\n{line_choices(free)}\nChoose one with: ./relay agent --line <position>')
+    return DecisionNeeded(f'{reason}\n{line_choices(free)}\nChoose one with: {relay_command()} agent --line <position>')
 
 
 def existing_line(path, identity):
@@ -290,16 +312,16 @@ def existing_line(path, identity):
         found = None
     except CertificateUnverified as error:
         raise AgentError(f'Could not verify the existing credential with Plow: {error}. It was left untouched; '
-                         'run ./relay agent again once that is fixed.') from None
+                         f'run {relay_command()} agent again once that is fixed.') from None
     except CredentialRejected as error:
         raise AgentError(f'The existing credential {path} could not be verified with Plow. {error} It was left untouched. '
-                         'If that agent was retired, remove the file yourself first, then run ./relay agent again.') from None
+                         f'If that agent was retired, remove the file yourself first, then run {relay_command()} agent again.') from None
     except AgentError as error:
         raise AgentError(f'The existing credential {path} could not be used: {error} It was left untouched.') from None
     line = found.get('line') if isinstance(found, dict) else None
     if not isinstance(line, dict) or not line.get('uid'):
         raise AgentError('Could not verify the existing credential with Plow right now. It was left untouched; '
-                         'run ./relay agent again later.')
+                         f'run {relay_command()} agent again later.')
     return line
 
 
@@ -385,8 +407,10 @@ def lock_holder(path):
 
 def process_alive(pid):
     """Whether a process with this id exists. Where that cannot be asked safely, assume it does."""
+    if private_files.windows():
+        return windows_process_alive(pid)
     if os.name != 'posix':
-        return True  # on Windows os.kill(pid, 0) would terminate the process
+        return True  # the question cannot be asked here, so a lock is never taken away
     try:
         os.kill(pid, 0)  # signal 0 only checks
     except ProcessLookupError:
@@ -394,6 +418,28 @@ def process_alive(pid):
     except OSError:
         return True  # it exists but belongs to someone else
     return True
+
+
+def windows_process_alive(pid, kernel32=None):
+    """Whether a process id is in use on Windows, asked without touching the process.
+
+    os.kill(pid, 0) terminates a process there, so the question goes to OpenProcess with
+    the smallest right that answers it. A handle means the process exists, and is given
+    straight back. No handle plus ERROR_INVALID_PARAMETER means the id is not in use.
+    Anything else, being refused included, means it exists and belongs to someone else, so
+    an install lock is left where it is.
+    """
+    try:
+        if kernel32 is None:
+            import ctypes
+            kernel32 = ctypes.WinDLL('kernel32')
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if handle:
+            kernel32.CloseHandle(handle)
+            return True
+        return kernel32.GetLastError() != ERROR_INVALID_PARAMETER
+    except (OSError, AttributeError, ValueError):
+        return True  # the question could not be asked, so the lock stays where it is
 
 
 @contextlib.contextmanager
@@ -444,14 +490,58 @@ def official():
                 data = response.read(2_000_001)
         except (OSError, http.client.HTTPException, ValueError) as error:
             raise AgentError(f'The official Plow client could not be downloaded from GitHub: {download_problem(error)}. '
-                             'Nothing was installed; run ./relay agent again once that is fixed.') from None
+                             f'Nothing was installed; run {relay_command()} agent again once that is fixed.') from None
         if hashlib.sha256(data).hexdigest() != CLIENT_SHA256:
             raise AgentError('The official Plow client did not match its pinned checksum. Nothing was installed.')
         CLIENT.write_bytes(data)
-        CLIENT.chmod(0o700)
+        protect_or_stop(CLIENT, executable=True)
     elif hashlib.sha256(CLIENT.read_bytes()).hexdigest() != CLIENT_SHA256:
         raise AgentError(f'{CLIENT} differs from the pinned official client. Inspect it before continuing.')
-    return runpy.run_path(str(CLIENT))
+    return portable_private_write(runpy.run_path(str(CLIENT)))
+
+
+def portable_private_write(client):
+    """Give the official client a private write this host can actually finish.
+
+    It writes the credential and the sign in token with os.fchmod and a plain rename.
+    Windows has no os.fchmod, keeps mode 0666 whatever was asked for, so the client's own
+    mode check can never pass, and refuses a rename while another process still holds the
+    file. Left alone it would stop, or leave a token other accounts can read. Only the
+    write is replaced and only on Windows: the client still decides what the file says,
+    and macOS and Linux keep its own code exactly as it is.
+    """
+    if private_files.windows():
+        # run_path hands back a copy of the client's globals; its functions read the original.
+        client['mint'].__globals__['write_private'] = windows_write_private
+    return client
+
+
+def windows_write_private(path, body):
+    """Write one private file beside its destination, then move it into place.
+
+    It is locked to this account before the token is written, so it is never even briefly
+    readable by anyone else, and a write that cannot be finished leaves the old file alone.
+    """
+    destination = os.path.abspath(path)
+    directory = os.path.dirname(destination) or '.'
+    try:
+        os.makedirs(directory)
+    except FileExistsError:
+        pass
+    else:
+        protect_or_stop(directory)
+    descriptor, temporary = tempfile.mkstemp(dir=directory, prefix='.plow-agents.', suffix='.new')
+    try:
+        with os.fdopen(descriptor, 'w', encoding='utf-8') as handle:
+            protect_or_stop(temporary)
+            handle.write(body)
+        private_files.replace_atomically(temporary, destination)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(temporary)
+        raise
+    protect_or_stop(destination)
+    return destination
 
 
 def download_problem(error):
@@ -480,9 +570,25 @@ def mint_credential(client, path, uid):
                                    api_base=ORIGIN, agent_api_base=ORIGIN))
 
 
+def compose_environment(environ=None):
+    """The environment every docker compose call runs with.
+
+    It carries the owner's computer into the container as RELAY_OWNER_PLATFORM, because the
+    agent runs on Linux inside Docker and cannot read the host's install record. agent/
+    compose.yml passes it through. A container created before this existed has no value at
+    all there, and an absent value means not known, never macOS.
+    """
+    environment = dict(os.environ if environ is None else environ)
+    environment[OWNER_PLATFORM] = host_platform()
+    return environment
+
+
 def compose(*arguments, capture=False, input=None):
-    return subprocess.run(['docker', 'compose', *arguments], cwd=AGENT,
-                          capture_output=capture, text=True, timeout=1800, input=input)
+    # utf-8 rather than the console code page: the container answers in the owner's own
+    # language, and a cp1252 decode would quietly mangle it instead of failing.
+    return subprocess.run(['docker', 'compose', *arguments], cwd=AGENT, env=compose_environment(),
+                          capture_output=capture, text=True, encoding='utf-8', errors='replace',
+                          timeout=1800, input=input)
 
 
 def identity(path):
@@ -574,7 +680,7 @@ def yaml_module():
     try:
         import yaml
     except ImportError:
-        raise AgentError('./relay agent model needs PyYAML to read and edit the config. Install it with '
+        raise AgentError(f'{relay_command()} agent model needs PyYAML to read and edit the config. Install it with '
                          'python3 -m pip install pyyaml, then run this again.') from None
     return yaml
 
@@ -597,7 +703,7 @@ def load_model_config(text):
                              'Nothing was changed.') from None
     model = config.get('model') if isinstance(config, dict) else None
     if not isinstance(model, dict) or not model.get('default') or not model.get('provider'):
-        raise DecisionNeeded('The agent config does not have the model block ./relay agent model expects '
+        raise DecisionNeeded(f'The agent config does not have the model block {relay_command()} agent model expects '
                              '(a model.default and model.provider). Nothing was changed.')
     return config
 
@@ -849,7 +955,7 @@ def set_default_model(text, model_id):
 def require_agent_running():
     """Stop before reading, editing or restarting anything when the agent container is not running."""
     if not compose('ps', '--status', 'running', '--quiet', capture=True).stdout.strip():
-        raise DecisionNeeded('The agent container is not running. Start it with ./relay agent, then run this again.')
+        raise DecisionNeeded(f'The agent container is not running. Start it with {relay_command()} agent, then run this again.')
 
 
 def hermes_run(*command, input=None):
@@ -1000,11 +1106,11 @@ def restart_and_wait(backup):
         raise AgentError(f"The gateway's state could not be read before the restart, so it was not attempted "
                          f"and a switch that was not observed is never reported as done. The new config is "
                          f'written; the previous one is backed up at {backup}. Check `docker compose logs '
-                         'agent` in agent/, then run ./relay agent model again, or restore with '
-                         './relay agent model --revert.')
+                         f'agent` in agent/, then run {relay_command()} agent model again, or restore with '
+                         f'{relay_command()} agent model --revert.')
     if compose('exec', '-T', 'agent', '/command/s6-svc', '-r', GATEWAY_SERVICE, capture=True).returncode:
         raise AgentError(f'The gateway could not be restarted. The previous config is backed up at {backup}; '
-                         'restore it with ./relay agent model --revert.')
+                         f'restore it with {relay_command()} agent model --revert.')
     # A fresh time.sleep lookup, not wait_for_restart's own default: its default is bound once at import
     # time, so a test patching time.sleep around a call that relies on it would still sleep for real.
     state = wait_for_restart(previous, gateway_pid, sleep=time.sleep)
@@ -1012,10 +1118,10 @@ def restart_and_wait(backup):
         return
     if state == 'churning':
         raise AgentError('The gateway keeps restarting instead of settling on the new model. The previous '
-                         f'config is backed up at {backup}; restore it with ./relay agent model --revert.')
+                         f'config is backed up at {backup}; restore it with {relay_command()} agent model --revert.')
     raise AgentError(f'The gateway did not come back up within {GATEWAY_TIMEOUT} seconds after the restart. '
                      f'Check `docker compose logs agent` in agent/. The previous config is backed up at '
-                     f'{backup}; restore it with ./relay agent model --revert.')
+                     f'{backup}; restore it with {relay_command()} agent model --revert.')
 
 
 def show_model():
@@ -1069,7 +1175,7 @@ def revert_model():
     require_agent_running()
     backups = list_backups()
     if not backups:
-        raise DecisionNeeded('No config backup exists to revert to. ./relay agent model <id> makes one before '
+        raise DecisionNeeded(f'No config backup exists to revert to. {relay_command()} agent model <id> makes one before '
                              'it switches; run that first.')
     newest = backups[-1]
     backup_text = read_config(newest)
@@ -1122,7 +1228,7 @@ def remember_signin(marker, digest, replaced):
     marker.parent.mkdir(parents=True, exist_ok=True)
     with os.fdopen(os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w') as output:
         output.write(digest + '\n')
-    os.chmod(marker, 0o600)
+    protect_or_stop(marker)
     if replaced:
         os.close(os.open(replaced_flag(marker), os.O_WRONLY | os.O_CREAT, 0o600))
     else:
@@ -1219,7 +1325,7 @@ def install(args):
     try:
         started = compose('up', '-d', '--build')
     except subprocess.TimeoutExpired:
-        raise AgentError('The first download is still running or stalled. Run ./relay agent again to continue; '
+        raise AgentError(f'The first download is still running or stalled. Run {relay_command()} agent again to continue; '
                          'Docker keeps what it already downloaded.') from None
     if started.returncode:
         raise AgentError('Docker could not start the agent. The output above shows why.')
@@ -1231,7 +1337,7 @@ def install(args):
     print('Testing Hermes .... ' + speak(FIRST_PROMPT), flush=True)
     settle_signin(signin_path(), signin_marker(), minted=not resuming)
     print(f'\nDone. Text {line.get("provider_key") or "your line"} to talk to your agent.', flush=True)
-    print('Next: ./relay agent status, ./relay agent test "prompt", ./relay agent stop', flush=True)
+    print(f'Next: {relay_command()} agent status, {relay_command()} agent test "prompt", {relay_command()} agent stop', flush=True)
     return 0
 
 
@@ -1257,6 +1363,7 @@ def record_failure(error, path):
     path.parent.mkdir(parents=True, exist_ok=True)
     with os.fdopen(os.open(path, os.O_CREAT | os.O_APPEND | os.O_WRONLY, 0o600), 'a', encoding='utf-8') as log:
         log.write(f'=== {datetime.now(timezone.utc):%Y-%m-%dT%H:%M:%SZ} ===\n{text}\n')
+    private_files.protect(path)
 
 
 def run_agent(args):
@@ -1297,8 +1404,8 @@ def run_agent(args):
         try:
             record_failure(error, log)
             where = f'. Details: {log}.'
-        except OSError:
+        except (OSError, private_files.PrivacyError):
             where = ' and the details could not be saved.'
-        what, again = ('The install', './relay agent') if action is None else (f'./relay agent {action}', 'it')
+        what, again = ('The install', f'{relay_command()} agent') if action is None else (f'{relay_command()} agent {action}', 'it')
         print(f'{what} stopped unexpectedly{where} Running {again} again is safe.', file=sys.stderr, flush=True)
         return 1

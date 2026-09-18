@@ -27,7 +27,27 @@ import urllib.parse
 import urllib.request
 
 import cli
+from fake_windows import FakeWindows, held_by_another_process, windows_host
 import plow_agent
+import private_files
+
+
+def denial_is_enforced():
+    """Whether a file its owner denied themselves really cannot be read here.
+
+    Not as root, and not on Windows, where the mode bits do not decide access at all.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        probe = Path(directory) / 'probe'
+        probe.write_bytes(b'x')
+        probe.chmod(0)
+        try:
+            probe.read_bytes()
+            return False
+        except OSError:
+            return True
+        finally:
+            probe.chmod(0o600)
 
 
 def line(uid, agent=None, number='+15550000000', name='Alder'):
@@ -76,8 +96,8 @@ class OfficialClientContractTests(unittest.TestCase):
             credential = Path(directory) / 'plow-credentials'
             with patch.dict(os.environ, {'XDG_CONFIG_HOME': str(config)}), contextlib.redirect_stderr(io.StringIO()):
                 plow_agent.mint_credential(client, credential, 'ln_free')
-            mode, text = credential.stat().st_mode & 0o777, credential.read_text()
-        self.assertEqual(mode, 0o600)
+            private, text = private_files.is_private(credential), credential.read_text()
+        self.assertTrue(private)
         self.assertIn('PLOW_API_BASE=https://api.plow.co\n', text)
         self.assertIn('PLOW_AGENT_TOKEN=agt_fixture_token\n', text)
         self.assertIn('# plow-agent-uid: ag_new', text)
@@ -87,7 +107,8 @@ class OfficialClientContractTests(unittest.TestCase):
     def test_sign_in_is_found_where_the_client_itself_keeps_it(self):
         client = plow_agent.official()
         for config in ('/fixture/config', '', None):
-            with self.subTest(XDG_CONFIG_HOME=config), patch.dict(os.environ, {'HOME': '/fixture/home'}):
+            with self.subTest(XDG_CONFIG_HOME=config), patch.dict(
+                    os.environ, {'HOME': '/fixture/home', 'USERPROFILE': '/fixture/home'}):
                 os.environ.pop('XDG_CONFIG_HOME', None)
                 if config is not None:
                     os.environ['XDG_CONFIG_HOME'] = config
@@ -110,6 +131,7 @@ class Installation:
         self.terminal = False  # whether stdin is a terminal the installer may ask on
         self.logs = 'plow-init: configured from /var/lib/plow as cht_1\n'  # what `compose logs` shows
         self.reply = 'I am Reach.'  # speak()'s answer, or an exception to raise
+        self.windows = None  # a FakeWindows when the install is being run on that host
         self.calls = []
         self.out, self.err = io.StringIO(), io.StringIO()
 
@@ -160,6 +182,8 @@ class Installation:
         return self.reply
 
     def subprocess_run(self, command, **options):
+        if self.windows is not None and command and command[0] == 'icacls':
+            return self.windows.run(command, **options)
         return self.docker(command, **options)
 
     @staticmethod
@@ -677,8 +701,7 @@ class FailureTests(unittest.TestCase):
             install = Installation(directory)
             install.up = RuntimeError('compose failed in an unforeseen way')
             self.assertEqual(install.run(), 1)
-            mode = (install.root / '.data/agent/install.log').stat().st_mode & 0o777
-        self.assertEqual(mode, 0o600)
+            self.assertTrue(private_files.is_private(install.root / '.data/agent/install.log'))
 
     def test_a_log_that_cannot_be_saved_still_ends_in_one_sentence(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -909,9 +932,10 @@ class InstallGuardTests(unittest.TestCase):
             install.docker.project = 'relay-two'
             self.assertEqual(install.run(), 0)
             record = install.root / '.data/agent/install.json'
-            saved, mode = json.loads(record.read_text()), record.stat().st_mode & 0o777
-        self.assertEqual(saved, {'project': 'relay-two', 'agent_dir': str(install.agent.resolve())})
-        self.assertEqual(mode, 0o600)
+            saved = json.loads(record.read_text())
+            self.assertTrue(private_files.is_private(record))
+        self.assertEqual(saved, {'project': 'relay-two', 'agent_dir': str(install.agent.resolve()),
+                                 'platform': 'macos'})
 
     def test_an_agent_docker_could_not_start_records_nothing(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1127,10 +1151,10 @@ class SignInTests(unittest.TestCase):
             install.lines = [line('ln_a'), line('ln_b')]
             self.assertEqual(install.run(), 2)
             marker = self.marker(install)
-            recorded, mode = marker.read_text(), marker.stat().st_mode & 0o777
+            recorded, private = marker.read_text(), private_files.is_private(marker)
             expected = hashlib.sha256(install.signin.read_bytes()).hexdigest()
         self.assertEqual(recorded.strip(), expected)
-        self.assertEqual(mode, 0o600)
+        self.assertTrue(private)
         self.assertNotIn('acct_fixture_token', recorded)
 
     def test_a_sign_in_written_before_login_fails_is_removed_by_a_later_success(self):
@@ -1169,7 +1193,7 @@ class SignInTests(unittest.TestCase):
 
     def test_a_marker_that_is_not_a_digest_is_dropped_without_touching_the_sign_in(self):
         cases = [b'\xff\xfe\x00 not utf-8', b'not a digest\n', b'0' * 63 + b'\n', b'g' * 64 + b'\n']
-        if os.geteuid() != 0:
+        if denial_is_enforced():
             cases.append(None)  # a marker its owner cannot read
         for content in cases:
             with self.subTest(content=content), tempfile.TemporaryDirectory() as directory:
@@ -1288,7 +1312,9 @@ class SignInTests(unittest.TestCase):
         self.assertNotIn('Sign-in .....', install.out.getvalue())
 
     def test_the_sign_in_path_follows_xdg_config_home(self):
-        with patch.dict(os.environ, {'XDG_CONFIG_HOME': '/fixture/config', 'HOME': '/fixture/home'}):
+        # USERPROFILE as well as HOME: each host reads only its own, and both name the same folder.
+        with patch.dict(os.environ, {'XDG_CONFIG_HOME': '/fixture/config', 'HOME': '/fixture/home',
+                                     'USERPROFILE': '/fixture/home'}):
             self.assertEqual(plow_agent.signin_path(), Path('/fixture/config/plow/token'))
             os.environ['XDG_CONFIG_HOME'] = ''
             self.assertEqual(plow_agent.signin_path(), Path('/fixture/home/.config/plow/token'))
@@ -2274,6 +2300,258 @@ class DocumentationTests(unittest.TestCase):
     def test_agent_readme_teaches_the_model_command(self):
         readme = (plow_agent.ROOT / 'agent/README.md').read_text()
         self.assertIn('./relay agent model', readme)
+
+
+class FakeKernel32:
+    """kernel32 as Windows answers it, from the process id each call is given.
+
+    OpenProcess hands back a handle for an id that is in use, and nothing plus
+    ERROR_INVALID_PARAMETER for one that is not. An id that exists but belongs to another
+    account is refused with ERROR_ACCESS_DENIED, which still means it exists.
+    """
+
+    ACCESS_DENIED = 5
+
+    def __init__(self, running=(), refused=()):
+        self.running, self.refused = set(running), set(refused)
+        self.error = 0
+        self.open_handles = 0
+
+    def OpenProcess(self, access, inherit, pid):
+        if access != plow_agent.PROCESS_QUERY_LIMITED_INFORMATION:
+            raise AssertionError(f'A process was opened with more than it needed: {access:#x}')
+        if pid in self.running:
+            self.open_handles += 1
+            return 0x100 + pid
+        self.error = self.ACCESS_DENIED if pid in self.refused else plow_agent.ERROR_INVALID_PARAMETER
+        return 0
+
+    def CloseHandle(self, handle):
+        self.open_handles -= 1
+        return 1
+
+    def GetLastError(self):
+        return self.error
+
+
+class WindowsCredentialTests(unittest.TestCase):
+    """The install path on the host where reading a credential used to crash outright."""
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.directory = Path(self.temporary.name)
+        self.credential = self.directory / 'plow-credentials'
+        self.credential.write_text('PLOW_API_BASE=https://api.plow.co\nPLOW_AGENT_TOKEN=agt_fixture_token\n')
+
+    @staticmethod
+    def bridge_module():
+        """The bridge the installer itself reaches, found the way the installer finds it."""
+        sys.path.insert(0, str(plow_agent.ROOT / 'integrations/plow'))
+        import bridge
+        return bridge
+
+    def test_a_resumed_install_reads_its_credential_instead_of_stopping_unexpectedly(self):
+        # This used to raise AttributeError on os.O_NOFOLLOW before the file was touched, on
+        # every run after the first, and the generic handler then said running again was safe.
+        bridge = self.bridge_module()
+
+        class Unreachable:
+            """Plow out of reach, without an HTTPS context a faked platform cannot build."""
+
+            def __init__(self, *arguments, **options):
+                pass
+
+            def call(self, *arguments, **options):
+                raise bridge.BridgeError('Plow request failed: The read operation timed out')
+
+        with windows_host():
+            private_files.protect(self.credential)
+            self.assertEqual(bridge.private_credentials(self.credential), 'agt_fixture_token')
+            with patch.object(bridge, 'JsonHTTP', Unreachable), \
+                    self.assertRaises(plow_agent.AgentError) as error:
+                plow_agent.existing_line(self.credential, plow_agent.identity)
+            self.assertEqual(self.credential.read_text(),
+                             'PLOW_API_BASE=https://api.plow.co\nPLOW_AGENT_TOKEN=agt_fixture_token\n')
+        self.assertIn('run python relay agent again later', str(error.exception))
+        self.assertNotIn('./relay', str(error.exception))
+
+    def test_a_credential_another_account_can_read_is_refused_with_the_command_that_fixes_it(self):
+        bridge = self.bridge_module()
+        with windows_host() as windows:
+            windows.access[str(self.credential)] = ['runneradmin', 'NT AUTHORITY\\SYSTEM', 'Everyone']
+            with patch.object(bridge, 'JsonHTTP', side_effect=AssertionError('network')), \
+                    self.assertRaises(plow_agent.AgentError) as error:
+                plow_agent.existing_line(self.credential, plow_agent.identity)
+        self.assertIn(f'icacls "{self.credential}"', str(error.exception))
+        self.assertIn('It was left untouched.', str(error.exception))
+
+    def mint(self, plow, directory):
+        """Mint through the real pinned client, with only Plow and the host faked."""
+        client = plow_agent.official()
+        config = directory / 'config'
+        (config / 'plow').mkdir(parents=True)
+        (config / 'plow/token').write_text('acct_fixture_token\n')
+        credential = directory / 'agent' / 'plow-credentials'
+        with plow.behind(client), patch.dict(os.environ, {'XDG_CONFIG_HOME': str(config)}), \
+                contextlib.redirect_stderr(io.StringIO()):
+            plow_agent.mint_credential(client, credential, 'ln_free')
+        return credential
+
+    def test_the_official_client_mints_a_private_credential_on_windows(self):
+        # The client's own write uses os.fchmod and checks for mode 0600, neither of which
+        # Windows has, so left alone it stops before the token reaches a file.
+        with tempfile.TemporaryDirectory() as directory, windows_host() as windows:
+            self.assertFalse(hasattr(os, 'fchmod'))
+            credential = self.mint(FakePlow(), Path(directory))
+            self.assertIn('PLOW_AGENT_TOKEN=agt_fixture_token\n', credential.read_text())
+            self.assertTrue(private_files.is_private(credential))
+            self.assertTrue(private_files.is_private(credential.parent))
+            self.assertEqual(windows.principals(credential),
+                             ['runneradmin', 'NT AUTHORITY\\SYSTEM', 'BUILTIN\\Administrators'])
+            self.assertEqual(list(credential.parent.glob('.plow-agents.*')), [])
+
+    def test_a_credential_another_program_is_holding_is_retried_rather_than_lost(self):
+        with tempfile.TemporaryDirectory() as directory, windows_host():
+            destination = Path(directory) / 'agent' / 'plow-credentials'
+            with held_by_another_process(destination, times=2), \
+                    patch.object(private_files.time, 'sleep') as pause:
+                credential = self.mint(FakePlow(), Path(directory))
+            self.assertEqual(pause.call_count, 2)
+            self.assertIn('PLOW_AGENT_TOKEN=agt_fixture_token\n', credential.read_text())
+            self.assertTrue(private_files.is_private(credential))
+
+    def test_a_credential_that_can_never_be_written_retires_the_agent_it_just_created(self):
+        plow = FakePlow()
+        with tempfile.TemporaryDirectory() as directory, windows_host():
+            destination = Path(directory) / 'agent' / 'plow-credentials'
+            with held_by_another_process(destination, times=private_files.REPLACE_ATTEMPTS), \
+                    patch.object(private_files.time, 'sleep'), self.assertRaises(private_files.PrivacyError):
+                self.mint(plow, Path(directory))
+            self.assertFalse(destination.exists())
+            self.assertEqual(list(destination.parent.glob('.plow-agents.*')), [])
+        self.assertIn('DELETE', [method for method, _ in plow.sent])
+
+
+class OwnerPlatformTests(unittest.TestCase):
+    """What the installer records about this computer, and what it tells the container."""
+
+    def test_the_install_record_names_the_computer_it_was_installed_from(self):
+        with tempfile.TemporaryDirectory() as directory, windows_host() as windows:
+            install = Installation(directory)
+            install.windows = windows
+            install.docker.project = 'relay-two'
+            self.assertEqual(install.run(), 0)
+            record = install.root / '.data/agent/install.json'
+            saved = json.loads(record.read_text())
+            self.assertTrue(private_files.is_private(record))
+        self.assertEqual(saved, {'project': 'relay-two', 'agent_dir': str(install.agent.resolve()),
+                                 'platform': 'windows'})
+
+    def test_the_sign_in_marker_is_locked_to_this_account_on_windows(self):
+        with tempfile.TemporaryDirectory() as directory, windows_host() as windows:
+            install = Installation(directory)
+            install.windows = windows
+            install.lines = [line('ln_a'), line('ln_b')]
+            self.assertEqual(install.run(), 2)
+            marker = install.root / '.data/agent/signin-created.sha256'
+            self.assertTrue(private_files.is_private(marker))
+            self.assertEqual(windows.principals(marker),
+                             ['runneradmin', 'NT AUTHORITY\\SYSTEM', 'BUILTIN\\Administrators'])
+
+    def test_a_record_written_before_this_existed_still_identifies_its_install(self):
+        with tempfile.TemporaryDirectory() as directory:
+            record = Path(directory) / 'install.json'
+            folder = Path(directory) / 'agent'
+            folder.mkdir()
+            record.write_text(json.dumps({'project': 'agent', 'agent_dir': str(folder.resolve())}))
+            self.assertTrue(plow_agent.installed_here(record, 'agent', folder))
+
+    def test_every_docker_compose_call_carries_the_owner_platform_as_utf8(self):
+        for platform, expected in (('darwin', 'macos'), ('win32', 'windows'), ('linux', 'linux')):
+            with self.subTest(platform=platform), patch.object(sys, 'platform', platform), \
+                    patch.object(subprocess, 'run') as run:
+                run.return_value = SimpleNamespace(returncode=0, stdout='')
+                plow_agent.compose('ps')
+                self.assertEqual(run.call_args.kwargs['env'][plow_agent.OWNER_PLATFORM], expected)
+                self.assertEqual(run.call_args.kwargs['encoding'], 'utf-8')
+
+    def test_the_compose_file_hands_the_container_the_same_name_and_calls_absence_unknown(self):
+        text = (plow_agent.ROOT / 'agent/compose.yml').read_text()
+        self.assertIn(f'{plow_agent.OWNER_PLATFORM}: ${{{plow_agent.OWNER_PLATFORM}:-'
+                      f'{plow_agent.OWNER_PLATFORM_UNKNOWN}}}', text)
+
+    def test_the_rest_of_the_environment_reaches_docker_unchanged(self):
+        with patch.dict(os.environ, {'COMPOSE_PROJECT_NAME': 'relay-two'}):
+            self.assertEqual(plow_agent.compose_environment()['COMPOSE_PROJECT_NAME'], 'relay-two')
+
+
+class WindowsProcessTests(unittest.TestCase):
+    """Whether an install lock is stale, asked without terminating the process it names."""
+
+    def test_an_id_in_use_a_free_one_and_a_refused_one_are_told_apart(self):
+        kernel = FakeKernel32(running=[4321], refused=[8765])
+        self.assertTrue(plow_agent.windows_process_alive(4321, kernel))
+        self.assertFalse(plow_agent.windows_process_alive(9999, kernel))
+        self.assertTrue(plow_agent.windows_process_alive(8765, kernel))  # refused still means it exists
+        self.assertEqual(kernel.open_handles, 0)  # every handle it took, it gave back
+
+    def test_a_question_that_cannot_be_asked_leaves_the_lock_alone(self):
+        class Unavailable:
+            def OpenProcess(self, *arguments):
+                raise OSError(126, 'The specified module could not be found')
+        self.assertTrue(plow_agent.windows_process_alive(4321, Unavailable()))
+
+    def test_windows_never_reaches_for_the_signal_that_would_kill_the_process(self):
+        with windows_host(), patch.object(os, 'kill', side_effect=AssertionError('os.kill would terminate it')), \
+                self.asking(FakeKernel32(running=[])):
+            self.assertFalse(plow_agent.process_alive(os.getpid()))
+
+    @staticmethod
+    def asking(kernel):
+        """Route the installer's own Windows question at this kernel32, and nowhere else."""
+        real = plow_agent.windows_process_alive
+        return patch.object(plow_agent, 'windows_process_alive', lambda pid: real(pid, kernel))
+
+    def test_a_lock_left_by_a_killed_installer_is_cleared_on_windows_too(self):
+        with tempfile.TemporaryDirectory() as directory, windows_host(), \
+                self.asking(FakeKernel32(running=[os.getpid()])):
+            path = Path(directory) / 'install.lock'
+            path.write_text('4242\n')
+            with contextlib.redirect_stdout(io.StringIO()) as out, plow_agent.installation_lock(path):
+                self.assertEqual(path.read_text().strip(), str(os.getpid()))
+            self.assertFalse(path.exists())
+        self.assertEqual(out.getvalue(), 'Removed a stale install lock left by process 4242.\n')
+
+    def test_a_lock_a_running_installer_holds_is_still_refused_and_names_the_file(self):
+        with tempfile.TemporaryDirectory() as directory, windows_host(), \
+                self.asking(FakeKernel32(running=[4242])):
+            path = Path(directory) / 'install.lock'
+            path.write_text('4242\n')
+            with self.assertRaises(plow_agent.AgentError) as error:
+                with plow_agent.installation_lock(path):
+                    self.fail('entered a lock that a live process holds')
+            self.assertEqual(path.read_text(), '4242\n')
+        self.assertIn(str(path), str(error.exception))
+
+
+class WindowsWordingTests(unittest.TestCase):
+    def test_what_to_run_is_typed_the_way_this_host_types_it(self):
+        with tempfile.TemporaryDirectory() as directory, windows_host() as windows:
+            install = Installation(directory)
+            install.windows = windows
+            install.lines = [line('ln_a', name='Alder'), line('ln_b', name='Birch')]
+            self.assertEqual(install.run(), 2)
+            told = install.err.getvalue()
+        self.assertIn('python relay agent --line <position>', told)
+        self.assertNotIn('./relay', told)
+
+    def test_the_same_message_still_says_relay_on_this_host(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.lines = [line('ln_a', name='Alder'), line('ln_b', name='Birch')]
+            self.assertEqual(install.run(), 2)
+        self.assertIn('./relay agent --line <position>', install.err.getvalue())
 
 
 if __name__ == '__main__':

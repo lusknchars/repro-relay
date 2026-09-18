@@ -8,6 +8,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from fake_windows import windows_host
+
 spec = importlib.util.spec_from_file_location('relay_terminal', pathlib.Path(__file__).with_name('cli.py'))
 cli = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(cli)
@@ -136,6 +138,45 @@ class TerminalTests(unittest.TestCase):
             self.assertEqual(payload['acceptance_command'], ['false'])
             (repo / 'source').write_text('dirty')
             with self.assertRaises(ValueError): cli.make_plan(api, 'RR-1', 'EV-1', setup)
+
+
+class OutputEncodingTests(unittest.TestCase):
+    """The agent answers in the owner's own language, and a Windows console is cp1252."""
+
+    class Console:
+        """A Windows console stream: cp1252 until something asks it for anything else."""
+
+        def __init__(self):
+            self.encoding = 'cp1252'
+            self.asked = []
+
+        def reconfigure(self, **options):
+            self.asked.append(options)
+            self.encoding = options.get('encoding', self.encoding)
+
+    def test_windows_prints_utf8_so_an_accented_reply_is_not_lost(self):
+        out, err = self.Console(), self.Console()
+        with windows_host(), patch.object(cli.sys, 'stdout', out), patch.object(cli.sys, 'stderr', err):
+            cli.readable_output()
+        for stream in (out, err):
+            self.assertEqual(stream.asked, [{'encoding': 'utf-8', 'errors': 'replace'}])
+            self.assertEqual(stream.encoding, 'utf-8')
+
+    def test_nothing_is_reconfigured_on_this_host(self):
+        out = self.Console()
+        with patch.object(cli.sys, 'stdout', out):
+            cli.readable_output()
+        self.assertEqual(out.asked, [])
+
+    def test_a_stream_that_cannot_be_reconfigured_is_left_alone(self):
+        with windows_host(), patch.object(cli.sys, 'stdout', io.StringIO()):
+            cli.readable_output()  # a redirected stream has no reconfigure, and that is not a failure
+
+    def test_git_is_decoded_as_utf8_not_as_the_console_code_page(self):
+        with patch.object(cli.subprocess, 'run') as run:
+            run.return_value = subprocess.CompletedProcess([], 0, 'ok', '')
+            cli.git(pathlib.Path('.'), 'rev-parse', 'HEAD')
+        self.assertEqual(run.call_args.kwargs['encoding'], 'utf-8')
 
 
 if __name__ == '__main__':

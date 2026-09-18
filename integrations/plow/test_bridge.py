@@ -8,6 +8,8 @@ import threading
 import unittest
 
 from bridge import ADAPTER, Bridge, BridgeError, JsonHTTP, ReceiptStore, digest, from_config, private_credentials
+from fake_windows import windows_host  # bridge puts the installer's own folder on the path
+import private_files
 
 
 class FakePlow:
@@ -234,6 +236,40 @@ class BoundaryTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
             thread.join()
+
+
+class WindowsBoundaryTests(unittest.TestCase):
+    """Reading the credential on the host where this used to crash before touching the file."""
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.path = Path(self.temporary.name) / "plow-credentials"
+        self.path.write_text("PLOW_API_BASE=https://api.plow.co\nPLOW_AGENT_TOKEN=test-token\n")
+
+    def test_a_credential_locked_to_this_account_is_read_where_a_mode_could_never_pass(self):
+        with windows_host():
+            self.assertFalse(hasattr(os, "O_NOFOLLOW"))  # what this reached for, and crashed on
+            self.path.chmod(0o600)  # what the old check asked for, and what Windows ignores
+            with self.assertRaises(BridgeError) as error:
+                private_credentials(self.path)
+            self.assertIn("icacls", str(error.exception))
+            private_files.protect(self.path)
+            self.assertEqual(private_credentials(self.path), "test-token")
+
+    def test_a_credential_another_account_can_read_is_still_refused(self):
+        with windows_host() as windows:
+            windows.access[str(self.path)] = ["runneradmin", "NT AUTHORITY\\SYSTEM", "Everyone"]
+            with self.assertRaises(BridgeError):
+                private_credentials(self.path)
+
+    def test_a_link_where_the_credential_should_be_is_refused(self):
+        link = self.path.with_name("link")
+        link.symlink_to(self.path)
+        with windows_host():
+            private_files.protect(link)
+            with self.assertRaises(BridgeError):
+                private_credentials(link)
 
 
 if __name__ == "__main__":
