@@ -25,18 +25,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .connect(&database)
         .await?;
     relay_api::initialize(&pool).await?;
-    if hosting.team {
-        let ready: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM team_members WHERE role='owner')")
-                .fetch_one(&pool)
-                .await?;
-        if !ready {
-            return Err(
-                "Create the owner account on the trusted local server before enabling team mode."
-                    .into(),
-            );
-        }
-    }
+    // Team mode no longer requires a pre-existing local owner account.
+    // The first registration on the configured PUBLIC_ORIGIN becomes the owner.
     let runner = relay_api::runs::Runner::from_env()?;
     if hosted && !hosting.team && runner.0.is_some() {
         return Err("The guest beta cannot use a maintainer's Hermes runtime. Configure it on a local Relay server.".into());

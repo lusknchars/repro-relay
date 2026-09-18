@@ -290,7 +290,14 @@ async fn register(
         sqlx::query_scalar("SELECT NOT EXISTS(SELECT 1 FROM team_members WHERE role='owner')")
             .fetch_one(&mut *tx)
             .await?;
-    if (bootstrap && c.origin.is_some()) || (!bootstrap && v.invite_token.is_empty()) {
+    // Remote owner bootstrap is gated by an explicit environment variable so
+    // hosted deployments do not accidentally allow the first visitor to become
+    // owner. Additional registrations always require an invitation.
+    let allow_remote_bootstrap =
+        std::env::var("REPRO_ALLOW_REMOTE_OWNER_BOOTSTRAP").as_deref() == Ok("1");
+    if (bootstrap && c.origin.is_some() && !allow_remote_bootstrap)
+        || (!bootstrap && v.invite_token.is_empty())
+    {
         return Err(denied(
             "Create the owner account on the local server first; additional accounts need an invitation.",
         ));
