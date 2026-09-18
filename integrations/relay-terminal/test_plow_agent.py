@@ -2493,10 +2493,13 @@ class PortableClientWrite(unittest.TestCase):
             self.assertIs(plow_agent.portable_private_write(client), client)
         self.assertIs(client_write(client), plow_agent.windows_write_private)
 
-    def test_this_host_leaves_the_client_its_own_write(self):
+    def test_the_client_keeps_its_own_write_unless_this_host_needs_the_swap(self):
+        # Whatever host runs this, including a Windows one, where the swap is what should
+        # happen. The faked host test above is where the behaviour is pinned per platform.
         client = pinned_client_double(mint=Mock())
         self.assertIs(plow_agent.portable_private_write(client), client)
-        self.assertIsNot(client_write(client), plow_agent.windows_write_private)
+        self.assertEqual(client_write(client) is plow_agent.windows_write_private,
+                         private_files.windows())
 
     def test_the_replacement_writes_a_private_file_and_says_why_when_it_cannot(self):
         with tempfile.TemporaryDirectory() as directory:

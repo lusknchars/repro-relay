@@ -144,12 +144,14 @@ class PortableClientWrite(unittest.TestCase):
             returned = connect.official_client()
         self.assertIs(client_write(returned), connect.write_private)
 
-    def test_this_host_leaves_the_client_its_own_write(self):
+    def test_the_client_keeps_its_own_write_unless_this_host_needs_the_swap(self):
+        # Whatever host runs this, including a Windows one, where the swap is what should
+        # happen. The faked host test above is where the behaviour is pinned per platform.
         root, double = self.client()
         with patch.object(connect, 'ROOT', root), \
                 patch.object(connect.runpy, 'run_path', return_value=double):
             returned = connect.official_client()
-        self.assertIsNot(client_write(returned), connect.write_private)
+        self.assertEqual(client_write(returned) is connect.write_private, private_files.windows())
 
     def test_the_replacement_writes_a_private_file_and_says_why_when_it_cannot(self):
         root, _ = self.client()
