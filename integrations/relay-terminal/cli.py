@@ -243,6 +243,12 @@ def main(argv=None):
     agent_test = agent_actions.add_parser('test', help='Send one prompt to the running agent')
     agent_test.add_argument('prompt')
     agent_actions.add_parser('stop', help='Stop the agent, keeping its memory and identity')
+    agent_model = agent_actions.add_parser('model', help='See or change the model the agent runs on')
+    agent_model.add_argument('id', nargs='?', help='A provider/model id to switch to; omit to show the current model')
+    agent_model.add_argument('--check', action='store_true',
+                             help='After switching, send one prompt through the agent and print the reply (spends Plow credits)')
+    agent_model.add_argument('--revert', action='store_true',
+                             help='Restore the config from the newest backup and restart the gateway')
     setup = sub.add_parser('setup', help='Install dependencies, start the local service and open Relay')
     setup.add_argument('--check', action='store_true', help='Check prerequisites without installing or starting anything')
     setup.add_argument('--web', action='store_true', help='Use the local web app instead of building the macOS desktop app')

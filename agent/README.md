@@ -26,6 +26,10 @@ Needs Docker Desktop running, Python 3, and the phone that owns the Plow account
 ./relay agent status              # agent, line, Plow setup and reported usage
 ./relay agent test "prompt"       # one prompt, printed with its token usage
 ./relay agent stop                # stop it, keeping memory and identity
+./relay agent model               # the current default model, its provider and known ids
+./relay agent model <id>          # switch the default model, backing up the config first
+./relay agent model <id> --check  # after switching, ask the agent one prompt to confirm the id (spends credits)
+./relay agent model --revert      # restore the config from the newest backup and restart
 ```
 
 ### The same steps by hand

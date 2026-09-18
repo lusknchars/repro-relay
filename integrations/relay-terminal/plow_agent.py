@@ -36,7 +36,10 @@ READY = 'plow-init: configured'
 PARKED = 'parking; no gateway will start'
 CONTAINER_PATH = '/command:/usr/local/bin:/usr/bin:/bin'
 FIRST_PROMPT = 'Reply in one short sentence: say who you are and what you can do with meeting notes.'
+CONFIG_PATH = '/var/lib/hermes/config.yaml'
+GATEWAY_SERVICE = '/run/service/hermes-gateway'
 MODEL_ID = re.compile(r'[^/\s]+/[^/\s]+')
+MODEL_CHECK_PROMPT = 'Reply in one short sentence: which model are you, and who made you?'
 
 
 class AgentError(Exception):
@@ -476,9 +479,9 @@ def mint_credential(client, path, uid):
                                    api_base=ORIGIN, agent_api_base=ORIGIN))
 
 
-def compose(*arguments, capture=False):
+def compose(*arguments, capture=False, input=None):
     return subprocess.run(['docker', 'compose', *arguments], cwd=AGENT,
-                          capture_output=capture, text=True, timeout=1800)
+                          capture_output=capture, text=True, timeout=1800, input=input)
 
 
 def identity(path):
@@ -626,6 +629,118 @@ def validate_model_id(model_id):
         raise DecisionNeeded(f'"{model_id}" is not a model id shaped like provider/model, for example '
                              'anthropic/claude-sonnet-5.')
     return model_id
+
+
+def require_agent_running():
+    """Stop before reading, editing or restarting anything when the agent container is not running."""
+    if not compose('ps', '--status', 'running', '--quiet', capture=True).stdout.strip():
+        raise DecisionNeeded('The agent container is not running. Start it with ./relay agent, then run this again.')
+
+
+def hermes_run(*command, input=None):
+    """One command inside the agent container as the hermes user, the way speak() reaches Hermes itself."""
+    return compose('exec', '-T', '-e', 'PATH=' + CONTAINER_PATH, 'agent', 'with-contenv', 's6-setuidgid', 'hermes',
+                   *command, capture=True, input=input)
+
+
+def read_config(path=CONFIG_PATH):
+    """The text of one file beside the agent config, read inside the container. Never copied to the host disk."""
+    result = hermes_run('cat', path)
+    if result.returncode:
+        raise AgentError(f'{path} could not be read inside the container. Check `docker compose logs agent` in agent/.')
+    return result.stdout
+
+
+def backup_config():
+    """Copy the live config beside itself, named with this moment in UTC, before any edit. Returns its path."""
+    backup = f'{CONFIG_PATH}.backup-{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}'
+    if hermes_run('cp', CONFIG_PATH, backup).returncode:
+        raise AgentError('The config backup could not be written inside the container. Nothing was changed.')
+    return backup
+
+
+def write_config(text):
+    """Replace the config's content atomically: a temporary file beside it, then a rename, as the hermes user."""
+    tmp = CONFIG_PATH + '.tmp'
+    result = hermes_run('sh', '-c', f'cat > {tmp} && mv {tmp} {CONFIG_PATH}', input=text)
+    if result.returncode:
+        raise AgentError('The new config could not be written inside the container.')
+
+
+def list_backups():
+    """Every config backup beside the config, oldest first; a fixed-width UTC suffix sorts lexicographically."""
+    result = hermes_run('sh', '-c', f'ls -1 {CONFIG_PATH}.backup-* 2>/dev/null')
+    return sorted(name.strip() for name in result.stdout.splitlines() if name.strip())
+
+
+def restart_and_wait():
+    """Ask s6 to restart the gateway, as the transport watchdog does, then wait for it the way the installer does.
+
+    The gateway runs as hermes, but restarting it needs s6's own control files, so this runs as the container's
+    default user rather than through hermes_run. `--since` this moment, not a fixed window: the gateway was
+    already configured before this restart, so an older `plow-init: configured` line must never pass for the
+    new one.
+    """
+    since = f'{datetime.now(timezone.utc):%Y-%m-%dT%H:%M:%SZ}'
+    if compose('exec', '-T', 'agent', '/command/s6-svc', '-r', GATEWAY_SERVICE, capture=True).returncode:
+        raise AgentError('The gateway could not be restarted. Check `docker compose logs agent` in agent/.')
+    state, detail = wait_ready(lambda: compose('logs', '--no-color', '--since', since, 'agent', capture=True).stdout)
+    if state != 'ready':
+        raise AgentError(detail)
+
+
+def show_model():
+    """Print the live default, its provider and that provider's known ids. Never the token or any env value."""
+    require_agent_running()
+    summary = model_summary(read_config())
+    print(status_line('Model', summary['default']), flush=True)
+    print(status_line('Provider', summary['provider']), flush=True)
+    print(status_line('Models', ', '.join(summary['models']) or '(none known)'), flush=True)
+    return 0
+
+
+def switch_model(model_id, check):
+    """Back the live config up, set its default to model_id, restart the gateway, and print the transition."""
+    validate_model_id(model_id)
+    require_agent_running()
+    text = read_config()
+    old = model_summary(text)['default']
+    new_text = set_default_model(text, model_id)
+    backup_config()
+    write_config(new_text)
+    restart_and_wait()
+    print(status_line('Model', f'{old} -> {model_id}'), flush=True)
+    if check:
+        print(speak(MODEL_CHECK_PROMPT), flush=True)
+    return 0
+
+
+def revert_model():
+    """Restore the newest config backup, restart the gateway, and print what came back."""
+    require_agent_running()
+    backups = list_backups()
+    if not backups:
+        raise DecisionNeeded('No config backup exists to revert to. ./relay agent model <id> makes one before '
+                             'it switches; run that first.')
+    newest = backups[-1]
+    new_default = model_summary(read_config(newest))['default']
+    old = 'unknown'
+    with contextlib.suppress(AgentError):
+        old = model_summary(read_config())['default']
+    if hermes_run('cp', newest, CONFIG_PATH).returncode:
+        raise AgentError('The backup could not be restored inside the container.')
+    restart_and_wait()
+    print(status_line('Model', f'{old} -> {new_default}'), flush=True)
+    return 0
+
+
+def model_command(args):
+    """./relay agent model: show it, switch it, or revert to the newest backup."""
+    if args.revert:
+        return revert_model()
+    if args.id is None:
+        return show_model()
+    return switch_model(args.id, args.check)
 
 
 def signin_path():
@@ -814,6 +929,8 @@ def run_agent(args):
             compose('stop')
             print('Stopped. Memory, install identity and reporting state are kept.', flush=True)
             return 0
+        if action == 'model':
+            return model_command(args)
         state = ROOT / '.data/agent'
         state.mkdir(parents=True, exist_ok=True)
         with exit_on_sigterm(), installation_lock(state / 'install.lock'):

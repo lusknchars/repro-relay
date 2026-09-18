@@ -1411,7 +1411,204 @@ class ModelIdValidationTests(unittest.TestCase):
                 self.assertIn('provider/model', str(error.exception))
 
 
+class FakeContainer:
+    """docker compose exec/ps/logs behind ./relay agent model. No shell parsing: dispatches on argv shape.
+
+    files simulates everything beside the agent config inside /var/lib/hermes; any call this does not
+    recognise fails the test, and real docker is never touched.
+    """
+
+    def __init__(self, config=SAMPLE_MODEL_CONFIG, running=True):
+        self.running = running
+        self.files = {plow_agent.CONFIG_PATH: config}
+        self.restarts = 0
+        self.ready_log = 'plow-init: configured from /var/lib/plow as cht_1\n'
+        self.calls = []
+
+    def __call__(self, *arguments, capture=False, input=None):
+        self.calls.append(arguments)
+        if arguments[0] == 'ps':
+            return SimpleNamespace(returncode=0, stdout=('cid123\n' if self.running else ''))
+        if arguments[0] == 'logs':
+            return SimpleNamespace(returncode=0, stdout=self.ready_log)
+        if arguments[0] != 'exec':
+            raise AssertionError(f'unexpected compose call: {arguments}')
+        if '/command/s6-svc' in arguments:
+            self.restarts += 1
+            return SimpleNamespace(returncode=0, stdout='')
+        if 'with-contenv' not in arguments or 'hermes' not in arguments:
+            raise AssertionError(f'unexpected exec call, not run as hermes: {arguments}')
+        tail = arguments[arguments.index('hermes') + 1:]
+        if tail[0] == 'cat':
+            return self._read(tail[1])
+        if tail[0] == 'cp':
+            return self._copy(tail[1], tail[2])
+        if tail[:2] == ('sh', '-c'):
+            return self._shell(tail[2], input)
+        raise AssertionError(f'unexpected hermes command: {tail}')
+
+    def _read(self, path):
+        if path not in self.files:
+            return SimpleNamespace(returncode=1, stdout='')
+        return SimpleNamespace(returncode=0, stdout=self.files[path])
+
+    def _copy(self, source, destination):
+        if source not in self.files:
+            return SimpleNamespace(returncode=1, stdout='')
+        self.files[destination] = self.files[source]
+        return SimpleNamespace(returncode=0, stdout='')
+
+    def _shell(self, script, input):
+        if script.startswith('ls -1 '):
+            backups = sorted(name for name in self.files if re.fullmatch(
+                re.escape(plow_agent.CONFIG_PATH) + r'\.backup-.+', name))
+            return SimpleNamespace(returncode=0, stdout=''.join(name + '\n' for name in backups))
+        if script.startswith('cat > '):
+            self.files[plow_agent.CONFIG_PATH] = input
+            return SimpleNamespace(returncode=0, stdout='')
+        raise AssertionError(f'unexpected shell script: {script}')
+
+
+def run_model(container, **options):
+    out, err = io.StringIO(), io.StringIO()
+    arguments = dict(agent_action='model', id=None, check=False, revert=False)
+    arguments.update(options)
+    with patch.object(plow_agent, 'compose', container), contextlib.redirect_stdout(out), \
+            contextlib.redirect_stderr(err):
+        code = plow_agent.run_agent(SimpleNamespace(**arguments))
+    return code, out.getvalue(), err.getvalue()
+
+
+class ModelCommandTests(unittest.TestCase):
+    def test_prints_the_default_provider_and_known_models(self):
+        code, out, err = run_model(FakeContainer())
+        self.assertEqual(code, 0)
+        self.assertEqual(err, '')
+        self.assertIn(plow_agent.status_line('Model', 'anthropic/claude-sonnet-5'), out)
+        self.assertIn(plow_agent.status_line('Provider', 'plow'), out)
+        self.assertIn(plow_agent.status_line('Models', 'anthropic/claude-sonnet-5, anthropic/claude-haiku-4'), out)
+
+    def test_a_container_not_running_refuses_with_exit_2_before_any_edit(self):
+        for options in ({}, {'id': 'anthropic/claude-opus-4'}, {'revert': True}):
+            with self.subTest(**options):
+                container = FakeContainer(running=False)
+                code, out, err = run_model(container, **options)
+                self.assertEqual(code, 2)
+                self.assertIn('not running', err)
+                self.assertEqual(container.calls, [('ps', '--status', 'running', '--quiet')])
+
+    def test_an_empty_or_malformed_id_is_refused_before_touching_docker(self):
+        for bad in ('', 'no-slash-here'):
+            with self.subTest(bad=bad):
+                container = FakeContainer()
+                code, out, err = run_model(container, id=bad)
+                self.assertEqual(code, 2)
+                self.assertIn('provider/model', err)
+                self.assertEqual(container.calls, [])
+
+    def test_a_config_that_will_not_parse_is_refused_with_exit_2(self):
+        for options in ({}, {'id': 'anthropic/claude-opus-4'}):
+            with self.subTest(**options):
+                code, out, err = run_model(FakeContainer(config='not: valid: yaml: ['), **options)
+                self.assertEqual(code, 2)
+                self.assertIn('could not be parsed', err)
+
+    def test_switching_backs_up_writes_the_new_default_and_restarts(self):
+        container = FakeContainer()
+        code, out, err = run_model(container, id='anthropic/claude-haiku-4')
+        self.assertEqual(code, 0)
+        self.assertEqual(err, '')
+        self.assertIn(plow_agent.status_line('Model', 'anthropic/claude-sonnet-5 -> anthropic/claude-haiku-4'), out)
+        self.assertEqual(container.restarts, 1)
+        self.assertEqual(plow_agent.model_summary(container.files[plow_agent.CONFIG_PATH])['default'],
+                         'anthropic/claude-haiku-4')
+        backups = [name for name in container.files if name != plow_agent.CONFIG_PATH]
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(plow_agent.model_summary(container.files[backups[0]])['default'], 'anthropic/claude-sonnet-5')
+
+    def test_switching_to_a_new_id_adds_it_to_the_provider_inside_the_container(self):
+        container = FakeContainer()
+        code, out, err = run_model(container, id='anthropic/claude-opus-4')
+        self.assertEqual(code, 0)
+        summary = plow_agent.model_summary(container.files[plow_agent.CONFIG_PATH])
+        self.assertEqual(summary['models'],
+                         ['anthropic/claude-sonnet-5', 'anthropic/claude-haiku-4', 'anthropic/claude-opus-4'])
+
+    def test_check_is_off_by_default_and_never_calls_speak(self):
+        container = FakeContainer()
+        with patch.object(plow_agent, 'speak', side_effect=AssertionError('spoke without --check')):
+            code, out, err = run_model(container, id='anthropic/claude-haiku-4')
+        self.assertEqual(code, 0)
+
+    def test_check_sends_one_prompt_after_a_successful_switch_and_prints_the_reply(self):
+        container = FakeContainer()
+        spoken = []
+        with patch.object(plow_agent, 'speak', side_effect=lambda prompt: spoken.append(prompt) or 'I am Reach.'):
+            code, out, err = run_model(container, id='anthropic/claude-haiku-4', check=True)
+        self.assertEqual(code, 0)
+        self.assertEqual(len(spoken), 1)
+        model_line = out.index(plow_agent.status_line('Model', 'anthropic/claude-sonnet-5 -> anthropic/claude-haiku-4'))
+        self.assertGreater(out.index('I am Reach.'), model_line)
+
+    def test_a_gateway_that_never_becomes_ready_is_a_plain_error_but_keeps_the_backup(self):
+        container = FakeContainer()
+        container.ready_log = 'plow-init: credential rejected -- parking; no gateway will start\n'
+        code, out, err = run_model(container, id='anthropic/claude-haiku-4')
+        self.assertEqual(code, 1)
+        self.assertIn('parking; no gateway will start', err)
+        backups = [name for name in container.files if name != plow_agent.CONFIG_PATH]
+        self.assertEqual(len(backups), 1)
+
+    def test_wait_ready_polls_logs_since_the_restart_not_a_fixed_window(self):
+        container = FakeContainer()
+        run_model(container, id='anthropic/claude-haiku-4')
+        logs_calls = [call for call in container.calls if call[0] == 'logs']
+        self.assertEqual(len(logs_calls), 1)
+        since = logs_calls[0][logs_calls[0].index('--since') + 1]
+        self.assertNotEqual(since, '15m')
+        self.assertRegex(since, r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ')
+
+    def test_revert_restores_the_newest_backup_and_restarts(self):
+        container = FakeContainer()
+        container.files[f'{plow_agent.CONFIG_PATH}.backup-20260101T000000Z'] = SAMPLE_MODEL_CONFIG.replace(
+            'default: anthropic/claude-sonnet-5', 'default: anthropic/claude-too-old')
+        container.files[f'{plow_agent.CONFIG_PATH}.backup-20260917T120000Z'] = SAMPLE_MODEL_CONFIG.replace(
+            'default: anthropic/claude-sonnet-5', 'default: anthropic/claude-haiku-4')
+        code, out, err = run_model(container, revert=True)
+        self.assertEqual(code, 0)
+        self.assertEqual(err, '')
+        self.assertEqual(container.restarts, 1)
+        self.assertIn(plow_agent.status_line('Model', 'anthropic/claude-sonnet-5 -> anthropic/claude-haiku-4'), out)
+        self.assertEqual(plow_agent.model_summary(container.files[plow_agent.CONFIG_PATH])['default'],
+                         'anthropic/claude-haiku-4')
+
+    def test_revert_with_no_backup_refuses_with_exit_2(self):
+        container = FakeContainer()
+        code, out, err = run_model(container, revert=True)
+        self.assertEqual(code, 2)
+        self.assertIn('No config backup', err)
+        self.assertEqual(container.restarts, 0)
+
+    def test_revert_still_works_when_the_live_config_cannot_be_parsed(self):
+        container = FakeContainer(config='not: valid: yaml: [')
+        container.files[f'{plow_agent.CONFIG_PATH}.backup-20260917T120000Z'] = SAMPLE_MODEL_CONFIG
+        code, out, err = run_model(container, revert=True)
+        self.assertEqual(code, 0)
+        self.assertIn(plow_agent.status_line('Model', 'unknown -> anthropic/claude-sonnet-5'), out)
+
+
 class CommandLineTests(unittest.TestCase):
+    def test_model_id_and_flags_reach_the_installer(self):
+        received = []
+        with patch.object(plow_agent, 'run_agent', side_effect=lambda args: received.append(args) or 0):
+            cli.main(['agent', 'model'])
+            cli.main(['agent', 'model', 'anthropic/claude-opus-4'])
+            cli.main(['agent', 'model', 'anthropic/claude-opus-4', '--check'])
+            cli.main(['agent', 'model', '--revert'])
+        self.assertEqual([(a.id, a.check, a.revert) for a in received],
+                         [(None, False, False), ('anthropic/claude-opus-4', False, False),
+                          ('anthropic/claude-opus-4', True, False), (None, False, True)])
+
     def test_line_flag_reaches_the_installer_and_its_exit_code_is_returned(self):
         received = []
         with patch.object(plow_agent, 'run_agent', side_effect=lambda args: received.append(args) or 2):
@@ -1436,6 +1633,10 @@ class DocumentationTests(unittest.TestCase):
     def test_agent_readme_teaches_choosing_a_line_without_being_asked(self):
         readme = (plow_agent.ROOT / 'agent/README.md').read_text()
         self.assertIn('./relay agent --line', readme)
+
+    def test_agent_readme_teaches_the_model_command(self):
+        readme = (plow_agent.ROOT / 'agent/README.md').read_text()
+        self.assertIn('./relay agent model', readme)
 
 
 if __name__ == '__main__':
