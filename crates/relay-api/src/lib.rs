@@ -11,6 +11,7 @@ pub mod communication;
 mod competitors;
 pub mod contributions;
 pub mod conversations;
+pub mod demo;
 pub mod discord;
 pub mod discord_notes;
 pub mod discord_voice;
@@ -77,6 +78,15 @@ impl ApiError {
     pub fn conflict(message: impl Into<String>) -> Self {
         Self {
             status: StatusCode::CONFLICT,
+            message: message.into(),
+        }
+    }
+    /// An upstream this endpoint depends on could not be used. The message is what the
+    /// caller is told, so it says what to do and never carries the upstream's own words,
+    /// which can hold a URL or a key.
+    pub fn internal(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
             message: message.into(),
         }
     }
@@ -259,6 +269,7 @@ pub fn app_with_discord(
         .merge(communication::routes())
         .merge(case_environment::routes())
         .merge(contributions::routes())
+        .merge(demo::routes())
         .merge(calendar::routes())
         .merge(programs::routes())
         .merge(reach::routes())

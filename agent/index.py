@@ -16,7 +16,9 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT.parent / 'integrations/relay-terminal'))
 import private_files  # noqa: E402  (found in the repository, beside the installer that writes these files)
 
-AGENT_ID = 'repro-relay'
+# Named by the environment so one host can run several agents, defaulting to the
+# single installed agent's id when nobody says otherwise.
+AGENT_ID = os.environ.get('AGENT_ID', 'repro-relay')
 REPO = 'https://github.com/lusknchars/repro-relay'
 # The listing embeds YouTube, so the client takes a bare video ID and rejects a URL.
 VIDEO = 'Q_BjDQ6bw68'

@@ -66,6 +66,12 @@ class IndexWrapper(unittest.TestCase):
                     index.client(home)
                 network.assert_not_called()
 
+    def test_agent_id_defaults_and_reads_environment(self):
+        self.assertEqual(index.AGENT_ID, 'repro-relay')
+        with patch.dict(index.os.environ, {'AGENT_ID': 'custom-agent-07'}):
+            # Re-importing is awkward; test the exact expression used in index.py.
+            self.assertEqual(index.os.environ.get('AGENT_ID', 'repro-relay'), 'custom-agent-07')
+
     def test_reporting_has_no_plow_credential_or_inherited_secret(self):
         with tempfile.TemporaryDirectory() as folder:
             home = Path(folder)

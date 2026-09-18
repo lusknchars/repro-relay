@@ -1,0 +1,157 @@
+# Multi-agent, multi-line deployment template for ARM64 or AMD64 hosts.
+# Each service gets a unique AGENT_ID, its own Plow credential file, and an
+# isolated Hermes home volume. No credential value is stored in this file.
+#
+# Prepare credential files first:
+#   for n in 01 02 03 04 05 06 07 08 09 10; do
+#     plow-agents mint ln_xxxxxxxxxx$n --credential-file ./plow-credentials-$n
+#   done
+#
+# Deploy:
+#   docker compose -p repro-relay-agents -f compose.multi-agent.yml up -d
+#
+# For ARM64 hosts, build the image first:
+#   docker buildx build --platform linux/arm64 -t repro-relay-agent:local -f Dockerfile .
+
+services:
+  agent-01:
+    image: repro-relay-agent:local
+    environment:
+      AGENT_ID: repro-relay-01
+    volumes:
+      - type: bind
+        source: ./plow-credentials-01
+        target: /var/lib/plow/credentials.host
+        read_only: true
+      - agent-home-01:/var/lib/hermes
+    restart: unless-stopped
+    stop_grace_period: 35s
+
+  agent-02:
+    image: repro-relay-agent:local
+    environment:
+      AGENT_ID: repro-relay-02
+    volumes:
+      - type: bind
+        source: ./plow-credentials-02
+        target: /var/lib/plow/credentials.host
+        read_only: true
+      - agent-home-02:/var/lib/hermes
+    restart: unless-stopped
+    stop_grace_period: 35s
+
+  agent-03:
+    image: repro-relay-agent:local
+    environment:
+      AGENT_ID: repro-relay-03
+    volumes:
+      - type: bind
+        source: ./plow-credentials-03
+        target: /var/lib/plow/credentials.host
+        read_only: true
+      - agent-home-03:/var/lib/hermes
+    restart: unless-stopped
+    stop_grace_period: 35s
+
+  agent-04:
+    image: repro-relay-agent:local
+    environment:
+      AGENT_ID: repro-relay-04
+    volumes:
+      - type: bind
+        source: ./plow-credentials-04
+        target: /var/lib/plow/credentials.host
+        read_only: true
+      - agent-home-04:/var/lib/hermes
+    restart: unless-stopped
+    stop_grace_period: 35s
+
+  agent-05:
+    image: repro-relay-agent:local
+    environment:
+      AGENT_ID: repro-relay-05
+    volumes:
+      - type: bind
+        source: ./plow-credentials-05
+        target: /var/lib/plow/credentials.host
+        read_only: true
+      - agent-home-05:/var/lib/hermes
+    restart: unless-stopped
+    stop_grace_period: 35s
+
+  agent-06:
+    image: repro-relay-agent:local
+    environment:
+      AGENT_ID: repro-relay-06
+    volumes:
+      - type: bind
+        source: ./plow-credentials-06
+        target: /var/lib/plow/credentials.host
+        read_only: true
+      - agent-home-06:/var/lib/hermes
+    restart: unless-stopped
+    stop_grace_period: 35s
+
+  agent-07:
+    image: repro-relay-agent:local
+    environment:
+      AGENT_ID: repro-relay-07
+    volumes:
+      - type: bind
+        source: ./plow-credentials-07
+        target: /var/lib/plow/credentials.host
+        read_only: true
+      - agent-home-07:/var/lib/hermes
+    restart: unless-stopped
+    stop_grace_period: 35s
+
+  agent-08:
+    image: repro-relay-agent:local
+    environment:
+      AGENT_ID: repro-relay-08
+    volumes:
+      - type: bind
+        source: ./plow-credentials-08
+        target: /var/lib/plow/credentials.host
+        read_only: true
+      - agent-home-08:/var/lib/hermes
+    restart: unless-stopped
+    stop_grace_period: 35s
+
+  agent-09:
+    image: repro-relay-agent:local
+    environment:
+      AGENT_ID: repro-relay-09
+    volumes:
+      - type: bind
+        source: ./plow-credentials-09
+        target: /var/lib/plow/credentials.host
+        read_only: true
+      - agent-home-09:/var/lib/hermes
+    restart: unless-stopped
+    stop_grace_period: 35s
+
+  agent-10:
+    image: repro-relay-agent:local
+    environment:
+      AGENT_ID: repro-relay-10
+    volumes:
+      - type: bind
+        source: ./plow-credentials-10
+        target: /var/lib/plow/credentials.host
+        read_only: true
+      - agent-home-10:/var/lib/hermes
+    restart: unless-stopped
+    stop_grace_period: 35s
+
+volumes:
+  agent-home-01:
+  agent-home-02:
+  agent-home-03:
+  agent-home-04:
+  agent-home-05:
+  agent-home-06:
+  agent-home-07:
+  agent-home-08:
+  agent-home-09:
+  agent-home-10:
