@@ -49,7 +49,8 @@ class Ledger:
         self.database = self.database.resolve()
         if self.database.is_relative_to(self.root):
             raise ValueError('Keep the ledger outside the repair checkout.')
-        self.database.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        # This code creates the ledger folder, so this code makes it private.
+        private_files.make_private_directory(self.database.parent)
         if self.database.is_symlink():
             raise ValueError('Ledger database must not be a symlink.')
         self.anchor = anchor

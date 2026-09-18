@@ -272,6 +272,22 @@ def open_private(path):
         raise
 
 
+def make_private_directory(path, mode=DIRECTORY_MODE):
+    """Create a directory this code owns, private from the moment it exists.
+
+    The mode argument to mkdir is the POSIX half and Windows ignores it, so a folder whose
+    privacy rests on that alone is not private there. Returns whether it was created: one
+    that was already there is left exactly as it is, because it belongs to whoever made it,
+    and the caller decides whether to accept it.
+    """
+    try:
+        Path(path).mkdir(parents=True, mode=mode)
+    except FileExistsError:
+        return False
+    protect(path)
+    return True
+
+
 def write_privately(path, body):
     """Write one private file beside its destination, then move it into place.
 
@@ -282,12 +298,7 @@ def write_privately(path, body):
     """
     destination = os.path.abspath(path)
     directory = os.path.dirname(destination) or '.'
-    try:
-        os.makedirs(directory)
-    except FileExistsError:
-        pass
-    else:
-        protect(directory)
+    make_private_directory(directory)
     descriptor, temporary = tempfile.mkstemp(dir=directory, prefix='.private.', suffix='.new')
     try:
         with os.fdopen(descriptor, 'w', encoding='utf-8', newline='') as handle:

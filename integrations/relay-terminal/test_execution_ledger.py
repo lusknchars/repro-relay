@@ -200,6 +200,20 @@ class WindowsLedgerTests(unittest.TestCase):
         self.database = self.directory / 'state' / 'ledger.sqlite3'
         self.anchor = {'plan': 'FIX-1', 'base': 'observed-fixture-base'}
 
+    def test_the_folder_the_ledger_makes_is_private_on_whatever_host_this_is(self):
+        # The ledger folder used to rely on mkdir's mode, which Windows ignores, so its
+        # privacy came from the platform rather than from anything this code did.
+        ledger = Ledger(self.root, self.database, self.anchor)
+        self.assertTrue(private_files.is_private(ledger.database.parent))
+        self.assertTrue(private_files.is_private(ledger.database))
+
+    def test_the_same_folder_is_private_where_a_mode_means_nothing(self):
+        with windows_host() as windows:
+            ledger = Ledger(self.root, self.database, self.anchor)
+            self.assertEqual(windows.principals(ledger.database.parent),
+                             ['runneradmin', 'NT AUTHORITY\\SYSTEM', 'BUILTIN\\Administrators'])
+            self.assertTrue(private_files.is_private(ledger.database.parent))
+
     def test_a_windows_host_reads_the_ledger_instead_of_being_refused(self):
         with windows_host():
             ledger = Ledger(self.root, self.database, self.anchor)

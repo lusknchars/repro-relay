@@ -13,21 +13,13 @@ from pathlib import Path
 import runpy
 import sys
 from types import SimpleNamespace
-from bridge import BridgeError, JsonHTTP, private_credentials, from_config
+from bridge import BridgeError, JsonHTTP, private_credentials, from_config, protect_or_stop
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'relay-terminal'))
 import private_files  # noqa: E402  (found next door, the way bridge.py finds it)
 
 ROOT = Path(__file__).resolve().parents[2]
 ORIGIN = 'https://api.plow.co'
-
-
-def protect_or_stop(path):
-    """Make a path private, or stop with the reason rather than a general failure."""
-    try:
-        private_files.protect(path)
-    except private_files.PrivacyError as error:
-        raise BridgeError(str(error)) from None
 
 
 def write_private(path, body):
@@ -96,11 +88,9 @@ def connect(line_id=None):
               'state_dir':'../plow-receipts', 'line_id':line['uid'], 'chat_id':chats[0]['uid'], 'actor':'Local maintainer'}
     directory = ROOT / '.data/plow'
     try:
-        directory.mkdir(mode=0o700, parents=True)
-    except FileExistsError:
-        pass  # an existing folder keeps whatever the owner set on it
-    else:
-        protect_or_stop(directory)
+        private_files.make_private_directory(directory)
+    except private_files.PrivacyError as error:
+        raise BridgeError(str(error)) from None
     path = directory / 'bridge.json'
     if path.exists():
         previous = json.loads(path.read_text())

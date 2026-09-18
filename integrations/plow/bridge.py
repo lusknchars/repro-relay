@@ -23,6 +23,14 @@ class BridgeError(Exception):
     pass
 
 
+def protect_or_stop(path):
+    """Make a path private, or stop with the reason rather than a general failure."""
+    try:
+        private_files.protect(path)
+    except private_files.PrivacyError as error:
+        raise BridgeError(str(error)) from None
+
+
 def identifier(value):
     if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,180}", value):
         raise BridgeError("Invalid resource identifier.")
@@ -105,8 +113,18 @@ class ReceiptStore:
         self.directory = Path(directory)
 
     def write(self, attempt, value):
+        """Record one attempt, in a folder only this account can reach.
+
+        This code creates that folder, so this code makes it private: a mode of 0700 is
+        ignored on Windows, and leaning on what a platform happens to do by default is how a
+        promise goes quietly unkept. One that was already there is left as it is and refused
+        if it is open to others, because it belongs to whoever made it.
+        """
         identifier(attempt)
-        self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        try:
+            private_files.make_private_directory(self.directory)
+        except private_files.PrivacyError as error:
+            raise BridgeError(str(error)) from None
         info = self.directory.lstat()
         if (self.directory.is_symlink() or not stat.S_ISDIR(info.st_mode)
                 or not private_files.is_private(self.directory, info)):

@@ -39,7 +39,8 @@ class FakeWindows:
 
     def __init__(self, user='runneradmin', fallback=None, applies=True):
         self.user = user
-        self.access = {}  # path -> the accounts icacls lists; absent means a file nobody locked down
+        self.access = {}  # path -> the accounts icacls lists; absent means it inherited them
+        self.passes_down = {}  # folder -> the account its (OI)(CI) grant hands to what is made inside
         self.calls = []
         self.fallback = fallback  # anything that is not icacls, for a test that fakes other commands too
         # A drive that cannot keep one account apart from another, a memory stick or a network
@@ -47,8 +48,25 @@ class FakeWindows:
         self.applies = applies
 
     def principals(self, path):
-        """The accounts that can reach a path right now."""
-        return self.access.get(os.fspath(path), list(self.INHERITED))
+        """The accounts that can reach a path right now.
+
+        One nobody has granted carries what it inherited: from the nearest folder granted with
+        (OI)(CI), which is what Windows hands down, and otherwise the set a fresh file in a
+        temporary folder was measured to have. A folder granted without those flags hands down
+        nothing at all, so what is made inside it is reachable by no one, which is the shape of
+        the defect that made a protected .data/setup useless.
+        """
+        path = os.fspath(path)
+        if path in self.access:
+            return list(self.access[path])
+        parent = os.path.dirname(path)
+        while parent and parent != os.path.dirname(parent):
+            if parent in self.passes_down:
+                return [self.passes_down[parent]]
+            if parent in self.access:
+                return []
+            parent = os.path.dirname(parent)
+        return list(self.INHERITED)
 
     def listing(self, path):
         """What `icacls <path>` prints: the first account on the path's line, the rest indented.
@@ -94,6 +112,8 @@ class FakeWindows:
         if self.applies:
             self.access[os.fspath(path)] = [granted, 'NT AUTHORITY\\SYSTEM', 'BUILTIN\\Administrators',
                                             'OWNER RIGHTS']
+            if '(OI)(CI)' in command[command.index('/grant:r') + 1]:
+                self.passes_down[os.fspath(path)] = granted
         return subprocess.CompletedProcess(
             command, 0, f'processed file: {path}\nSuccessfully processed 1 files; Failed processing 0 files\n', '')
 
@@ -108,8 +128,7 @@ class FakeWindows:
             return None
         grant = command[command.index('/grant:r') + 1]
         account, separator, rights = grant.rpartition(':')
-        wanted = '(OI)(CI)F' if os.path.isdir(command[1]) else 'F'
-        return account if separator and rights == wanted else None
+        return account if separator and rights in ('F', '(OI)(CI)F') else None
 
 
 def pinned_client_double(**recorders):

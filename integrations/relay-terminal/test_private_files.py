@@ -72,6 +72,26 @@ class AnyHostTests(unittest.TestCase):
         self.assertIn('absent', str(error.exception))
         self.assertIn('credential', str(error.exception))
 
+    def test_a_folder_this_code_makes_is_private_from_the_moment_it_exists(self):
+        folder = self.directory / 'receipts'
+        self.assertTrue(private_files.make_private_directory(folder))
+        self.assertTrue(private_files.is_private(folder))
+        # What is written inside it afterwards can be read back on any host. Whether that file
+        # is private in its own right differs: Windows hands the folder's grant down to it,
+        # while on POSIX the folder's mode is what keeps others out and the file takes
+        # whatever the umask gives it.
+        inside = folder / 'receipt.json'
+        inside.write_text('{}')
+        self.assertEqual(inside.read_text(), '{}')
+        self.assertEqual(private_files.is_private(inside), private_files.windows())
+
+    def test_a_folder_that_was_already_there_is_left_exactly_as_it_was(self):
+        folder = self.directory / 'receipts'
+        folder.mkdir()
+        before = folder.stat().st_mode
+        self.assertFalse(private_files.make_private_directory(folder))
+        self.assertEqual(folder.stat().st_mode, before)
+
     def test_protect_then_is_private_agree_on_whatever_host_this_is(self):
         private_files.protect(self.file)
         self.assertTrue(private_files.is_private(self.file))
@@ -170,6 +190,32 @@ class WindowsPrivacyTests(unittest.TestCase):
             self.assertEqual(windows.principals(self.file),
                              ['runneradmin', 'NT AUTHORITY\\SYSTEM', 'BUILTIN\\Administrators'])
             self.assertTrue(private_files.is_private(self.file))
+
+    def test_a_folder_this_code_makes_is_private_where_a_mode_means_nothing(self):
+        folder = self.directory / 'receipts'
+        with windows_host() as windows:
+            self.assertTrue(private_files.make_private_directory(folder))
+            self.assertEqual(windows.principals(folder),
+                             ['runneradmin', 'NT AUTHORITY\\SYSTEM', 'BUILTIN\\Administrators'])
+            self.assertTrue(private_files.is_private(folder))
+            self.assertFalse(private_files.make_private_directory(folder))
+            # And the grant reaches what is made inside it, which is the whole reason a folder
+            # is granted (OI)(CI): without it a new file there is reachable by nobody at all.
+            inside = folder / 'receipt.json'
+            inside.write_text('{}')
+            self.assertEqual(windows.principals(inside), ['runneradmin'])
+            self.assertTrue(private_files.is_private(inside))
+
+    def test_a_folder_granted_without_inheritance_leaves_its_contents_reachable_by_nobody(self):
+        folder = self.directory / 'state'
+        folder.mkdir()
+        with windows_host() as windows:
+            # The grant protect() used to make, before the flags were added.
+            private_files.icacls(str(folder), '/inheritance:r', '/grant:r', 'runneradmin:F')
+            inside = folder / 'service.log'
+            inside.write_text('')
+            self.assertEqual(windows.principals(inside), [])
+            self.assertFalse(private_files.is_private(inside))
 
     def test_a_folder_is_granted_so_what_is_made_inside_it_is_yours_too(self):
         folder = self.directory / 'state'

@@ -275,16 +275,53 @@ class WindowsBoundaryTests(unittest.TestCase):
             with self.assertRaises(BridgeError):
                 private_credentials(link)
 
-    def test_receipts_are_written_where_a_mode_check_and_a_folder_fsync_are_not_available(self):
-        store = ReceiptStore(Path(self.temporary.name) / "receipts")
+
+
+
+class ReceiptFolderTests(unittest.TestCase):
+    """Who makes the receipt folder private. This code does, because this code creates it."""
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.store = ReceiptStore(Path(self.temporary.name) / "receipts")
+
+    def test_a_folder_this_creates_is_private_on_whatever_host_this_is(self):
+        # Not because a temporary folder happens to be 0700 here: mkdtemp says nothing about
+        # access on Windows, and a promise that rests on a platform default is not kept there.
+        self.store.write("att_1", {"ok": True})
+        self.assertTrue(private_files.is_private(self.store.directory))
+        self.assertEqual(self.store.read("att_1"), {"ok": True})
+        self.assertEqual(list(self.store.directory.glob(".receipt-*")), [])
+
+    def test_the_same_holds_where_a_folder_cannot_be_flushed_and_a_mode_means_nothing(self):
         with windows_host():
+            self.store.write("att_1", {"ok": True})
+            self.assertTrue(private_files.is_private(self.store.directory))
+            self.assertEqual(self.store.read("att_1"), {"ok": True})
+            self.assertEqual(list(self.store.directory.glob(".receipt-*")), [])
+
+    def test_a_folder_that_was_already_open_to_others_is_refused_not_quietly_reused(self):
+        self.store.directory.mkdir()
+        with windows_host():  # it carries what it inherited, the way a real one does there
             with self.assertRaises(BridgeError) as error:
-                store.write("att_1", {"ok": True})
+                self.store.write("att_1", {"ok": True})
+            self.assertIn(str(self.store.directory), str(error.exception))
             self.assertIn("icacls", str(error.exception))
-            private_files.protect(store.directory)
-            store.write("att_1", {"ok": True})
-            self.assertEqual(store.read("att_1"), {"ok": True})
-            self.assertEqual(list(store.directory.glob(".receipt-*")), [])
+            private_files.protect(self.store.directory)  # what the message told the owner to run
+            self.store.write("att_1", {"ok": True})
+        self.assertEqual(self.store.read("att_1"), {"ok": True})
+
+    @unittest.skipUnless(os.name == "posix", "opening a folder to other accounts with a mode")
+    def test_a_folder_others_can_reach_is_refused_here_too(self):
+        self.store.directory.mkdir()
+        self.store.directory.chmod(0o755)  # chmod, not mkdir's mode, which umask would mask
+        with self.assertRaises(BridgeError) as error:
+            self.store.write("att_1", {"ok": True})
+        self.assertIn(private_files.how_to_protect(self.store.directory), str(error.exception))
+        private_files.protect(self.store.directory)
+        self.store.write("att_1", {"ok": True})
+        self.assertEqual(self.store.read("att_1"), {"ok": True})
 
 
 if __name__ == "__main__":
