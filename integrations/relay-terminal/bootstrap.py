@@ -135,7 +135,10 @@ def run_setup(args):
         try:
             def run(command, label):
                 print(label + '…', flush=True)
-                subprocess.run(command, cwd=ROOT, env=env, check=True)
+                # Windows ships npm and npx as .cmd shims; CreateProcess applies no
+                # PATHEXT resolution, so resolve the program the way which() does.
+                program = shutil.which(command[0], path=env.get('PATH')) or command[0]
+                subprocess.run([program] + list(command[1:]), cwd=ROOT, env=env, check=True)
 
             install_dependencies(ROOT, env, run)
             if not env.get('DATABASE_URL'):
