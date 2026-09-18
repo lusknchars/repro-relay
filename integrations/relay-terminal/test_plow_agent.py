@@ -5,6 +5,7 @@ from GitHub only when .data/tools/plow-agents is absent.
 """
 import contextlib
 import difflib
+import fnmatch
 import hashlib
 import io
 import json
@@ -1619,14 +1620,18 @@ class FakeContainer:
             return SimpleNamespace(returncode=0, stdout=('cid123\n' if self.running else ''))
         if arguments[0] != 'exec':
             raise AssertionError(f'unexpected compose call: {arguments}')
-        if '/command/s6-svstat' in arguments:
+        # Exact trailing shape, not a loose "is the binary named somewhere in here" check: the service
+        # argument carries real meaning (querying or restarting the wrong service would be a live bug), so
+        # a call naming the right binary but the wrong service falls through to the tripwire below instead
+        # of being answered as if it were fine.
+        if arguments[-2:] == ('/command/s6-svstat', plow_agent.GATEWAY_SERVICE):
             if not self.gateway_up:
                 return SimpleNamespace(returncode=0, stdout='down 0 seconds, normally up\n')
             # Real shape (verified against the running container on 2026-09-18): "up (pid 198 pgid 198)
             # 127022 seconds" -- a pgid and an uptime follow the pid inside the parens. An idealized
             # "up (pid N) ..." here previously matched a since-fixed over-tight regex and hid the bug.
             return SimpleNamespace(returncode=0, stdout=f'up (pid {self.gateway_pid} pgid {self.gateway_pid}) 5 seconds\n')
-        if '/command/s6-svc' in arguments:
+        if arguments[-3:] == ('/command/s6-svc', '-r', plow_agent.GATEWAY_SERVICE):
             self.restarts += 1
             if self.restart_fails:
                 return SimpleNamespace(returncode=1, stdout='')
@@ -1688,9 +1693,13 @@ class FakeContainer:
 
     def _shell(self, script, input):
         if script.startswith('set -- '):
-            backups = sorted(name for name in self.files if re.fullmatch(
-                re.escape(plow_agent.CONFIG_PATH) + r'\.backup-.+', name))
-            return SimpleNamespace(returncode=0, stdout=''.join(name + '\n' for name in backups))
+            # Reads the glob production actually passed, rather than a pattern of its own: a real shell
+            # without nullglob leaves the literal pattern in "$1" when nothing matches, so [ -e "$1" ] fails
+            # and nothing is printed -- fnmatch.filter against real file names naturally returns [] the same
+            # way, never the pattern itself, since no real name is ever literally the unexpanded pattern.
+            pattern = script[len('set -- '):script.index(';')].strip()
+            matches = sorted(fnmatch.filter(self.files, pattern))
+            return SimpleNamespace(returncode=0, stdout=''.join(name + '\n' for name in matches))
         if script.startswith('cat > '):
             target = script[len('cat > '):]
             self.files[target] = input[:-5] if self.corrupt_write and input else input
