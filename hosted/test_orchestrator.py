@@ -20,6 +20,7 @@ from unittest.mock import patch
 
 HOSTED = Path(__file__).resolve().parent
 sys.path[:0] = [str(HOSTED), str(HOSTED.parent / 'integrations/relay-terminal')]
+import cli
 import orchestrator
 import plow_agent
 import registry
@@ -702,6 +703,56 @@ class RemovalTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertTrue((target / 'keep.txt').is_file())
         self.assertIn('symlink', said)
+
+
+class CommandLineTests(unittest.TestCase):
+    """The hosted subcommands as ./relay parses them, and the exit code it gives back."""
+
+    def reaching(self, argv, code=0):
+        received = []
+        with patch.object(orchestrator, 'run_hosted', side_effect=lambda args: received.append(args) or code):
+            returned = cli.main(argv)
+        self.assertEqual(len(received), 1)
+        return received[0], returned
+
+    def test_create_carries_the_person_the_name_and_the_line_flags(self):
+        args, _ = self.reaching(['hosted', 'create', 'dana', '--name', 'Dana Whitfield', '--line', '2'])
+        self.assertEqual((args.hosted_action, args.person, args.name, args.line, args.new_line),
+                         ('create', 'dana', 'Dana Whitfield', '2', False))
+        args, _ = self.reaching(['hosted', 'create', 'dana'])
+        self.assertEqual((args.name, args.line, args.new_line), (None, None, False))
+        args, _ = self.reaching(['hosted', 'create', 'dana', '--new-line'])
+        self.assertTrue(args.new_line)
+
+    def test_remove_carries_the_repeated_identifier_and_asks_for_nothing_by_default(self):
+        args, _ = self.reaching(['hosted', 'remove', 'dana', '--confirm', 'dana'])
+        self.assertEqual((args.hosted_action, args.person, args.confirm), ('remove', 'dana', 'dana'))
+        args, _ = self.reaching(['hosted', 'remove', 'dana'])
+        self.assertIsNone(args.confirm)
+
+    def test_list_status_and_stop_reach_the_tool(self):
+        args, _ = self.reaching(['hosted', 'list'])
+        self.assertEqual((args.hosted_action, getattr(args, 'person', None)), ('list', None))
+        for action in ('status', 'stop'):
+            with self.subTest(action=action):
+                args, _ = self.reaching(['hosted', action, 'dana'])
+                self.assertEqual((args.hosted_action, args.person), (action, 'dana'))
+
+    def test_the_exit_code_reaches_the_shell_unchanged(self):
+        for code in (0, 1, 2):
+            with self.subTest(code=code):
+                _, returned = self.reaching(['hosted', 'list'], code)
+                self.assertEqual(returned, code)
+
+    def test_an_action_and_a_person_are_required(self):
+        for argv in (['hosted'], ['hosted', 'create'], ['hosted', 'remove']):
+            with self.subTest(argv=argv), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit):
+                    cli.main(argv)
+
+    def test_no_relay_api_call_is_needed_to_run_a_hosted_command(self):
+        with patch.object(cli, 'API', side_effect=AssertionError('hosted reached for the Relay API')):
+            self.reaching(['hosted', 'list'])
 
 
 class DocumentationTests(unittest.TestCase):

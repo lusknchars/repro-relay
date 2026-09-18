@@ -249,6 +249,23 @@ def main(argv=None):
                              help='After switching, send one prompt through the agent and print the reply (spends Plow credits)')
     agent_model.add_argument('--revert', action='store_true',
                              help='Restore the config from the newest backup and restart the gateway')
+    hosted = sub.add_parser('hosted', help='Run agents on this machine for other people, one container each')
+    hosted_actions = hosted.add_subparsers(dest='hosted_action', required=True)
+    hosted_create = hosted_actions.add_parser('create', help='Give one person an agent on its own Plow line')
+    hosted_create.add_argument('person', help='A short identifier for this person: lowercase letters, digits and dashes')
+    hosted_create.add_argument('--name', help="The person's name, for your own records and the handover")
+    hosted_create.add_argument('--new-line', action='store_true', help='Ask Plow to provision a new assistant line')
+    hosted_create.add_argument('--line', metavar='VALUE',
+                               help='Use this free line: its position in the list, its number or its uid')
+    hosted_actions.add_parser('list', help='Every agent recorded here, and what Docker says about each one')
+    hosted_status = hosted_actions.add_parser('status', help='One agent, and the limits Docker reports for it')
+    hosted_status.add_argument('person')
+    hosted_stop = hosted_actions.add_parser('stop', help='Stop one agent, keeping its line, credential and memory')
+    hosted_stop.add_argument('person')
+    hosted_remove = hosted_actions.add_parser('remove', help="Delete one agent's container, memory volume and folder")
+    hosted_remove.add_argument('person')
+    hosted_remove.add_argument('--confirm', metavar='IDENTIFIER',
+                               help='Repeat the identifier to confirm; without it nothing is deleted')
     setup = sub.add_parser('setup', help='Install dependencies, start the local service and open Relay')
     setup.add_argument('--check', action='store_true', help='Check prerequisites without installing or starting anything')
     setup.add_argument('--web', action='store_true', help='Use the local web app instead of building the macOS desktop app')
@@ -308,6 +325,12 @@ def main(argv=None):
     if args.action == 'agent':
         from plow_agent import run_agent
         return run_agent(args)
+    if args.action == 'hosted':
+        hosted_tool = str(pathlib.Path(__file__).resolve().parents[2] / 'hosted')
+        if hosted_tool not in sys.path:
+            sys.path.insert(0, hosted_tool)
+        from orchestrator import run_hosted
+        return run_hosted(args)
     if args.action == 'setup':
         from bootstrap import run_setup
         return run_setup(args)
