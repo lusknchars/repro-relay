@@ -15,6 +15,9 @@ class SetupRecord(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.home = Path(self.temp.name)
         self.file = self.home / 'relay-setup/relay-setup.json'
+        # A permissive mask, so the record's own mode is what makes it private.
+        # Another test in this suite leaves 0o077 behind in the runner.
+        self.addCleanup(os.umask, os.umask(0o022))
 
     def call(self, *args, success=True):
         result = subprocess.run([sys.executable, str(SCRIPT), *args],
@@ -100,10 +103,32 @@ class SetupRecord(unittest.TestCase):
 
     def test_an_honest_sentence_about_a_check_is_not_a_credential(self):
         for value in ['gh auth status exited 0', 'plow_list_skills listed 6 skills on this Mac',
-                      'the owner approved google-workspace in Latch']:
+                      'the owner approved google-workspace in Latch', 'the owner works in Asia',
+                      'timezone Asia/Sao_Paulo', 'asia pacific team']:
             self.call('record', '--topic', 'github', '--state', 'available', '--evidence', value)
-        self.assertEqual(self.call('show')['items'][0]['evidence'],
-                         'the owner approved google-workspace in Latch')
+        self.assertEqual(self.call('show')['items'][0]['evidence'], 'asia pacific team')
+
+    def test_a_long_repository_topic_is_a_topic_and_not_a_credential(self):
+        self.call('record', '--topic', 'my-very-long-repository-name-2026', '--state', 'available')
+        self.assertEqual(self.call('show')['items'][0]['topic'], 'my-very-long-repository-name-2026')
+        refused = self.call('record', '--topic', 'glpat-a1b2c3d4', '--state', 'available',
+                            success=False)
+        self.assertIn('credentials are never stored here', refused['error'])
+        refused = self.call('record', '--topic', 'github', '--state', 'available',
+                            '--evidence', 'ghp' + '_' + 'A9' * 18, success=False)
+        self.assertIn('credentials are never stored here', refused['error'])
+
+    def test_an_answer_that_is_not_yes_or_no_is_refused_without_echoing_it(self):
+        secret = 'ghp' + '_' + 'A9' * 18
+        for value in ['maybe', secret]:
+            result = subprocess.run([sys.executable, str(SCRIPT), 'record', '--topic', 'github',
+                                     '--state', 'available', '--wanted', value],
+                                    env={**os.environ, 'HERMES_HOME': str(self.home)},
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn('wanted', json.loads(result.stderr)['error'])
+            self.assertNotIn(value, result.stderr + result.stdout)
+        self.assertEqual(self.call('show')['items'], [])
 
     def test_setting_up_again_forgets_everything_and_starts_over(self):
         self.call('owner', '--name', 'Ana', '--language', 'Portuguese')
@@ -117,19 +142,53 @@ class SetupRecord(unittest.TestCase):
 
     def test_the_record_stays_private_and_is_replaced_whole(self):
         self.call('record', '--topic', 'contacts', '--state', 'available')
+        first, body = self.file.stat().st_ino, self.file.read_text()
         self.call('record', '--topic', 'github', '--state', 'needs_owner')
+        # A new file moved into place, never the old one opened and truncated.
+        self.assertNotEqual(self.file.stat().st_ino, first)
         self.assertEqual(self.file.stat().st_mode & 0o777, 0o600)
         self.assertEqual(self.file.parent.stat().st_mode & 0o777, 0o700)
         self.assertEqual([path.name for path in self.file.parent.iterdir()], [self.file.name])
+        refused = self.file.stat().st_ino
+        self.call('record', '--topic', 'github', '--state', 'available',
+                  '--evidence', 'ghp' + '_' + 'A9' * 18, success=False)
+        self.assertEqual(self.file.stat().st_ino, refused)
+        self.assertIn('contacts', self.file.read_text())
+        self.assertNotEqual(self.file.read_text(), body)
 
     def test_a_damaged_record_is_reported_rather_than_crashing(self):
         self.call('record', '--topic', 'contacts', '--state', 'available')
-        for damage in ['{"owner": ', '[]', json.dumps(dict(items=[{'state': 'available'}]))]:
+        for damage in ['{"owner": ', '[]', '"a string"']:
             self.file.write_text(damage)
             failure = self.call('record', '--topic', 'contacts', '--state', 'available',
                                 success=False)
             self.assertIn('unreadable', failure['error'])
         self.assertTrue(self.call('forget')['forgotten'])
+
+    def test_a_planted_record_is_cleaned_on_the_way_out(self):
+        secret = 'ghp' + '_' + 'A9' * 18
+        self.call('record', '--topic', 'contacts', '--state', 'available')
+        self.file.write_text(json.dumps(dict(
+            owner=secret, language='Portuguese', updated='2026-09-17T00:00:00+00:00',
+            items=[dict(topic='github', wanted='sure', state='available',
+                        evidence='the token is ' + secret, checked='2026-09-17T00:00:00+00:00',
+                        extra=dict(nested=secret)),
+                   dict(state='available'),
+                   dict(topic='imessage', wanted=True, state='available',
+                        evidence='plow_list_skills listed imessage',
+                        checked='2026-09-17T00:00:00+00:00')])))
+        shown = self.call('show')
+        self.assertNotIn(secret, json.dumps(shown))
+        self.assertIsNone(shown['owner'])
+        self.assertEqual(shown['language'], 'Portuguese')
+        self.assertEqual([item['topic'] for item in shown['items']], ['github', 'imessage'])
+        self.assertEqual(sorted(shown['items'][0]),
+                         ['checked', 'evidence', 'state', 'topic', 'wanted'])
+        self.assertIsNone(shown['items'][0]['evidence'])
+        self.assertIsNone(shown['items'][0]['wanted'])
+        self.assertEqual(shown['items'][1]['evidence'], 'plow_list_skills listed imessage')
+        self.call('record', '--topic', 'github', '--state', 'needs_owner')
+        self.assertNotIn(secret, self.file.read_text())
 
     def test_a_home_is_needed_before_anything_is_written(self):
         result = subprocess.run([sys.executable, str(SCRIPT), 'show'],

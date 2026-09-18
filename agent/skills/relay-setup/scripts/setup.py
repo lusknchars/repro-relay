@@ -11,16 +11,22 @@ import sys
 STATES = ('available', 'needs_owner', 'unavailable')
 SLUG = re.compile(r'[a-z0-9-]{1,40}\Z')
 # Known credential prefixes, at the start of a word so ordinary text is safe.
+# Case sensitive on purpose: every real prefix is fixed case, and ignoring case
+# turned the AWS prefix into the word Asia.
 PREFIXES = re.compile(r'(?<![A-Za-z0-9_])(gh[pousr]_|github_pat_|glpat-|xox[abprs]-|'
                       r'sk-|sk_live_|sk_test_|pk_live_|AKIA|ASIA|AIza|ya29\.|npm_|'
-                      r'pypi-|hf_|-----BEGIN)', re.IGNORECASE)
+                      r'pypi-|hf_|-----BEGIN)')
 RUN = re.compile(r'[A-Za-z0-9_+=-]{24,}')
 
 
-def private(value):
-    """Refuse anything shaped like a token, a password or a key. docs/GITHUB-ACCESS.md."""
-    runs = [run for run in RUN.findall(value)
-            if any(c.isdigit() for c in run) and any(c.isalpha() for c in run)]
+def private(value, free_text=True):
+    """Refuse anything shaped like a token, a password or a key. docs/GITHUB-ACCESS.md.
+
+    The long random run only applies to free text. A topic is already limited to
+    lowercase letters, digits and dashes, and a long repository name is not a secret.
+    """
+    runs = free_text and [run for run in RUN.findall(value)
+                          if any(c.isdigit() for c in run) and any(c.isalpha() for c in run)]
     if runs or PREFIXES.search(value):
         raise ValueError('credentials are never stored here; the owner signs in themselves, '
                          'for example gh auth login in their own terminal')
@@ -31,7 +37,16 @@ def topic(value):
     if not isinstance(value, str) or not SLUG.match(value):
         raise ValueError('topic must be 1 to 40 characters of lowercase letters, '
                          'digits and dashes')
-    return private(value)
+    return private(value, free_text=False)
+
+
+def wanted(value):
+    if value is None:
+        return None
+    if value not in ('yes', 'no'):
+        # Never echo the value: someone could type a secret here.
+        raise ValueError('wanted must be yes or no')
+    return value == 'yes'
 
 
 def state(value):
@@ -57,6 +72,39 @@ def store():
     return folder / 'relay-setup.json'
 
 
+def keep(value, maximum, free_text=True):
+    """A stored string that is still safe to hand back, or None."""
+    if not isinstance(value, str) or not value.strip() or len(value) > maximum:
+        return None
+    try:
+        return private(value.strip(), free_text=free_text)
+    except ValueError:
+        return None
+
+
+def clean(record):
+    """Rebuild from the known fields only. A file can be edited by hand or by a
+    mistake, and whatever it holds is printed straight into the agent's context,
+    so anything unexpected or credential shaped is dropped rather than carried."""
+    items, seen = [], set()
+    for one in record['items']:
+        if not isinstance(one, dict):
+            continue
+        name = keep(one.get('topic'), 40, free_text=False)
+        if name is None or not SLUG.match(name) or name in seen:
+            continue
+        if one.get('state') not in STATES:
+            continue
+        seen.add(name)
+        items.append(dict(topic=name,
+                          wanted=one['wanted'] if isinstance(one.get('wanted'), bool) else None,
+                          state=one['state'],
+                          evidence=keep(one.get('evidence'), 300),
+                          checked=keep(one.get('checked'), 40)))
+    return dict(owner=keep(record.get('owner'), 100), language=keep(record.get('language'), 40),
+                updated=keep(record.get('updated'), 40), items=items)
+
+
 def read(path):
     if not path.exists():
         return dict(owner=None, language=None, updated=None, items=[])
@@ -71,11 +119,7 @@ def read(path):
         raise damaged from None
     if not isinstance(record, dict) or not isinstance(record.get('items'), list):
         raise damaged
-    if not all(isinstance(one, dict) and isinstance(one.get('topic'), str)
-               for one in record['items']):
-        raise damaged
-    return dict(owner=record.get('owner'), language=record.get('language'),
-                updated=record.get('updated'), items=record['items'])
+    return clean(record)
 
 
 def write(path, record):
@@ -93,6 +137,7 @@ def upsert(record, args):
     """Keep one item per topic, and keep an answer that was not asked again."""
     name = topic(args.topic)
     said = state(args.state)
+    answer = wanted(args.wanted)
     evidence = text(args.evidence, 'evidence', 300)
     item = next((one for one in record['items'] if one['topic'] == name), None)
     if item is None:
@@ -100,8 +145,8 @@ def upsert(record, args):
         record['items'].append(item)
     item['state'] = said
     item['checked'] = dt.datetime.now(dt.timezone.utc).isoformat()
-    if args.wanted is not None:
-        item['wanted'] = args.wanted == 'yes'
+    if answer is not None:
+        item['wanted'] = answer
     if evidence is not None:
         item['evidence'] = evidence
     return item
@@ -136,7 +181,7 @@ def main(argv=None):
     entry = commands.add_parser('record', help='save one answer as it comes')
     entry.add_argument('--topic', required=True, help='short slug, for example github')
     entry.add_argument('--state', required=True, help=' or '.join(STATES))
-    entry.add_argument('--wanted', choices=['yes', 'no'], help='what the person answered')
+    entry.add_argument('--wanted', help='what the person answered, yes or no')
     entry.add_argument('--evidence', help='one sentence naming what proved it')
     who = commands.add_parser('owner', help='who this is and the language they use')
     who.add_argument('--name', required=True, help='the name they gave')
