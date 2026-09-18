@@ -1,0 +1,82 @@
+name: Windows probe
+# Temporary: measures what the installer actually does on Windows, so the fixes
+# are written against real behaviour rather than assumptions. Removed once the
+# Windows install job in windows-compatibility.yml covers this ground.
+on: [push, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Python and platform identity
+        run: |
+          python -c "import sys, os; print('platform', sys.platform); print('os.name', os.name)"
+      - name: Does the entry point run at all
+        continue-on-error: true
+        run: |
+          python relay --help
+      - name: Does the agent subcommand run
+        continue-on-error: true
+        run: |
+          python relay agent --help
+      - name: The installer test suite on Windows
+        continue-on-error: true
+        run: |
+          python -m unittest discover -s integrations/relay-terminal -p "test_*.py" -v 2>&1 | Select-Object -Last 40
+        shell: pwsh
+      - name: The agent test suite on Windows
+        continue-on-error: true
+        run: |
+          python -m unittest discover -s agent/tests -p "test_*.py" 2>&1 | Select-Object -Last 20
+        shell: pwsh
+      - name: What chmod 0600 actually does here
+        shell: pwsh
+        run: |
+          python - <<'PY'
+          import os, pathlib, stat, subprocess, tempfile
+          d = pathlib.Path(tempfile.mkdtemp())
+          f = d / 'credential.json'
+          f.write_text('{"token": "not-a-real-token"}')
+          os.chmod(f, 0o600)
+          print('mode after chmod 0600:', oct(stat.S_IMODE(f.stat().st_mode)))
+          print('--- icacls, who can actually read it ---')
+          print(subprocess.run(['icacls', str(f)], capture_output=True, text=True).stdout)
+          PY
+      - name: Can icacls lock a file to the current user
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          import getpass, os, pathlib, subprocess, tempfile
+          d = pathlib.Path(tempfile.mkdtemp())
+          f = d / 'credential.json'
+          f.write_text('{"token": "not-a-real-token"}')
+          user = os.environ.get('USERNAME') or getpass.getuser()
+          r = subprocess.run(['icacls', str(f), '/inheritance:r', '/grant:r', f'{user}:F'],
+                             capture_output=True, text=True)
+          print('icacls exit', r.returncode)
+          print(r.stdout, r.stderr)
+          print('--- resulting access ---')
+          print(subprocess.run(['icacls', str(f)], capture_output=True, text=True).stdout)
+          PY
+      - name: Does the execution ledger refuse on Windows
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          import os
+          print('has O_NOFOLLOW:', hasattr(os, 'O_NOFOLLOW'))
+          print('open supports dir_fd:', os.open in os.supports_dir_fd)
+          PY
+      - name: Is docker usable for linux containers here
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          docker version
+          docker compose version
