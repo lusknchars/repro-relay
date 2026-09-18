@@ -15,15 +15,40 @@ import sys
 from types import SimpleNamespace
 from bridge import BridgeError, JsonHTTP, private_credentials, from_config
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'relay-terminal'))
+import private_files  # noqa: E402  (found next door, the way bridge.py finds it)
+
 ROOT = Path(__file__).resolve().parents[2]
 ORIGIN = 'https://api.plow.co'
+
+
+def protect_or_stop(path):
+    """Make a path private, or stop with the reason rather than a general failure."""
+    try:
+        private_files.protect(path)
+    except private_files.PrivacyError as error:
+        raise BridgeError(str(error)) from None
+
+
+def write_private(path, body):
+    """The client's private write, done the way this host makes a file private."""
+    try:
+        return private_files.write_privately(path, body)
+    except private_files.PrivacyError as error:
+        raise BridgeError(str(error)) from None
 
 
 def official_client():
     tool = next((path for path in [ROOT / '.data/tools/plow-agents', ROOT / '.data/plow-agents/bin/plow-agents'] if path.is_file()), None)
     if tool is None:
         raise BridgeError('Install the pinned official plow-agents client using integrations/plow/README.md first.')
-    return runpy.run_path(str(tool))
+    client = runpy.run_path(str(tool))
+    if private_files.windows():
+        # The client writes with os.fchmod and a plain rename, neither of which Windows has
+        # in the form it expects. run_path hands back a copy of its globals; its functions
+        # read the original, so the replacement goes there.
+        client['mint'].__globals__['write_private'] = write_private
+    return client
 
 
 def connect(line_id=None):
@@ -70,7 +95,12 @@ def connect(line_id=None):
     config = {'relay_url':'http://127.0.0.1:8178', 'credentials_file':'../plow-credentials',
               'state_dir':'../plow-receipts', 'line_id':line['uid'], 'chat_id':chats[0]['uid'], 'actor':'Local maintainer'}
     directory = ROOT / '.data/plow'
-    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    try:
+        directory.mkdir(mode=0o700, parents=True)
+    except FileExistsError:
+        pass  # an existing folder keeps whatever the owner set on it
+    else:
+        protect_or_stop(directory)
     path = directory / 'bridge.json'
     if path.exists():
         previous = json.loads(path.read_text())
@@ -78,10 +108,11 @@ def connect(line_id=None):
             raise BridgeError('A different line or chat is already configured. It was not overwritten.')
     else:
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, 'w') as output:
+        with os.fdopen(fd, 'w', encoding='utf-8', newline='') as output:
             json.dump(config, output, indent=2)
             output.flush()
             os.fsync(output.fileno())
+        protect_or_stop(path)  # the mode above is ignored on Windows
     result = from_config(path).doctor()
     result['line_name'] = line.get('display_name') or identity.get('line', {}).get('display_name') or 'Plow assistant'
     return result

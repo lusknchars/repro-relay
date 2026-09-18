@@ -521,31 +521,11 @@ def portable_private_write(client):
 
 
 def windows_write_private(path, body):
-    """Write one private file beside its destination, then move it into place.
-
-    It is locked to this account before the token is written, so it is never even briefly
-    readable by anyone else, and a write that cannot be finished leaves the old file alone.
-    """
-    destination = os.path.abspath(path)
-    directory = os.path.dirname(destination) or '.'
+    """The client's private write, done the way this host makes a file private."""
     try:
-        os.makedirs(directory)
-    except FileExistsError:
-        pass
-    else:
-        protect_or_stop(directory)
-    descriptor, temporary = tempfile.mkstemp(dir=directory, prefix='.plow-agents.', suffix='.new')
-    try:
-        with os.fdopen(descriptor, 'w', encoding='utf-8', newline='') as handle:
-            protect_or_stop(temporary)
-            handle.write(body)
-        private_files.replace_atomically(temporary, destination)
-    except BaseException:
-        with contextlib.suppress(OSError):
-            os.unlink(temporary)
-        raise
-    protect_or_stop(destination)
-    return destination
+        return private_files.write_privately(path, body)
+    except private_files.PrivacyError as error:
+        raise AgentError(str(error)) from None
 
 
 def download_problem(error):

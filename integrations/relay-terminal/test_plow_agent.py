@@ -2469,8 +2469,10 @@ class WindowsCredentialTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, windows_host():
             destination = Path(directory) / 'agent' / 'plow-credentials'
             with held_by_another_process(destination, times=private_files.REPLACE_ATTEMPTS), \
-                    patch.object(private_files.time, 'sleep'), self.assertRaises(private_files.PrivacyError):
+                    patch.object(private_files.time, 'sleep'), \
+                    self.assertRaises(plow_agent.AgentError) as error:
                 self.mint(plow, Path(directory))
+            self.assertIn('holding it', str(error.exception))
             self.assertFalse(destination.exists())
             self.assertEqual(list(destination.parent.glob('.plow-agents.*')), [])
         self.assertIn('DELETE', [method for method, _ in plow.sent])

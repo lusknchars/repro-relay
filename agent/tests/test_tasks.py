@@ -6,6 +6,11 @@ import sys
 import tempfile
 import unittest
 
+if os.name != 'posix':
+    # The task store is the agent's own, copied into the image and run inside the Linux
+    # container. Nothing on the owner's computer reads or writes it.
+    raise unittest.SkipTest('the task store runs inside the Linux container')
+
 SCRIPT = Path(__file__).resolve().parents[1] / 'skills/relay-reach/scripts/tasks.py'
 
 

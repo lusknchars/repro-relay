@@ -10,12 +10,14 @@ written as though it had been.
 This is also where the installer keeps the few host facts it needs: which computer it is
 running on, how the command is typed, and where the account's home folder is.
 """
+import contextlib
 import getpass
 import os
 from pathlib import Path
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 
 FILE_MODE = 0o600
@@ -268,6 +270,36 @@ def open_private(path):
     except BaseException:
         os.close(descriptor)
         raise
+
+
+def write_privately(path, body):
+    """Write one private file beside its destination, then move it into place.
+
+    It is locked to this account before the contents are written, so a token is never even
+    briefly readable by anyone else, and a write that cannot be finished leaves whatever was
+    there alone. newline='' because Windows text mode would turn each \n into \r\n, and the
+    file would then not hold the bytes it was given.
+    """
+    destination = os.path.abspath(path)
+    directory = os.path.dirname(destination) or '.'
+    try:
+        os.makedirs(directory)
+    except FileExistsError:
+        pass
+    else:
+        protect(directory)
+    descriptor, temporary = tempfile.mkstemp(dir=directory, prefix='.private.', suffix='.new')
+    try:
+        with os.fdopen(descriptor, 'w', encoding='utf-8', newline='') as handle:
+            protect(temporary)
+            handle.write(body)
+        replace_atomically(temporary, destination)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(temporary)
+        raise
+    protect(destination)
+    return destination
 
 
 def replace_atomically(source, target):

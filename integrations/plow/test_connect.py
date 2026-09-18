@@ -10,6 +10,7 @@ import urllib.parse
 import urllib.request
 import connect
 from bridge import BridgeError
+import private_files  # connect puts the installer's own folder on the path
 
 
 def pinned_client():
@@ -63,7 +64,7 @@ class AutoConnectTests(unittest.TestCase):
         result=connect.connect()
         saved=self.root/'.data/plow/bridge.json'
         self.assertEqual(json.loads(saved.read_text())['chat_id'],'cht_fixture')
-        self.assertEqual(saved.stat().st_mode&0o777,0o600)
+        self.assertTrue(private_files.is_private(saved))
         self.assertEqual(result['line_name'],'Fixture assistant')
         self.assertNotIn('fixture-private-token',json.dumps(result)+saved.read_text())
         self.official['mint'].assert_not_called()
@@ -105,8 +106,8 @@ class OfficialClientMintTests(unittest.TestCase):
                     patch.object(connect, 'JsonHTTP', return_value=client) as http, patch.object(connect, 'from_config', return_value=bridge):
                 connect.connect()
             credential = root/'.data/plow-credentials'
-            mode, text = credential.stat().st_mode & 0o777, credential.read_text()
-        self.assertEqual(mode, 0o600)
+            private, text = private_files.is_private(credential), credential.read_text()
+        self.assertTrue(private)
         self.assertIn('PLOW_API_BASE=https://api.plow.co\n', text)
         self.assertIn('PLOW_AGENT_TOKEN=agt_fixture_token\n', text)
         self.assertIn('# plow-agent-uid: ag_new', text)

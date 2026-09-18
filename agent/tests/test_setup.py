@@ -6,6 +6,11 @@ import sys
 import tempfile
 import unittest
 
+if os.name != 'posix':
+    # The setup skill is copied into the image and runs inside the Linux container, where
+    # the POSIX mode on its record is what keeps that record private.
+    raise unittest.SkipTest('the setup skill runs inside the Linux container')
+
 SCRIPT = Path(__file__).resolve().parents[1] / 'skills/relay-setup/scripts/setup.py'
 
 

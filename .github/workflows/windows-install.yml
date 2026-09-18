@@ -30,16 +30,32 @@ jobs:
         run: python -m unittest discover -s agent/tests -p "test_*.py"
       - name: The Plow bridge suite passes on Windows
         run: python -m unittest discover -s integrations/plow -p "test_*.py"
-      - name: A file the installer calls private is private on this real Windows host
+      - name: What the installer calls private is private on this real Windows host
         run: |
           python - <<'PY'
           import pathlib, sys, tempfile
           sys.path.insert(0, 'integrations/relay-terminal')
           import private_files
-          f = pathlib.Path(tempfile.mkdtemp()) / 'credential'
-          f.write_text('placeholder')
-          private_files.protect(f)
-          if not private_files.is_private(f):
+          root = pathlib.Path(tempfile.mkdtemp())
+          credential = root / 'credential'
+          credential.write_text('placeholder')
+          private_files.protect(credential)
+          if not private_files.is_private(credential):
               raise SystemExit('protect() returned but the file is not private on this host')
-          print('protect and is_private agree on real Windows')
+          # A folder as well as a file, and then a file written inside it: the installer
+          # protects .data/setup and .data/agent and only afterwards writes the lock, the
+          # log and the install record into them. A grant without the inheritance flags
+          # leaves those with no access list at all, which nobody can open, owner included.
+          folder = root / 'state'
+          folder.mkdir()
+          private_files.protect(folder)
+          if not private_files.is_private(folder):
+              raise SystemExit('protect() returned but the folder is not private on this host')
+          inside = folder / 'service.log'
+          inside.write_text('placeholder')
+          if inside.read_text() != 'placeholder':
+              raise SystemExit('a file written inside a protected folder could not be read back')
+          if not private_files.is_private(inside):
+              raise SystemExit('a file inside a protected folder is not private on this host')
+          print('protect and is_private agree on real Windows: a file, a folder, and what is written inside it')
           PY
