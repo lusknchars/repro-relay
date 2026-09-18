@@ -190,6 +190,16 @@ class SetupRecord(unittest.TestCase):
         self.call('record', '--topic', 'github', '--state', 'needs_owner')
         self.assertNotIn(secret, self.file.read_text())
 
+    def test_the_mac_topic_survives_a_platform_that_cannot_have_latch(self):
+        # Windows has no Latch, so the topic is recorded from that fact, and the
+        # name stays the one earlier records already use.
+        self.call('record', '--topic', 'mac', '--state', 'unavailable',
+                  '--evidence', 'RELAY_OWNER_PLATFORM is windows, and Latch is a Mac app')
+        item = self.call('show')['items'][0]
+        self.assertEqual(item['topic'], 'mac')
+        self.assertEqual(item['state'], 'unavailable')
+        self.assertIsNone(item['wanted'])
+
     def test_a_home_is_needed_before_anything_is_written(self):
         result = subprocess.run([sys.executable, str(SCRIPT), 'show'],
                                 env={key: value for key, value in os.environ.items()
@@ -197,6 +207,47 @@ class SetupRecord(unittest.TestCase):
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 1)
         self.assertIn('HERMES_HOME', json.loads(result.stderr)['error'])
+
+
+class OwnerPlatform(unittest.TestCase):
+    """The machine the owner installed from, so the questions match it."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.home = Path(self.temp.name)
+
+    def platform(self, value=None, home=True):
+        environment = {key: item for key, item in os.environ.items()
+                       if key not in ('RELAY_OWNER_PLATFORM', 'HERMES_HOME')}
+        if value is not None:
+            environment['RELAY_OWNER_PLATFORM'] = value
+        if home:
+            environment['HERMES_HOME'] = str(self.home)
+        result = subprocess.run([sys.executable, str(SCRIPT), 'platform'],
+                                env=environment, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(result.stdout)['platform']
+
+    def test_the_three_installed_platforms_are_reported_as_they_were_written(self):
+        for value in ['macos', 'windows', 'linux']:
+            self.assertEqual(self.platform(value), value)
+
+    def test_an_agent_installed_before_the_variable_existed_is_unknown(self):
+        self.assertEqual(self.platform(), 'unknown')
+
+    def test_anything_unexpected_is_unknown_and_never_macos(self):
+        for value in ['', '   ', 'darwin', 'osx', 'mac', 'win32', 'windows linux', 'unknown']:
+            self.assertEqual(self.platform(value), 'unknown')
+
+    def test_spacing_and_capitals_are_still_the_same_three_answers(self):
+        self.assertEqual(self.platform(' Windows\n'), 'windows')
+        self.assertEqual(self.platform('MACOS'), 'macos')
+
+    def test_the_platform_answers_without_a_home_and_writes_nothing(self):
+        self.assertEqual(self.platform('windows', home=False), 'windows')
+        self.assertEqual(self.platform('macos'), 'macos')
+        self.assertEqual(list(self.home.iterdir()), [])
 
 
 if __name__ == '__main__':

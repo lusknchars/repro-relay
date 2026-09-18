@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""What this owner wants connected, and what their Mac gives. No network."""
+"""What this owner wants connected, and what their own computer gives. No network."""
 import argparse
 import datetime as dt
 import json
@@ -9,6 +9,7 @@ import re
 import sys
 
 STATES = ('available', 'needs_owner', 'unavailable')
+PLATFORMS = ('macos', 'windows', 'linux')
 SLUG = re.compile(r'[a-z0-9-]{1,40}\Z')
 # Known credential prefixes, at the start of a word so ordinary text is safe.
 # Case sensitive on purpose: every real prefix is fixed case, and ignoring case
@@ -61,6 +62,16 @@ def text(value, name, maximum):
     if not isinstance(value, str) or not value.strip() or len(value) > maximum:
         raise ValueError(f'{name} must be nonempty text, at most {maximum} characters')
     return private(value.strip())
+
+
+def installed():
+    """The machine the owner installed from, from the environment the installer set.
+
+    An agent installed before that variable existed has none, and so does one
+    given a value nobody recognises. Both are unknown, and unknown is not macOS.
+    """
+    value = os.environ.get('RELAY_OWNER_PLATFORM', '').strip().lower()
+    return value if value in PLATFORMS else 'unknown'
 
 
 def store():
@@ -153,6 +164,10 @@ def upsert(record, args):
 
 
 def execute(args):
+    if args.command == 'platform':
+        # Reading the environment needs no record, so it answers even when the
+        # home is missing. An agent that cannot get an answer here guesses.
+        return {'platform': installed()}
     path = store()
     if args.command == 'forget':
         held = path.exists()
@@ -178,6 +193,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
     commands.add_parser('show', help='the whole record, empty when there is none')
+    commands.add_parser('platform', help='the machine the owner installed from: '
+                                         + ', '.join(PLATFORMS) + ' or unknown')
     entry = commands.add_parser('record', help='save one answer as it comes')
     entry.add_argument('--topic', required=True, help='short slug, for example github')
     entry.add_argument('--state', required=True, help=' or '.join(STATES))

@@ -19,7 +19,7 @@
   <a href="docs/STATUS.md">Project status</a>
 </p>
 
-Repro Relay is an engineering agent you reach from your phone. Text it on your own Plow line to save tasks from meeting notes, or to get a digest of a technical talk read in your own browser. On your Mac, the Relay app holds the deeper work: bug investigations with evidence, reviewed memory, memory layers and harnesses. Today those are set in the app; changing them from your phone is the next step.
+Repro Relay is an engineering agent you reach from your phone. Text it on your own Plow line to save tasks from meeting notes, or, with a Mac running Plow Latch, to get a digest of a technical talk read in your own browser. The Relay app holds the deeper work: bug investigations with evidence, reviewed memory, memory layers and harnesses. It runs natively on your Mac, and in the browser on Windows and Linux. Today those are set in the app; changing them from your phone is the next step.
 
 ## Quick start
 
@@ -41,6 +41,8 @@ One command: it checks Docker, signs you in to Plow (you send one activation tex
 ```
 
 Needs Docker Desktop running, Python 3, and the phone that owns your Plow account. The agent's model access comes from Plow, so no provider key is required.
+
+In Windows PowerShell, use `python relay agent`, `python relay agent status` and the same form for the rest: `relay` is a Python file, so `./relay` does not run there. The agent itself works on Windows; only the tools that touch your own computer need a Mac. See [Repro Relay on Windows](docs/WINDOWS.md).
 
 ### The app, already built
 
@@ -138,7 +140,7 @@ Source setup requires Python 3.9+, Node 24+, Rust stable, and Docker with Compos
 ./relay setup --web     # Use the browser app instead
 ```
 
-Linux and Windows use the browser app by default. In Windows PowerShell, use `python relay setup --web`.
+Linux and Windows use the browser app by default. In Windows PowerShell, use `python relay setup --web`, and read the rest of this section's `./relay ...` commands as `python relay ...`. See [Repro Relay on Windows](docs/WINDOWS.md).
 
 Source setup reads a private `.env`, with existing process variables taking precedence. Set `DATABASE_URL` to use an existing PostgreSQL server and skip Docker. Source and packaged installations use separate database volumes; see [setup and data storage](docs/EASY-START.md).
 

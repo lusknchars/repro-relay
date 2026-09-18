@@ -1,6 +1,6 @@
 ---
 name: relay-setup
-description: Find out what this person wants connected and what their Mac actually gives, record it, and pick up from that record in a later conversation. Use on first contact, when someone asks what you can do or to set you up, and when they say set up again.
+description: Find out what this person wants connected and what their own computer actually gives, record it, and pick up from that record in a later conversation. Use on first contact, when someone asks what you can do or to set you up, and when they say set up again.
 ---
 
 # Setup
@@ -17,6 +17,13 @@ already set, and ask only what is missing. "Set up again" means `forget`, then
 start over from an empty record. If `show` exits non zero because the record is
 unreadable, say that plainly and offer to start over with `forget`. Never guess
 what it used to say.
+
+## Which computer this is
+
+Run `platform` next. It answers `macos`, `windows`, `linux` or `unknown`, from
+what the installer recorded. Plow Latch is a Mac application, so on `windows`
+and `linux` the `plow_` tools do not exist, and a question about using that
+computer cannot be true there. `unknown` is not macOS. Ask rather than assume.
 
 ## Offer it once
 
@@ -37,11 +44,19 @@ person said. `state` is what you checked, so record it only from something that
 actually happened, and name that in `evidence`.
 
 1. Who they are and what they work on. Save it with `owner --name N --language L`.
-2. Whether they want their Mac used at all. Record topic `mac`. A `plow_` tool
-   in your list proves nothing, so record `available` only once a `plow_` call
-   has actually come back. A denial or no answer is `needs_owner`, and no
-   `plow_` tools at all is `unavailable`. A no here ends the questions about
-   the Mac.
+2. Their own computer. Record topic `mac` whatever the platform is; records
+   already use that name. On `macos`, ask whether they want their Mac used at
+   all. A `plow_` tool in your list proves nothing, so record `available` only
+   once a `plow_` call has actually come back. A denial or no answer is
+   `needs_owner`, and no `plow_` tools at all is `unavailable`. On `windows` or
+   `linux`, do not ask. Say once that the tools which touch their own computer
+   need a Mac running Plow Latch and that Plow has no version for their machine,
+   then record `unavailable` with the platform as the evidence and move on. On
+   `unknown`, ask which machine they installed from before anything else here,
+   and record their answer as the evidence. A no, and any `mac` that is not
+   `available`, ends questions 3, 4 and 5: each of them needs a `plow_` call
+   that came back. If one ever does come back, there is a Mac, and the record
+   follows the call.
 3. Which of the skills their Mac publishes they want. Call `plow_list_skills`
    and name what is actually there. Never guess one and never offer a skill that
    is not published. One topic per skill, named as the Mac names it.
@@ -58,12 +73,14 @@ actually happened, and name that in `evidence`.
 
 ## Say what is true
 
-From a message you can keep your own memory of this conversation, manage your
-own task list with relay-reach, read a talk in the owner's browser with
-video-digest, and work on their Mac through Latch when they approve it.
+From a message you can keep your own memory of this conversation and manage your
+own task list with relay-reach. Both work on every platform, because you run in
+a container and the line is on Plow's side. Reading a talk in the owner's
+browser with video-digest, and working on their computer, both go through Latch,
+so both need a Mac. Where there is none, say that once instead of listing them.
 
 Relay's reviewed memory, Mem0 and the investigation harnesses live in the Relay
-app on that Mac, not in you. You cannot change them from a message. Record each
+app on their own computer, not in you. You cannot change them from a message. Record each
 as `unavailable` with that reason as its evidence, rather than implying you
 might reach them later.
 
