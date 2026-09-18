@@ -1544,7 +1544,10 @@ class FakeContainer:
         if '/command/s6-svstat' in arguments:
             if not self.gateway_up:
                 return SimpleNamespace(returncode=0, stdout='down 0 seconds, normally up\n')
-            return SimpleNamespace(returncode=0, stdout=f'up (pid {self.gateway_pid}) 5 seconds, normally up\n')
+            # Real shape (verified against the running container on 2026-09-18): "up (pid 198 pgid 198)
+            # 127022 seconds" -- a pgid and an uptime follow the pid inside the parens. An idealized
+            # "up (pid N) ..." here previously matched a since-fixed over-tight regex and hid the bug.
+            return SimpleNamespace(returncode=0, stdout=f'up (pid {self.gateway_pid} pgid {self.gateway_pid}) 5 seconds\n')
         if '/command/s6-svc' in arguments:
             self.restarts += 1
             if self.restart_fails:
@@ -1648,6 +1651,36 @@ class RestartWaitTests(unittest.TestCase):
 
     def test_no_pid_yet_also_times_out(self):
         self.assertFalse(plow_agent.wait_for_restart(111, read_pid=lambda: None, sleep=lambda s: None, timeout=4))
+
+
+class GatewayPidTests(unittest.TestCase):
+    """gateway_pid(): parses s6-svstat's real output, not an idealized one.
+
+    REAL_UP is verbatim from the running container on 2026-09-18:
+        $ docker compose exec -T agent /command/s6-svstat /run/service/hermes-gateway
+        up (pid 198 pgid 198) 127022 seconds
+    Do not tighten the pattern to assume nothing follows the pid's digits: that was fix round 1's bug.
+    """
+    REAL_UP = 'up (pid 198 pgid 198) 127022 seconds\n'
+
+    def fake_compose(self, stdout, returncode=0):
+        return lambda *arguments, **options: SimpleNamespace(returncode=returncode, stdout=stdout)
+
+    def test_the_real_svstat_line_is_parsed(self):
+        with patch.object(plow_agent, 'compose', self.fake_compose(self.REAL_UP)):
+            self.assertEqual(plow_agent.gateway_pid(), 198)
+
+    def test_a_down_line_is_not_up(self):
+        with patch.object(plow_agent, 'compose', self.fake_compose('down 0 seconds, normally up\n')):
+            self.assertIsNone(plow_agent.gateway_pid())
+
+    def test_an_unrecognised_line_is_not_up(self):
+        with patch.object(plow_agent, 'compose', self.fake_compose('something else entirely\n')):
+            self.assertIsNone(plow_agent.gateway_pid())
+
+    def test_a_nonzero_exit_is_not_up_even_with_an_up_looking_line(self):
+        with patch.object(plow_agent, 'compose', self.fake_compose(self.REAL_UP, returncode=1)):
+            self.assertIsNone(plow_agent.gateway_pid())
 
 
 @unittest.skipUnless(HAVE_YAML, 'PyYAML is not installed')

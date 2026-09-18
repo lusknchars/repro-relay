@@ -847,11 +847,16 @@ GATEWAY_TIMEOUT = 180
 
 
 def gateway_pid():
-    """The gateway's current pid according to s6-svstat, or None when it is not reported up."""
+    """The gateway's current pid according to s6-svstat, or None when it is not reported up.
+
+    Stops at the pid's digits rather than assuming what follows them: the real line also carries a pgid and
+    an uptime ("up (pid 198 pgid 198) 127022 seconds"), which `up \\(pid (\\d+)\\)` -- requiring the closing
+    paren right after the digits -- does not match, verified against the running container on 2026-09-18.
+    """
     result = compose('exec', '-T', 'agent', '/command/s6-svstat', GATEWAY_SERVICE, capture=True)
     if result.returncode:
         return None
-    match = re.match(r'up \(pid (\d+)\)', result.stdout.strip())
+    match = re.match(r'up \(pid (\d+)', result.stdout.strip())
     return int(match.group(1)) if match else None
 
 
