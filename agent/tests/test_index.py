@@ -1,3 +1,4 @@
+import hashlib
 import importlib.util
 import os
 from pathlib import Path
@@ -30,11 +31,17 @@ class IndexWrapper(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     index.credentials(path)
                 private_files.protect(path)
-            if symlinks_available():  # needs SeCreateSymbolicLinkPrivilege on Windows
-                link = Path(folder) / 'link'
-                link.symlink_to(path)
-                with self.assertRaises((OSError, ValueError)):  # ELOOP here, a refusal by name on Windows
-                    index.credentials(link)
+
+    @unittest.skipUnless(symlinks_available(), 'creating a link needs SeCreateSymbolicLinkPrivilege here')
+    def test_a_link_where_the_credential_should_be_is_not_followed(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'credentials'
+            path.write_text('PLOW_API_BASE=https://api.plow.co\nPLOW_AGENT_TOKEN=agt_fixture_token\n')
+            private_files.protect(path)
+            link = Path(folder) / 'link'
+            link.symlink_to(path)
+            with self.assertRaises((OSError, ValueError)):  # ELOOP here, a refusal by name on Windows
+                index.credentials(link)
 
     def test_credentials_reject_wrong_origin_and_duplicates(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -71,6 +78,30 @@ class IndexWrapper(unittest.TestCase):
                 env = run.call_args.kwargs['env']
                 self.assertNotIn('PLOW_AGENT_TOKEN', env)
                 self.assertEqual(env['HERMES_HOME'], str(home.resolve()))
+
+
+class ClientCacheTests(unittest.TestCase):
+    """The folder the pinned index client is cached in, which a mode alone does not make private."""
+
+    def test_the_cache_folder_is_private_where_a_mode_means_nothing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder) / 'agent'
+            (root / 'vendor').mkdir(parents=True)
+            data = b'print("pinned client")\n'
+            sha = 'a' * 40
+            (root / 'vendor/client.pin').write_text(
+                f'sha={sha}\npath=standalone/agent_index_client.py\nsha256={hashlib.sha256(data).hexdigest()}\n')
+            home = Path(folder) / 'home'
+            cache = home / '.relay-index-client'
+            cache.mkdir(parents=True)
+            (cache / f'{sha}.py').write_bytes(data)
+            with windows_host() as windows, patch.object(index, 'ROOT', root), \
+                    patch.object(index.urllib.request, 'urlopen',
+                                 side_effect=AssertionError('a cached client must not be downloaded')):
+                self.assertEqual(index.client(home), cache / f'{sha}.py')
+                self.assertTrue(private_files.is_private(cache))
+                self.assertEqual(windows.principals(cache),
+                                 ['runneradmin', 'NT AUTHORITY\\SYSTEM', 'BUILTIN\\Administrators'])
 
 
 class WindowsCredentialTests(unittest.TestCase):

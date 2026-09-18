@@ -432,8 +432,7 @@ def windows_process_alive(pid, kernel32=None):
     """
     try:
         if kernel32 is None:
-            import ctypes
-            kernel32 = ctypes.WinDLL('kernel32')
+            kernel32 = windows_kernel32()
         handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
         if handle:
             kernel32.CloseHandle(handle)
@@ -441,6 +440,24 @@ def windows_process_alive(pid, kernel32=None):
         return kernel32.GetLastError() != ERROR_INVALID_PARAMETER
     except (OSError, AttributeError, ValueError):
         return True  # the question could not be asked, so the lock stays where it is
+
+
+def windows_kernel32():
+    """kernel32, with the shapes a handle and an error code actually have.
+
+    Without a restype a returned HANDLE comes back through a C int and a high one is
+    truncated, which would read as no handle and so as a process that is not there. The error
+    belongs to the call, so it is taken from ctypes rather than from a second call that
+    anything in between could have reset.
+    """
+    import ctypes
+    library = ctypes.WinDLL('kernel32', use_last_error=True)
+    library.OpenProcess.restype = ctypes.c_void_p
+    library.OpenProcess.argtypes = (ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32)
+    library.CloseHandle.restype = ctypes.c_int
+    library.CloseHandle.argtypes = (ctypes.c_void_p,)
+    return SimpleNamespace(OpenProcess=library.OpenProcess, CloseHandle=library.CloseHandle,
+                           GetLastError=ctypes.get_last_error)
 
 
 @contextlib.contextmanager
@@ -499,8 +516,13 @@ def official():
             raise AgentError('The official Plow client did not match its pinned checksum. Nothing was installed.')
         CLIENT.write_bytes(data)
         protect_or_stop(CLIENT, executable=True)
-    elif hashlib.sha256(CLIENT.read_bytes()).hexdigest() != CLIENT_SHA256:
-        raise AgentError(f'{CLIENT} differs from the pinned official client. Inspect it before continuing.')
+    else:
+        # Before the checksum, not after: one written by an installer from before any of this
+        # keeps whatever it inherited, and verifying and then reading again is a window for
+        # anyone who can write it.
+        protect_or_stop(CLIENT, executable=True)
+        if hashlib.sha256(CLIENT.read_bytes()).hexdigest() != CLIENT_SHA256:
+            raise AgentError(f'{CLIENT} differs from the pinned official client. Inspect it before continuing.')
     return portable_private_write(runpy.run_path(str(CLIENT)))
 
 
@@ -1252,10 +1274,10 @@ def settle_signin(path, marker, minted):
     if recorded and file_digest(path) == recorded:
         path.unlink()
         if flag.exists():
-            print('Sign-in ........... removed from this Mac; it replaced an earlier sign-in, so run plow-agents login '
-                  'again if you still need one', flush=True)
+            print('Sign-in ........... removed from this computer; it replaced an earlier sign-in, so run '
+                  'plow-agents login again if you still need one', flush=True)
         else:
-            print('Sign-in ........... removed from this Mac; the agent keeps its own credential', flush=True)
+            print('Sign-in ........... removed from this computer; the agent keeps its own credential', flush=True)
     elif path.exists() and (recorded or minted):
         # A sign-in someone made after this installer's, or one this run minted with but did not create.
         print('Sign-in ........... kept; revoke the plow-agents session in Plow Latch if you no longer need it', flush=True)
@@ -1329,7 +1351,7 @@ def install(args):
 
 
 def plow_tokens():
-    """The account sign-in and agent credential tokens on this Mac, read only to keep them out of the log."""
+    """The account sign-in and agent credential tokens on this computer, read only to keep them out of the log."""
     tokens = []
     with contextlib.suppress(OSError, UnicodeError):
         tokens.append(signin_path().read_text().strip())
@@ -1343,15 +1365,25 @@ def record_failure(error, path):
     """Append the full traceback to the install log under a UTC timestamp, with any Plow token removed.
 
     A traceback holds code and exception text only: no environment, locals or file contents.
+    It is made private while the file is still empty, and a log this call created is removed
+    when that cannot be done, so the run never reports that the details could not be saved
+    while a file holding them is sitting on disk for anyone who can read the folder.
     """
     text = ''.join(traceback.format_exception(type(error), error, error.__traceback__))
     for token in plow_tokens():
         text = text.replace(token, '[token removed]')
     path.parent.mkdir(parents=True, exist_ok=True)
-    with os.fdopen(os.open(path, os.O_CREAT | os.O_APPEND | os.O_WRONLY, 0o600), 'a',
-                   encoding='utf-8', newline='') as log:
-        log.write(f'=== {datetime.now(timezone.utc):%Y-%m-%dT%H:%M:%SZ} ===\n{text}\n')
-    private_files.protect(path)
+    created = not path.exists()
+    try:
+        with os.fdopen(os.open(path, os.O_CREAT | os.O_APPEND | os.O_WRONLY, 0o600), 'a',
+                       encoding='utf-8', newline='') as log:
+            private_files.protect(path)
+            log.write(f'=== {datetime.now(timezone.utc):%Y-%m-%dT%H:%M:%SZ} ===\n{text}\n')
+    except BaseException:
+        if created:
+            with contextlib.suppress(OSError):
+                path.unlink()
+        raise
 
 
 def run_agent(args):

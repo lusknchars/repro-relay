@@ -93,10 +93,11 @@ class LedgerTests(unittest.TestCase):
             with self.assertRaises(ValueError): self.ledger.read('code.txt')
         self.assertEqual(self.ledger.inform()['records'], 0)
 
-    def test_storage_cannot_be_inside_checkout_or_follow_symlinks(self):
+    def test_storage_cannot_be_inside_the_checkout(self):
         with self.assertRaises(ValueError): Ledger(self.root, self.root / 'state.db', self.anchor)
-        if not symlinks_available():  # SeCreateSymbolicLinkPrivilege is not granted here
-            return
+
+    @unittest.skipUnless(symlinks_available(), 'creating a link needs SeCreateSymbolicLinkPrivilege here')
+    def test_storage_cannot_follow_symlinks(self):
         link = self.directory / 'link'; link.symlink_to(self.database.parent, target_is_directory=True)
         with self.assertRaises(ValueError): Ledger(self.root, link / 'other.db', self.anchor)
         link_file = self.database.parent / 'link.db'; link_file.symlink_to(self.database)

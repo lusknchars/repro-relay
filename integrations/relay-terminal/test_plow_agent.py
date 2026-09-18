@@ -27,8 +27,8 @@ import urllib.parse
 import urllib.request
 
 import cli
-from fake_windows import (FakeWindows, client_write, held_by_another_process, pinned_client_double,
-                          symlinks_available, windows_host)
+from fake_windows import (FakeWindows, asked_for_exact_bytes, client_write, held_by_another_process,
+                          pinned_client_double, symlinks_available, text_opens, windows_host)
 import plow_agent
 import private_files
 
@@ -730,6 +730,57 @@ class FailureTests(unittest.TestCase):
             with patch.object(subprocess, 'run', install.subprocess_run):
                 self.assertTrue(private_files.is_private(install.root / '.data/agent/install.log'))
 
+    def test_a_log_that_cannot_be_made_private_is_not_left_behind(self):
+        # The one caller that used to catch a privacy failure and carry on. It wrote the
+        # traceback, failed to protect it, told the owner nothing had been saved, and left the
+        # file there, so the owner had no reason to go and remove it.
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.credential.write_text('PLOW_AGENT_TOKEN=agt_existing\n')
+            install.up = RuntimeError('compose failed in an unforeseen way')
+            with patch.object(private_files, 'protect',
+                              side_effect=private_files.PrivacyError('a drive that cannot keep one account apart')):
+                self.assertEqual(install.run(), 1)
+            self.assertFalse((install.root / '.data/agent/install.log').exists())
+        self.assertIn('the details could not be saved', install.err.getvalue())
+
+    def test_the_log_is_made_private_before_the_traceback_reaches_it(self):
+        # The order the two happen in, not the size on disk: a write sits in the buffer until
+        # the file closes, so the file can be empty on disk while the traceback is already
+        # handed over. What matters is that nothing is handed over before it is locked down.
+        order = []
+        real_protect, real_fdopen = private_files.protect, plow_agent.os.fdopen
+
+        class Recording:
+            def __init__(self, handle):
+                self.handle = handle
+
+            def write(self, text):
+                order.append('write')
+                return self.handle.write(text)
+
+            def __enter__(self):
+                self.handle.__enter__()
+                return self
+
+            def __exit__(self, *details):
+                return self.handle.__exit__(*details)
+
+        def protect(path, executable=False):
+            order.append('protect')
+            return real_protect(path, executable=executable)
+
+        with tempfile.TemporaryDirectory() as directory:
+            install = Installation(directory)
+            install.credential.write_text('PLOW_AGENT_TOKEN=agt_existing\n')
+            install.up = RuntimeError('compose failed in an unforeseen way')
+            with patch.object(private_files, 'protect', protect), \
+                    patch.object(plow_agent.os, 'fdopen',
+                                 lambda *arguments, **options: Recording(real_fdopen(*arguments, **options))):
+                self.assertEqual(install.run(), 1)
+            self.assertIn('RuntimeError', (install.root / '.data/agent/install.log').read_text())
+        self.assertEqual(order, ['protect', 'write'])
+
     def test_a_log_that_cannot_be_saved_still_ends_in_one_sentence(self):
         with tempfile.TemporaryDirectory() as directory:
             install = Installation(directory)
@@ -971,6 +1022,24 @@ class InstallGuardTests(unittest.TestCase):
                 self.assertEqual(saved, {'project': 'relay-two', 'agent_dir': str(install.agent.resolve()),
                                          'platform': expected})
 
+    def test_every_file_the_install_writes_asks_for_the_bytes_it_was_given(self):
+        # The install record, the sign in marker and the credential the client writes. Windows
+        # would turn each newline into two without this, and the marker is compared by digest.
+        recorded = []
+        with tempfile.TemporaryDirectory() as directory, text_opens(recorded):
+            install = Installation(directory)
+            self.assertEqual(install.run(), 0)  # all the way through, so the record is written too
+        self.assertTrue(asked_for_exact_bytes(recorded), recorded)
+
+    def test_the_install_log_asks_for_the_bytes_it_was_given_too(self):
+        recorded = []
+        with tempfile.TemporaryDirectory() as directory, text_opens(recorded):
+            install = Installation(directory)
+            install.credential.write_text('PLOW_AGENT_TOKEN=agt_existing\n')
+            install.up = RuntimeError('compose failed in an unforeseen way')
+            self.assertEqual(install.run(), 1)
+        self.assertTrue(asked_for_exact_bytes(recorded), recorded)
+
     def test_a_started_agent_records_that_privately(self):
         with tempfile.TemporaryDirectory() as directory:
             install = Installation(directory)
@@ -1129,7 +1198,7 @@ class ClientDownloadTests(unittest.TestCase):
 
 
 class SignInTests(unittest.TestCase):
-    REMOVED = 'Sign-in ........... removed from this Mac; the agent keeps its own credential'
+    REMOVED = 'Sign-in ........... removed from this computer; the agent keeps its own credential'
     KEPT = 'Sign-in ........... kept; revoke the plow-agents session in Plow Latch if you no longer need it'
 
     def marker(self, install):
@@ -1255,8 +1324,8 @@ class SignInTests(unittest.TestCase):
                 self.assertFalse(marker.exists())
                 self.assertNotIn('Sign-in .....', install.out.getvalue())
 
-    REPLACED = ('Sign-in ........... removed from this Mac; it replaced an earlier sign-in, so run plow-agents login again '
-                'if you still need one')
+    REPLACED = ('Sign-in ........... removed from this computer; it replaced an earlier sign-in, so run '
+                'plow-agents login again if you still need one')
 
     def test_removing_a_sign_in_that_replaced_an_earlier_one_says_so(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -2487,6 +2556,32 @@ class PortableClientWrite(unittest.TestCase):
     that it is intent rather than luck, and so a host that never runs the branch still proves it.
     """
 
+    def test_a_client_already_on_disk_is_protected_before_it_is_read(self):
+        # The download branch protected it; a resumed install went straight from the checksum
+        # to run_path, so one written by an installer from before any of this kept whatever it
+        # inherited, and verify then read again is a window for anyone who can write it.
+        with tempfile.TemporaryDirectory() as directory:
+            cached = Path(directory) / 'plow-agents'
+            cached.write_bytes(b'print("pinned client")\n')
+            order = []
+            real = private_files.protect
+
+            def protect(path, executable=False):
+                order.append(('protect', str(path), executable))
+                return real(path, executable=executable)
+
+            def run_path(name):
+                order.append(('read', name))
+                return pinned_client_double(mint=Mock())
+
+            with patch.object(plow_agent, 'CLIENT', cached), \
+                    patch.object(plow_agent, 'CLIENT_SHA256', hashlib.sha256(cached.read_bytes()).hexdigest()), \
+                    patch.object(private_files, 'protect', protect), \
+                    patch.object(plow_agent.runpy, 'run_path', run_path):
+                plow_agent.official()
+            self.assertEqual(order, [('protect', str(cached), True), ('read', str(cached))])
+            self.assertTrue(private_files.is_private(cached))
+
     def test_windows_gives_the_client_a_write_it_can_finish(self):
         client = pinned_client_double(mint=Mock())
         with windows_host():
@@ -2589,11 +2684,31 @@ class WindowsProcessTests(unittest.TestCase):
                 self.asking(FakeKernel32(running=[])):
             self.assertFalse(plow_agent.process_alive(os.getpid()))
 
+    def test_the_whole_chain_from_process_alive_to_kernel32_is_the_real_one(self):
+        kernel = FakeKernel32(running=[4321], refused=[8765])
+        with windows_host(), self.asking(kernel):
+            self.assertTrue(plow_agent.process_alive(4321))
+            self.assertFalse(plow_agent.process_alive(9999))
+            self.assertTrue(plow_agent.process_alive(8765))
+        self.assertEqual(kernel.open_handles, 0)
+
     @staticmethod
     def asking(kernel):
-        """Route the installer's own Windows question at this kernel32, and nowhere else."""
-        real = plow_agent.windows_process_alive
-        return patch.object(plow_agent, 'windows_process_alive', lambda pid: real(pid, kernel))
+        """Hand this kernel32 to the code that looks one up, so the whole chain is the real one."""
+        return patch.object(plow_agent, 'windows_kernel32', lambda: kernel)
+
+    def test_a_kernel32_that_cannot_be_reached_leaves_the_lock_where_it_is(self):
+        # The real lookup can only run on Windows. What is pinned here is that it is the branch
+        # taken, and that a question this host cannot ask never takes a lock away.
+        asked = []
+
+        def unavailable():
+            asked.append(True)
+            raise OSError(126, 'The specified module could not be found')
+
+        with windows_host(), patch.object(plow_agent, 'windows_kernel32', unavailable):
+            self.assertTrue(plow_agent.process_alive(4321))
+        self.assertEqual(asked, [True])
 
     def test_a_lock_left_by_a_killed_installer_is_cleared_on_windows_too(self):
         with tempfile.TemporaryDirectory() as directory, windows_host(), \

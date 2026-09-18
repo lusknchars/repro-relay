@@ -1,4 +1,5 @@
 import contextlib
+import hashlib
 import importlib.util
 import io
 import json
@@ -119,12 +120,22 @@ class TerminalTests(unittest.TestCase):
             self.assertEqual((repo / 'code.txt').read_text(), 'original')
             with self.assertRaises(ValueError): cli.prepare_worktree(plan, repo)
             self.assertEqual(cli.git(repo, 'rev-parse', 'HEAD'), base)
-            # A symlink destination must not be followed. Creating one needs
-            # SeCreateSymbolicLinkPrivilege on Windows, which a host may not grant.
-            if symlinks_available():
-                plan['id'] = 'FIX-2'
-                (worktree.parent / 'FIX-2').symlink_to(repo, target_is_directory=True)
-                with self.assertRaises(ValueError): cli.prepare_worktree(plan, repo)
+
+    @unittest.skipUnless(symlinks_available(), 'creating a link needs SeCreateSymbolicLinkPrivilege here')
+    def test_a_worktree_destination_that_is_a_symlink_is_not_followed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = pathlib.Path(directory) / 'source'; repo.mkdir()
+            cli.git(repo, 'init', '-q')
+            cli.git(repo, 'config', 'user.name', 'Fixture'); cli.git(repo, 'config', 'user.email', 'fixture@example.invalid')
+            (repo / 'code.txt').write_text('original')
+            cli.git(repo, 'add', '.'); cli.git(repo, 'commit', '-qm', 'Fixture')
+            base = cli.git(repo, 'rev-parse', 'HEAD')
+            plan = {'id': 'FIX-2', 'status': 'approved',
+                    'input': {'repository': str(repo.resolve()), 'base_commit': base}}
+            parent = repo.parent / '.relay-worktrees' / hashlib.sha256(str(repo.resolve()).encode()).hexdigest()[:16]
+            parent.mkdir(parents=True)
+            (parent / 'FIX-2').symlink_to(repo, target_is_directory=True)
+            with self.assertRaises(ValueError): cli.prepare_worktree(plan, repo)
 
     def test_plan_freezes_observed_base_without_running_tests(self):
         with tempfile.TemporaryDirectory() as directory:

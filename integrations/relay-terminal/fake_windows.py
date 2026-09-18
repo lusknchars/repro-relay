@@ -168,6 +168,31 @@ def client_write(client):
     return client['mint'].__globals__['write_private']
 
 
+@contextlib.contextmanager
+def text_opens(recorded):
+    """Record how every text mode file this code opens was asked for.
+
+    Windows turns each \n into \r\n unless a write says newline='', so a file written there
+    is not the bytes it was given, and file_digest hashes bytes. A POSIX run cannot see that
+    happen, so what it can check is that every such write asked not to have it done.
+    """
+    real = os.fdopen
+
+    def fdopen(descriptor, mode='r', *arguments, **options):
+        if 'b' not in mode:
+            recorded.append(options)
+        return real(descriptor, mode, *arguments, **options)
+
+    with patch.object(os, 'fdopen', fdopen):
+        yield recorded
+
+
+def asked_for_exact_bytes(recorded):
+    """Whether every recorded text open asked for its own encoding and no newline translation."""
+    return bool(recorded) and all(options.get('newline') == '' and options.get('encoding') == 'utf-8'
+                                  for options in recorded)
+
+
 def symlinks_available():
     """Whether this host lets this account create a symbolic link.
 

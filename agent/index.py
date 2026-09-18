@@ -63,8 +63,7 @@ def client(home):
     if not re.fullmatch('[0-9a-f]{40}', pin['sha']) or pin['path'] != 'standalone/agent_index_client.py':
         raise ValueError('invalid client pin')
     cache = home / '.relay-index-client'
-    cache.mkdir(exist_ok=True)
-    private_files.protect(cache)
+    private_files.make_private_directory(cache)
     dest = cache / (pin['sha'] + '.py')
     if dest.exists():
         data = dest.read_bytes()

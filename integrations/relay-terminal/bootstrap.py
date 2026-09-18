@@ -138,8 +138,7 @@ def run_setup(args):
             print('Port 8178 is occupied by an unrecognized or unhealthy service. Resolve it before setup; no process was stopped.', file=sys.stderr)
             return 1
         state = ROOT / '.data/setup'
-        state.mkdir(parents=True, exist_ok=True)
-        private_files.protect(state)
+        private_files.make_private_directory(state)
         # Exclusive creation prevents simultaneous installs. The finally block
         # clears the lock on normal failures and keyboard interruption.
         lock = state / 'setup.lock'

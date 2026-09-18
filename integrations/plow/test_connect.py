@@ -11,7 +11,8 @@ import urllib.request
 import connect
 from bridge import BridgeError
 # connect puts the installer's own folder on the path, which is where these live.
-from fake_windows import client_write, pinned_client_double, recorder, windows_host
+from fake_windows import (asked_for_exact_bytes, client_write, pinned_client_double, recorder,
+                          text_opens, windows_host)
 import private_files
 
 
@@ -73,6 +74,32 @@ class AutoConnectTests(unittest.TestCase):
         self.assertEqual(result['line_name'],'Fixture assistant')
         self.assertNotIn('fixture-private-token',json.dumps(result)+saved.read_text())
         recorder(self.official,'mint').assert_not_called()
+    def test_the_bridge_configuration_is_locked_down_when_it_is_written(self):
+        with windows_host() as windows:
+            connect.connect()
+            saved = self.root/'.data/plow/bridge.json'
+            self.assertIn(['icacls', str(saved), '/inheritance:r', '/grant:r', 'runneradmin:F'], windows.calls)
+            self.assertTrue(private_files.is_private(saved))
+
+    def test_a_configuration_an_earlier_run_left_open_is_locked_down_before_it_is_read(self):
+        # Inheritance only reaches a file when it is made, so the folder's grant never touched
+        # one written by an installer from before any of this. Reusing it is the common path.
+        directory = self.root/'.data/plow'
+        directory.mkdir(parents=True)
+        config = directory/'bridge.json'
+        config.write_text(json.dumps({'line_id':'ln_fixture','chat_id':'cht_fixture'}))
+        with windows_host() as windows:
+            self.assertFalse(private_files.is_private(config))
+            connect.connect()
+            self.assertTrue(private_files.is_private(config))
+            self.assertIn(['icacls', str(config), '/inheritance:r', '/grant:r', 'runneradmin:F'], windows.calls)
+
+    def test_the_configuration_asks_for_the_bytes_it_was_given(self):
+        recorded=[]
+        with text_opens(recorded):
+            connect.connect()
+        self.assertTrue(asked_for_exact_bytes(recorded), recorded)
+
     def test_existing_other_chat_is_preserved(self):
         directory=self.root/'.data/plow';directory.mkdir()
         config=directory/'bridge.json';config.write_text('{"line_id":"ln_other","chat_id":"cht_other"}')

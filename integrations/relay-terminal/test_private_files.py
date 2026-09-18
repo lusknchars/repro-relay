@@ -13,8 +13,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from fake_windows import (FakeWindows, held_by_another_process, reparse_point, symlinks_available,
-                          windows_host)
+from fake_windows import (FakeWindows, asked_for_exact_bytes, held_by_another_process, reparse_point,
+                          symlinks_available, text_opens, windows_host)
 import private_files
 
 
@@ -76,21 +76,32 @@ class AnyHostTests(unittest.TestCase):
         folder = self.directory / 'receipts'
         self.assertTrue(private_files.make_private_directory(folder))
         self.assertTrue(private_files.is_private(folder))
-        # What is written inside it afterwards can be read back on any host. Whether that file
-        # is private in its own right differs: Windows hands the folder's grant down to it,
-        # while on POSIX the folder's mode is what keeps others out and the file takes
-        # whatever the umask gives it.
+        # What is written inside it afterwards can be read back. Whether that file is private
+        # in its own right is not promised here and is not the same everywhere: Windows hands
+        # the folder's grant down to it, while on POSIX the folder's mode is what keeps others
+        # out and the file takes whatever the umask of the moment gives it. The Windows half
+        # is asserted where it is true, in the faked host test.
         inside = folder / 'receipt.json'
         inside.write_text('{}')
         self.assertEqual(inside.read_text(), '{}')
-        self.assertEqual(private_files.is_private(inside), private_files.windows())
 
-    def test_a_folder_that_was_already_there_is_left_exactly_as_it_was(self):
+    def test_a_folder_an_earlier_run_left_open_is_brought_up_to_private(self):
+        # Not left as it is. These are folders this code made, and the ones that need this most
+        # were made by an installer from before any of it, on the computer the incident is about.
         folder = self.directory / 'receipts'
         folder.mkdir()
-        before = folder.stat().st_mode
-        self.assertFalse(private_files.make_private_directory(folder))
-        self.assertEqual(folder.stat().st_mode, before)
+        folder.chmod(0o755)
+        self.assertFalse(private_files.is_private(folder))
+        self.assertFalse(private_files.make_private_directory(folder))  # it did not have to create it
+        self.assertTrue(private_files.is_private(folder))
+
+    def test_a_private_write_asks_for_the_bytes_it_was_given(self):
+        recorded = []
+        with text_opens(recorded):
+            written = private_files.write_privately(str(self.directory / 'agent' / 'plow-credentials'),
+                                                    'PLOW_AGENT_TOKEN=agt_fixture_token\n')
+        self.assertEqual(Path(written).read_bytes(), b'PLOW_AGENT_TOKEN=agt_fixture_token\n')
+        self.assertTrue(asked_for_exact_bytes(recorded), recorded)
 
     def test_protect_then_is_private_agree_on_whatever_host_this_is(self):
         private_files.protect(self.file)

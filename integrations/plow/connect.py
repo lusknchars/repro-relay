@@ -93,6 +93,10 @@ def connect(line_id=None):
         raise BridgeError(str(error)) from None
     path = directory / 'bridge.json'
     if path.exists():
+        # One written before any of this keeps whatever it inherited, and inheritance only
+        # applies when a file is made, so the folder's grant never reached it. Locked down
+        # before it is read, not after.
+        protect_or_stop(path)
         previous = json.loads(path.read_text())
         if previous.get('line_id') != config['line_id'] or previous.get('chat_id') != config['chat_id']:
             raise BridgeError('A different line or chat is already configured. It was not overwritten.')

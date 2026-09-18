@@ -115,24 +115,23 @@ class ReceiptStore:
     def write(self, attempt, value):
         """Record one attempt, in a folder only this account can reach.
 
-        This code creates that folder, so this code makes it private: a mode of 0700 is
-        ignored on Windows, and leaning on what a platform happens to do by default is how a
-        promise goes quietly unkept. One that was already there is left as it is and refused
-        if it is open to others, because it belongs to whoever made it.
+        A link or a file where the folder should be is refused, because what that points at
+        belongs to someone else. Anything else is made private: this code makes that folder,
+        so its privacy is this code's to keep, and one left by an earlier run is brought up to
+        the same state rather than trusted to a mode Windows ignores.
         """
         identifier(attempt)
+        if self.directory.is_symlink() or (self.directory.exists()
+                                           and not stat.S_ISDIR(self.directory.lstat().st_mode)):
+            raise BridgeError(f"Receipts need a real folder at {self.directory}, not a link or a file. "
+                              "Put one there, or point state_dir somewhere else, and try again.")
         try:
             private_files.make_private_directory(self.directory)
         except private_files.PrivacyError as error:
             raise BridgeError(str(error)) from None
-        info = self.directory.lstat()
-        if (self.directory.is_symlink() or not stat.S_ISDIR(info.st_mode)
-                or not private_files.is_private(self.directory, info)):
-            raise BridgeError("Receipt directory must be one only you can reach, and cannot be a link. Run "
-                              + private_files.how_to_protect(self.directory) + " and try again.")
         fd, name = tempfile.mkstemp(prefix=".receipt-", dir=self.directory)
         try:
-            with os.fdopen(fd, "w") as target:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="") as target:
                 json.dump(value, target)
                 target.flush()
                 os.fsync(target.fileno())

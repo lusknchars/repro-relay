@@ -273,19 +273,21 @@ def open_private(path):
 
 
 def make_private_directory(path, mode=DIRECTORY_MODE):
-    """Create a directory this code owns, private from the moment it exists.
+    """Create a directory this code owns, private from the moment it exists, and keep it so.
 
     The mode argument to mkdir is the POSIX half and Windows ignores it, so a folder whose
-    privacy rests on that alone is not private there. Returns whether it was created: one
-    that was already there is left exactly as it is, because it belongs to whoever made it,
-    and the caller decides whether to accept it.
+    privacy rests on that alone is not private there. One that is already there is protected
+    too, rather than accepted as it is: these are folders this code made, and the ones that
+    need it most were made by an installer from before any of this, on the computer the
+    incident is about. Returns whether it had to be created.
     """
     try:
         Path(path).mkdir(parents=True, mode=mode)
+        created = True
     except FileExistsError:
-        return False
+        created = False
     protect(path)
-    return True
+    return created
 
 
 def write_privately(path, body):

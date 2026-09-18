@@ -8,7 +8,8 @@ import threading
 import unittest
 
 from bridge import ADAPTER, Bridge, BridgeError, JsonHTTP, ReceiptStore, digest, from_config, private_credentials
-from fake_windows import symlinks_available, windows_host  # bridge puts the installer's own folder on the path
+# bridge puts the installer's own folder on the path, which is where these live.
+from fake_windows import asked_for_exact_bytes, symlinks_available, text_opens, windows_host
 import private_files
 
 
@@ -301,27 +302,49 @@ class ReceiptFolderTests(unittest.TestCase):
             self.assertEqual(self.store.read("att_1"), {"ok": True})
             self.assertEqual(list(self.store.directory.glob(".receipt-*")), [])
 
-    def test_a_folder_that_was_already_open_to_others_is_refused_not_quietly_reused(self):
+    def test_a_folder_an_earlier_run_left_open_is_brought_up_to_private(self):
+        # The owners this is for are the ones who installed on Windows before any of this, and
+        # whose folder still carries what it inherited. It is this code's folder, so this code
+        # fixes it rather than telling them to.
         self.store.directory.mkdir()
-        with windows_host():  # it carries what it inherited, the way a real one does there
-            with self.assertRaises(BridgeError) as error:
-                self.store.write("att_1", {"ok": True})
-            self.assertIn(str(self.store.directory), str(error.exception))
-            self.assertIn("icacls", str(error.exception))
-            private_files.protect(self.store.directory)  # what the message told the owner to run
+        with windows_host() as windows:
+            self.assertFalse(private_files.is_private(self.store.directory))
             self.store.write("att_1", {"ok": True})
+            self.assertTrue(private_files.is_private(self.store.directory))
+            self.assertEqual(windows.principals(self.store.directory),
+                             ["runneradmin", "NT AUTHORITY\\SYSTEM", "BUILTIN\\Administrators"])
         self.assertEqual(self.store.read("att_1"), {"ok": True})
 
     @unittest.skipUnless(os.name == "posix", "opening a folder to other accounts with a mode")
-    def test_a_folder_others_can_reach_is_refused_here_too(self):
+    def test_the_same_holds_for_a_folder_others_can_reach_here(self):
         self.store.directory.mkdir()
         self.store.directory.chmod(0o755)  # chmod, not mkdir's mode, which umask would mask
+        self.assertFalse(private_files.is_private(self.store.directory))
+        self.store.write("att_1", {"ok": True})
+        self.assertTrue(private_files.is_private(self.store.directory))
+        self.assertEqual(self.store.read("att_1"), {"ok": True})
+
+    @unittest.skipUnless(symlinks_available(), "creating a link needs SeCreateSymbolicLinkPrivilege here")
+    def test_a_link_where_the_folder_should_be_is_refused_rather_than_followed(self):
+        elsewhere = Path(self.temporary.name) / "elsewhere"
+        elsewhere.mkdir()
+        self.store.directory.symlink_to(elsewhere, target_is_directory=True)
         with self.assertRaises(BridgeError) as error:
             self.store.write("att_1", {"ok": True})
-        self.assertIn(private_files.how_to_protect(self.store.directory), str(error.exception))
-        private_files.protect(self.store.directory)
-        self.store.write("att_1", {"ok": True})
-        self.assertEqual(self.store.read("att_1"), {"ok": True})
+        self.assertIn(str(self.store.directory), str(error.exception))
+        self.assertEqual(list(elsewhere.iterdir()), [])  # and nothing was written through it
+
+    def test_a_receipt_asks_for_the_bytes_it_was_given(self):
+        recorded = []
+        with text_opens(recorded):
+            self.store.write("att_1", {"ok": True})
+        self.assertTrue(asked_for_exact_bytes(recorded), recorded)
+
+    def test_a_file_where_the_folder_should_be_is_refused(self):
+        self.store.directory.write_text("not a folder")
+        with self.assertRaises(BridgeError) as error:
+            self.store.write("att_1", {"ok": True})
+        self.assertIn(str(self.store.directory), str(error.exception))
 
 
 if __name__ == "__main__":
