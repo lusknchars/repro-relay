@@ -4,6 +4,7 @@ Wraps the pinned official plow-agents client. It never selects an occupied line,
 never overwrites a credential, and never deletes the agent's data volume.
 """
 import contextlib
+import copy
 from datetime import datetime, timezone
 import hashlib
 import http.client
@@ -578,6 +579,13 @@ def yaml_module():
     return yaml
 
 
+def yaml_problem(error):
+    """A short description of a YAMLError that keeps the line and column PyYAML found, when it gave one."""
+    mark = getattr(error, 'problem_mark', None)
+    problem = getattr(error, 'problem', None) or str(error).strip().splitlines()[0]
+    return f'{problem} (line {mark.line + 1}, column {mark.column + 1})' if mark is not None else problem
+
+
 def load_model_config(text):
     """The parsed config, or a refusal naming the problem when it will not parse or lacks the model block
     ./relay agent model expects. Only ever reads; never writes anything."""
@@ -585,7 +593,7 @@ def load_model_config(text):
     try:
         config = yaml.safe_load(text)
     except yaml.YAMLError as error:
-        raise DecisionNeeded(f'The agent config could not be parsed: {str(error).splitlines()[0]}. '
+        raise DecisionNeeded(f'The agent config could not be parsed: {yaml_problem(error)}. '
                              'Nothing was changed.') from None
     model = config.get('model') if isinstance(config, dict) else None
     if not isinstance(model, dict) or not model.get('default') or not model.get('provider'):
@@ -595,40 +603,187 @@ def load_model_config(text):
 
 
 def model_summary(text):
-    """The default model id, its provider, and that provider's known ids, from the raw config text."""
+    """The default model id, its provider, and that provider's known ids, from the raw config text.
+
+    providers.<provider>.models is a mapping of id -> per-model settings in the real config; a plain list of
+    ids is accepted too. Either way the ids are its keys (a mapping) or its items (a list).
+    """
     config = load_model_config(text)
     model = config['model']
     providers = config.get('providers')
     provider_block = providers.get(model['provider']) if isinstance(providers, dict) else None
     models = provider_block.get('models') if isinstance(provider_block, dict) else None
-    return {'default': model['default'], 'provider': model['provider'],
-            'models': list(models) if isinstance(models, list) else []}
-
-
-def set_default_model(text, model_id):
-    """Config text with model.default set to model_id, adding it to its provider's models list when missing.
-
-    A pure edit: load the YAML, change those two places, dump it back. Given the same text and id, the same
-    text always comes back.
-    """
-    yaml = yaml_module()
-    config = load_model_config(text)
-    provider = config['model']['provider']
-    config['model']['default'] = model_id
-    models = config.setdefault('providers', {}).setdefault(provider, {}).setdefault('models', [])
-    if not isinstance(models, list):
-        raise DecisionNeeded(f"The agent config's providers.{provider}.models is not a list. Nothing was changed.")
-    if model_id not in models:
-        models.append(model_id)
-    return yaml.safe_dump(config, default_flow_style=False, sort_keys=False)
+    ids = list(models) if isinstance(models, (dict, list)) else []
+    return {'default': model['default'], 'provider': model['provider'], 'models': ids}
 
 
 def validate_model_id(model_id):
-    """model_id, or a refusal when it is empty or not shaped like provider/model."""
-    if not model_id or not MODEL_ID.fullmatch(model_id):
+    """model_id, or a refusal when none was given or it is not shaped like provider/model."""
+    if not model_id:
+        raise DecisionNeeded('No model id was given. Give one shaped like provider/model, for example '
+                             'anthropic/claude-sonnet-5.')
+    if not MODEL_ID.fullmatch(model_id):
         raise DecisionNeeded(f'"{model_id}" is not a model id shaped like provider/model, for example '
                              'anthropic/claude-sonnet-5.')
     return model_id
+
+
+def _line_indent(line):
+    return len(line) - len(line.lstrip(' '))
+
+
+def _top_key_line(lines, key):
+    """The index of `key:` at column 0, or None."""
+    pattern = re.compile(rf'^{re.escape(key)}:(?:\s|$)')
+    for index, line in enumerate(lines):
+        if pattern.match(line):
+            return index
+    return None
+
+
+def _child_block(lines, header_index):
+    """(start, end): every line after lines[header_index] indented deeper than it, blank lines included."""
+    header_indent = _line_indent(lines[header_index])
+    end = header_index + 1
+    while end < len(lines):
+        stripped = lines[end].strip()
+        if stripped and _line_indent(lines[end]) <= header_indent:
+            break
+        end += 1
+    return header_index + 1, end
+
+
+def _child_key_line(lines, start, end, key):
+    """The index in [start, end) of `key:` at that block's own (shallowest) indentation. None when absent."""
+    pattern = re.compile(rf'^(?:[ \t]*){re.escape(key)}:(?:\s|$)')
+    child_indent = None
+    for index in range(start, end):
+        line = lines[index]
+        if not line.strip():
+            continue
+        indent = _line_indent(line)
+        if child_indent is None:
+            child_indent = indent
+        if indent != child_indent:
+            continue
+        if pattern.match(line):
+            return index
+    return None
+
+
+def _first_child_indent(lines, start, end, fallback):
+    for index in range(start, end):
+        if lines[index].strip():
+            return _line_indent(lines[index])
+    return fallback
+
+
+def _indent_step(lines):
+    """The file's own indentation width, from its first indented line; 2 spaces when there is none."""
+    for line in lines:
+        if line.strip() and line[:1] == ' ':
+            return _line_indent(line)
+    return 2
+
+
+def _model_entry_line(indent, model_id, as_list):
+    return f'{" " * indent}- {model_id}\n' if as_list else f'{" " * indent}{model_id}: {{}}\n'
+
+
+def _set_default_line(lines, model_id):
+    """lines with model.default's value replaced, in place. Raises AgentError when it cannot be located."""
+    model_index = _top_key_line(lines, 'model')
+    start, end = (None, None) if model_index is None else _child_block(lines, model_index)
+    default_index = None if model_index is None else _child_key_line(lines, start, end, 'default')
+    if default_index is None:
+        raise AgentError('Could not locate model.default in the config text to edit it. Nothing was changed.')
+    lines[default_index] = re.sub(r'^([ \t]*default:).*$', lambda m: f'{m.group(1)} {model_id}',
+                                  lines[default_index], count=1)
+    return lines
+
+
+def _ensure_model_id(lines, provider, model_id, original):
+    """lines with model_id added under providers.<provider>.models, in place, when it is not already there."""
+    providers = original.get('providers')
+    provider_block = providers.get(provider) if isinstance(providers, dict) else None
+    models_value = provider_block.get('models') if isinstance(provider_block, dict) else None
+    if isinstance(models_value, (dict, list)) and model_id in models_value:
+        return lines
+    as_list = isinstance(models_value, list)
+    step = _indent_step(lines)
+
+    providers_index = _top_key_line(lines, 'providers')
+    if providers_index is None:
+        if lines and not lines[-1].endswith('\n'):
+            lines[-1] += '\n'
+        return lines + [f'providers:\n', f'{" " * step}{provider}:\n', f'{" " * (step * 2)}models:\n',
+                        _model_entry_line(step * 3, model_id, as_list)]
+
+    p_start, p_end = _child_block(lines, providers_index)
+    provider_line = _child_key_line(lines, p_start, p_end, provider)
+    if provider_line is None:
+        indent = _first_child_indent(lines, p_start, p_end, step)
+        lines[p_end:p_end] = [f'{" " * indent}{provider}:\n', f'{" " * (indent + step)}models:\n',
+                              _model_entry_line(indent + step * 2, model_id, as_list)]
+        return lines
+
+    pv_start, pv_end = _child_block(lines, provider_line)
+    models_line = _child_key_line(lines, pv_start, pv_end, 'models')
+    if models_line is None:
+        indent = _first_child_indent(lines, pv_start, pv_end, _line_indent(lines[provider_line]) + step)
+        lines[pv_end:pv_end] = [f'{" " * indent}models:\n', _model_entry_line(indent + step, model_id, as_list)]
+        return lines
+
+    m_start, m_end = _child_block(lines, models_line)
+    indent = _first_child_indent(lines, m_start, m_end, _line_indent(lines[models_line]) + step)
+    lines[m_end:m_end] = [_model_entry_line(indent, model_id, as_list)]
+    return lines
+
+
+def _expected_after_edit(config, provider, model_id):
+    """The dict a correct edit must reparse to: config with only model.default and providers.<p>.models changed."""
+    config = copy.deepcopy(config)
+    config['model']['default'] = model_id
+    provider_block = config.setdefault('providers', {}).setdefault(provider, {})
+    models = provider_block.get('models')
+    if models is None:
+        provider_block['models'] = {model_id: {}}
+    elif isinstance(models, dict):
+        models.setdefault(model_id, {})
+    elif isinstance(models, list):
+        if model_id not in models:
+            models.append(model_id)
+    else:
+        raise DecisionNeeded(f"The agent config's providers.{provider}.models is neither a mapping nor a list. "
+                             "Nothing was changed.")
+    return config
+
+
+def set_default_model(text, model_id):
+    """Config text with model.default set to model_id, adding it under its provider's models when missing.
+
+    A minimal text edit, not a full reparse-and-dump: it replaces the default: line and inserts one new line
+    for the id, so comments, anchors, block scalars and values PyYAML would otherwise normalise (`yes`,
+    `1.10`) survive untouched everywhere else. The result is re-parsed and compared against the original
+    parse with only those two changes applied; anything else differing refuses, writing nothing.
+    """
+    yaml = yaml_module()
+    original = load_model_config(text)
+    provider = original['model']['provider']
+    expected = _expected_after_edit(original, provider, model_id)
+
+    lines = text.splitlines(keepends=True)
+    lines = _set_default_line(lines, model_id)
+    lines = _ensure_model_id(lines, provider, model_id, original)
+    new_text = ''.join(lines)
+
+    try:
+        reparsed = yaml.safe_load(new_text)
+    except yaml.YAMLError as error:
+        raise AgentError(f'The edited config did not parse ({yaml_problem(error)}). Nothing was written.') from None
+    if reparsed != expected:
+        raise AgentError('The edited config would not match the intended change exactly. Nothing was written.')
+    return new_text
 
 
 def require_agent_running():
@@ -741,7 +896,6 @@ def model_command(args):
     if args.id is None:
         return show_model()
     return switch_model(args.id, args.check)
-
 
 def signin_path():
     """The full-access account sign-in, resolved exactly as the pinned client's account_token resolves it."""

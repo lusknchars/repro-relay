@@ -4,6 +4,7 @@ The contract tests load the real pinned plow-agents client, downloading and veri
 from GitHub only when .data/tools/plow-agents is absent.
 """
 import contextlib
+import difflib
 import hashlib
 import io
 import json
@@ -1327,6 +1328,13 @@ class CertificateTests(unittest.TestCase):
         self.assertEqual(seen, ['/fixture/certifi/cacert.pem'])
 
 
+try:
+    plow_agent.yaml_module()
+    HAVE_YAML = True
+except plow_agent.AgentError:
+    HAVE_YAML = False
+
+# The real shape: providers.<provider>.models is a mapping of id -> per-model settings, not a list.
 SAMPLE_MODEL_CONFIG = '''model:
   default: anthropic/claude-sonnet-5
   provider: plow
@@ -1335,11 +1343,44 @@ SAMPLE_MODEL_CONFIG = '''model:
 providers:
   plow:
     models:
-      - anthropic/claude-sonnet-5
-      - anthropic/claude-haiku-4
+      anthropic/claude-sonnet-5:
+        prompt_caching: true
+      anthropic/claude-haiku-4: {}
+'''
+
+# Exercises what a minimal text edit must leave untouched: a comment, a folded block with non-ASCII text,
+# `enabled: yes` and `version: 1.10` (both of which yaml.safe_dump would silently renormalise), and an
+# anchor with a merge key -- all outside the two lines a switch actually edits.
+EXOTIC_MODEL_CONFIG = '''# Hermes runtime configuration
+model:
+  default: anthropic/claude-sonnet-5
+  provider: plow
+  base_url: ${PLOW_API_BASE}/v1
+  key_env: HERMES_CUSTOM_PLOW_API_KEY
+providers:
+  plow:
+    models:
+      anthropic/claude-sonnet-5:
+        prompt_caching: true
+      anthropic/claude-haiku-4: {}
+notes: >
+  Support contact: José Núñez <jose@example.com>.
+  日本語のメモもあります。
+enabled: yes
+version: 1.10
+shared: &shared_defaults
+  timeout_seconds: 30
+fallback:
+  <<: *shared_defaults
+  name: plow
 '''
 
 
+def _safe_load(text):
+    return plow_agent.yaml_module().safe_load(text)
+
+
+@unittest.skipUnless(HAVE_YAML, 'PyYAML is not installed')
 class ModelEditTests(unittest.TestCase):
     """model_summary() and set_default_model(): pure functions over the config's raw YAML text."""
 
@@ -1354,25 +1395,52 @@ class ModelEditTests(unittest.TestCase):
         self.assertEqual(summary['default'], 'anthropic/claude-haiku-4')
         self.assertEqual(summary['models'], ['anthropic/claude-sonnet-5', 'anthropic/claude-haiku-4'])
 
-    def test_switching_to_a_new_id_adds_it_to_the_provider(self):
+    def test_switching_keeps_every_existing_per_model_setting(self):
+        new_text = plow_agent.set_default_model(SAMPLE_MODEL_CONFIG, 'anthropic/claude-haiku-4')
+        parsed = _safe_load(new_text)
+        self.assertEqual(parsed['providers']['plow']['models']['anthropic/claude-sonnet-5'],
+                         {'prompt_caching': True})
+
+    def test_switching_to_a_new_id_adds_it_as_a_key_with_an_empty_body(self):
         new_text = plow_agent.set_default_model(SAMPLE_MODEL_CONFIG, 'anthropic/claude-opus-4')
         summary = plow_agent.model_summary(new_text)
         self.assertEqual(summary['default'], 'anthropic/claude-opus-4')
         self.assertEqual(summary['models'],
                          ['anthropic/claude-sonnet-5', 'anthropic/claude-haiku-4', 'anthropic/claude-opus-4'])
+        self.assertEqual(_safe_load(new_text)['providers']['plow']['models']['anthropic/claude-opus-4'], {})
 
-    def test_a_missing_models_list_is_created(self):
-        text = 'model:\n  default: anthropic/claude-sonnet-5\n  provider: plow\nproviders:\n  plow: {}\n'
+    def test_a_list_shaped_models_is_still_accepted(self):
+        text = ('model:\n  default: anthropic/claude-sonnet-5\n  provider: plow\n'
+                'providers:\n  plow:\n    models:\n      - anthropic/claude-sonnet-5\n')
+        new_text = plow_agent.set_default_model(text, 'anthropic/claude-opus-4')
+        self.assertEqual(plow_agent.model_summary(new_text)['models'],
+                         ['anthropic/claude-sonnet-5', 'anthropic/claude-opus-4'])
+        self.assertIsInstance(_safe_load(new_text)['providers']['plow']['models'], list)
+
+    def test_a_missing_models_key_is_created_as_a_mapping(self):
+        text = 'model:\n  default: anthropic/claude-sonnet-5\n  provider: plow\nproviders:\n  plow:\n    other: true\n'
         new_text = plow_agent.set_default_model(text, 'anthropic/claude-opus-4')
         self.assertEqual(plow_agent.model_summary(new_text),
                          {'default': 'anthropic/claude-opus-4', 'provider': 'plow', 'models': ['anthropic/claude-opus-4']})
+        parsed = _safe_load(new_text)
+        self.assertEqual(parsed['providers']['plow']['other'], True)
+        self.assertEqual(parsed['providers']['plow']['models'], {'anthropic/claude-opus-4': {}})
 
-    def test_a_missing_provider_block_is_created(self):
+    def test_a_missing_provider_is_created_as_a_mapping(self):
+        text = ('model:\n  default: anthropic/claude-sonnet-5\n  provider: plow\n'
+                'providers:\n  other:\n    models:\n      x: {}\n')
+        new_text = plow_agent.set_default_model(text, 'anthropic/claude-opus-4')
+        self.assertEqual(plow_agent.model_summary(new_text)['models'], ['anthropic/claude-opus-4'])
+        parsed = _safe_load(new_text)
+        self.assertEqual(parsed['providers']['other']['models'], {'x': {}})
+        self.assertEqual(parsed['providers']['plow']['models'], {'anthropic/claude-opus-4': {}})
+
+    def test_a_missing_providers_block_is_created(self):
         text = 'model:\n  default: anthropic/claude-sonnet-5\n  provider: plow\n'
         new_text = plow_agent.set_default_model(text, 'anthropic/claude-opus-4')
         self.assertEqual(plow_agent.model_summary(new_text)['models'], ['anthropic/claude-opus-4'])
 
-    def test_reading_never_needs_the_models_list_to_exist(self):
+    def test_reading_never_needs_the_models_key_to_exist(self):
         text = 'model:\n  default: anthropic/claude-sonnet-5\n  provider: plow\n'
         self.assertEqual(plow_agent.model_summary(text),
                          {'default': 'anthropic/claude-sonnet-5', 'provider': 'plow', 'models': []})
@@ -1381,6 +1449,26 @@ class ModelEditTests(unittest.TestCase):
         new_text = plow_agent.set_default_model(SAMPLE_MODEL_CONFIG, 'anthropic/claude-opus-4')
         self.assertIn('base_url: ${PLOW_API_BASE}/v1', new_text)
         self.assertIn('key_env: HERMES_CUSTOM_PLOW_API_KEY', new_text)
+
+    def test_a_switch_leaves_everything_else_byte_for_byte(self):
+        new_text = plow_agent.set_default_model(EXOTIC_MODEL_CONFIG, 'anthropic/claude-opus-4')
+        old_lines = EXOTIC_MODEL_CONFIG.splitlines(keepends=True)
+        new_lines = new_text.splitlines(keepends=True)
+        matcher = difflib.SequenceMatcher(None, old_lines, new_lines)
+        opcodes = matcher.get_opcodes()
+        inserted = sum(j2 - j1 for tag, i1, i2, j1, j2 in opcodes if tag == 'insert')
+        deleted = sum(i2 - i1 for tag, i1, i2, j1, j2 in opcodes if tag == 'delete')
+        replaced_old = sum(i2 - i1 for tag, i1, i2, j1, j2 in opcodes if tag == 'replace')
+        replaced_new = sum(j2 - j1 for tag, i1, i2, j1, j2 in opcodes if tag == 'replace')
+        self.assertEqual((inserted, deleted, replaced_old, replaced_new), (1, 0, 1, 1))
+        # the untouched lines carry the comment, the folded block's non-ASCII text, and the anchor/merge
+        untouched = ''.join(tag == 'equal' and ''.join(old_lines[i1:i2]) or '' for tag, i1, i2, j1, j2 in opcodes)
+        self.assertIn('# Hermes runtime configuration', untouched)
+        self.assertIn('José Núñez', untouched)
+        self.assertIn('enabled: yes', untouched)
+        self.assertIn('version: 1.10', untouched)
+        self.assertIn('&shared_defaults', untouched)
+        self.assertIn('<<: *shared_defaults', untouched)
 
     def test_a_config_that_will_not_parse_is_refused(self):
         for bad in ('not: valid: yaml: [', '- just\n- a list\n', 'model: not-a-mapping\n', '', 'model: {}\n'):
@@ -1392,9 +1480,14 @@ class ModelEditTests(unittest.TestCase):
                     plow_agent.set_default_model(bad, 'anthropic/claude-opus-4')
                 self.assertEqual(edit_error.exception.code, 2)
 
+    def test_a_parse_error_keeps_its_line_and_column(self):
+        with self.assertRaises(plow_agent.DecisionNeeded) as error:
+            plow_agent.model_summary('model: [\n')
+        self.assertRegex(str(error.exception), r'line \d+, column \d+')
+
     def test_a_config_missing_the_model_block_is_refused(self):
         with self.assertRaises(plow_agent.DecisionNeeded):
-            plow_agent.model_summary('providers:\n  plow:\n    models: []\n')
+            plow_agent.model_summary('providers:\n  plow:\n    models: {}\n')
 
 
 class ModelIdValidationTests(unittest.TestCase):
@@ -1409,6 +1502,18 @@ class ModelIdValidationTests(unittest.TestCase):
                     plow_agent.validate_model_id(bad)
                 self.assertEqual(error.exception.code, 2)
                 self.assertIn('provider/model', str(error.exception))
+
+    def test_no_id_says_so_instead_of_quoting_none_or_empty(self):
+        for bad in (None, ''):
+            with self.subTest(bad=bad), self.assertRaises(plow_agent.DecisionNeeded) as error:
+                plow_agent.validate_model_id(bad)
+            self.assertIn('No model id was given', str(error.exception))
+            self.assertNotIn('"None"', str(error.exception))
+
+    def test_a_malformed_id_is_quoted_in_the_message(self):
+        with self.assertRaises(plow_agent.DecisionNeeded) as error:
+            plow_agent.validate_model_id('no-slash-here')
+        self.assertIn('"no-slash-here"', str(error.exception))
 
 
 class FakeContainer:
@@ -1601,7 +1706,6 @@ class ModelCommandTests(unittest.TestCase):
         code, out, err = run_model(container, revert=True)
         self.assertEqual(code, 0)
         self.assertIn(plow_agent.status_line('Model', 'unknown -> anthropic/claude-sonnet-5'), out)
-
 
 class CommandLineTests(unittest.TestCase):
     def test_model_id_and_flags_reach_the_installer(self):
