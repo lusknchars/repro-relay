@@ -1327,6 +1327,90 @@ class CertificateTests(unittest.TestCase):
         self.assertEqual(seen, ['/fixture/certifi/cacert.pem'])
 
 
+SAMPLE_MODEL_CONFIG = '''model:
+  default: anthropic/claude-sonnet-5
+  provider: plow
+  base_url: ${PLOW_API_BASE}/v1
+  key_env: HERMES_CUSTOM_PLOW_API_KEY
+providers:
+  plow:
+    models:
+      - anthropic/claude-sonnet-5
+      - anthropic/claude-haiku-4
+'''
+
+
+class ModelEditTests(unittest.TestCase):
+    """model_summary() and set_default_model(): pure functions over the config's raw YAML text."""
+
+    def test_reads_the_default_provider_and_known_models(self):
+        self.assertEqual(plow_agent.model_summary(SAMPLE_MODEL_CONFIG),
+                         {'default': 'anthropic/claude-sonnet-5', 'provider': 'plow',
+                          'models': ['anthropic/claude-sonnet-5', 'anthropic/claude-haiku-4']})
+
+    def test_switching_to_a_known_id_does_not_duplicate_it(self):
+        new_text = plow_agent.set_default_model(SAMPLE_MODEL_CONFIG, 'anthropic/claude-haiku-4')
+        summary = plow_agent.model_summary(new_text)
+        self.assertEqual(summary['default'], 'anthropic/claude-haiku-4')
+        self.assertEqual(summary['models'], ['anthropic/claude-sonnet-5', 'anthropic/claude-haiku-4'])
+
+    def test_switching_to_a_new_id_adds_it_to_the_provider(self):
+        new_text = plow_agent.set_default_model(SAMPLE_MODEL_CONFIG, 'anthropic/claude-opus-4')
+        summary = plow_agent.model_summary(new_text)
+        self.assertEqual(summary['default'], 'anthropic/claude-opus-4')
+        self.assertEqual(summary['models'],
+                         ['anthropic/claude-sonnet-5', 'anthropic/claude-haiku-4', 'anthropic/claude-opus-4'])
+
+    def test_a_missing_models_list_is_created(self):
+        text = 'model:\n  default: anthropic/claude-sonnet-5\n  provider: plow\nproviders:\n  plow: {}\n'
+        new_text = plow_agent.set_default_model(text, 'anthropic/claude-opus-4')
+        self.assertEqual(plow_agent.model_summary(new_text),
+                         {'default': 'anthropic/claude-opus-4', 'provider': 'plow', 'models': ['anthropic/claude-opus-4']})
+
+    def test_a_missing_provider_block_is_created(self):
+        text = 'model:\n  default: anthropic/claude-sonnet-5\n  provider: plow\n'
+        new_text = plow_agent.set_default_model(text, 'anthropic/claude-opus-4')
+        self.assertEqual(plow_agent.model_summary(new_text)['models'], ['anthropic/claude-opus-4'])
+
+    def test_reading_never_needs_the_models_list_to_exist(self):
+        text = 'model:\n  default: anthropic/claude-sonnet-5\n  provider: plow\n'
+        self.assertEqual(plow_agent.model_summary(text),
+                         {'default': 'anthropic/claude-sonnet-5', 'provider': 'plow', 'models': []})
+
+    def test_only_the_default_and_that_providers_models_change(self):
+        new_text = plow_agent.set_default_model(SAMPLE_MODEL_CONFIG, 'anthropic/claude-opus-4')
+        self.assertIn('base_url: ${PLOW_API_BASE}/v1', new_text)
+        self.assertIn('key_env: HERMES_CUSTOM_PLOW_API_KEY', new_text)
+
+    def test_a_config_that_will_not_parse_is_refused(self):
+        for bad in ('not: valid: yaml: [', '- just\n- a list\n', 'model: not-a-mapping\n', '', 'model: {}\n'):
+            with self.subTest(bad=bad):
+                with self.assertRaises(plow_agent.DecisionNeeded) as summary_error:
+                    plow_agent.model_summary(bad)
+                self.assertEqual(summary_error.exception.code, 2)
+                with self.assertRaises(plow_agent.DecisionNeeded) as edit_error:
+                    plow_agent.set_default_model(bad, 'anthropic/claude-opus-4')
+                self.assertEqual(edit_error.exception.code, 2)
+
+    def test_a_config_missing_the_model_block_is_refused(self):
+        with self.assertRaises(plow_agent.DecisionNeeded):
+            plow_agent.model_summary('providers:\n  plow:\n    models: []\n')
+
+
+class ModelIdValidationTests(unittest.TestCase):
+    def test_a_well_shaped_id_passes_through(self):
+        self.assertEqual(plow_agent.validate_model_id('anthropic/claude-opus-4'), 'anthropic/claude-opus-4')
+
+    def test_an_empty_or_malformed_id_is_refused(self):
+        for bad in ('', 'no-slash-at-all', '/leading-slash', 'trailing-slash/', 'has space/model',
+                   'a/b/c', None):
+            with self.subTest(bad=bad):
+                with self.assertRaises(plow_agent.DecisionNeeded) as error:
+                    plow_agent.validate_model_id(bad)
+                self.assertEqual(error.exception.code, 2)
+                self.assertIn('provider/model', str(error.exception))
+
+
 class CommandLineTests(unittest.TestCase):
     def test_line_flag_reaches_the_installer_and_its_exit_code_is_returned(self):
         received = []

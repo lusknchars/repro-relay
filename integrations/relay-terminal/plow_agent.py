@@ -36,6 +36,7 @@ READY = 'plow-init: configured'
 PARKED = 'parking; no gateway will start'
 CONTAINER_PATH = '/command:/usr/local/bin:/usr/bin:/bin'
 FIRST_PROMPT = 'Reply in one short sentence: say who you are and what you can do with meeting notes.'
+MODEL_ID = re.compile(r'[^/\s]+/[^/\s]+')
 
 
 class AgentError(Exception):
@@ -557,6 +558,74 @@ def speak(prompt):
     if result.returncode:
         raise AgentError('The agent is running but did not answer. Check `docker compose logs agent` in agent/.')
     return '\n'.join(text for text in result.stdout.splitlines() if not text.startswith('session_id:')).strip()
+
+
+def status_line(label, value):
+    """One dot-aligned status line, like the install's own progress lines: `label` padded to the same column."""
+    return f"{label} {'.' * (18 - len(label))} {value}"
+
+
+def yaml_module():
+    """PyYAML, loaded only here: every other command in this file needs nothing beyond the standard library."""
+    try:
+        import yaml
+    except ImportError:
+        raise AgentError('./relay agent model needs PyYAML to read and edit the config. Install it with '
+                         'python3 -m pip install pyyaml, then run this again.') from None
+    return yaml
+
+
+def load_model_config(text):
+    """The parsed config, or a refusal naming the problem when it will not parse or lacks the model block
+    ./relay agent model expects. Only ever reads; never writes anything."""
+    yaml = yaml_module()
+    try:
+        config = yaml.safe_load(text)
+    except yaml.YAMLError as error:
+        raise DecisionNeeded(f'The agent config could not be parsed: {str(error).splitlines()[0]}. '
+                             'Nothing was changed.') from None
+    model = config.get('model') if isinstance(config, dict) else None
+    if not isinstance(model, dict) or not model.get('default') or not model.get('provider'):
+        raise DecisionNeeded('The agent config does not have the model block ./relay agent model expects '
+                             '(a model.default and model.provider). Nothing was changed.')
+    return config
+
+
+def model_summary(text):
+    """The default model id, its provider, and that provider's known ids, from the raw config text."""
+    config = load_model_config(text)
+    model = config['model']
+    providers = config.get('providers')
+    provider_block = providers.get(model['provider']) if isinstance(providers, dict) else None
+    models = provider_block.get('models') if isinstance(provider_block, dict) else None
+    return {'default': model['default'], 'provider': model['provider'],
+            'models': list(models) if isinstance(models, list) else []}
+
+
+def set_default_model(text, model_id):
+    """Config text with model.default set to model_id, adding it to its provider's models list when missing.
+
+    A pure edit: load the YAML, change those two places, dump it back. Given the same text and id, the same
+    text always comes back.
+    """
+    yaml = yaml_module()
+    config = load_model_config(text)
+    provider = config['model']['provider']
+    config['model']['default'] = model_id
+    models = config.setdefault('providers', {}).setdefault(provider, {}).setdefault('models', [])
+    if not isinstance(models, list):
+        raise DecisionNeeded(f"The agent config's providers.{provider}.models is not a list. Nothing was changed.")
+    if model_id not in models:
+        models.append(model_id)
+    return yaml.safe_dump(config, default_flow_style=False, sort_keys=False)
+
+
+def validate_model_id(model_id):
+    """model_id, or a refusal when it is empty or not shaped like provider/model."""
+    if not model_id or not MODEL_ID.fullmatch(model_id):
+        raise DecisionNeeded(f'"{model_id}" is not a model id shaped like provider/model, for example '
+                             'anthropic/claude-sonnet-5.')
+    return model_id
 
 
 def signin_path():
