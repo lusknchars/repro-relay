@@ -1941,6 +1941,204 @@ class ProviderEditTests(unittest.TestCase):
             self.assertIn('plow', str(error.exception))
 
 
+class FakeMoonshot:
+    """Moonshot's model list behind the provider command, answering from the request it is given.
+
+    The body is the shape the live API returned on this owner's account on 2026-09-18: an OpenAI style
+    list whose items carry an id, an object and an owner. The ids are that account's own, which is the
+    whole point of asking: kimi-k2-0905-preview is not on it and answers 404 at the first real call.
+    """
+    MODELS = ['kimi-k3', 'kimi-k2.7-code', 'kimi-k2.7-code-highspeed', 'kimi-k2.6']
+
+    def __init__(self, key='sk-fixture-moonshot-key', models=None, error=None, body=None):
+        self.key = key
+        self.models = self.MODELS if models is None else models
+        self.error = error
+        self.body = body
+        self.requests = []
+
+    def __call__(self, request, timeout=None):
+        self.requests.append((request.full_url, dict(request.headers), timeout))
+        if self.error is not None:
+            raise self.error
+        if request.headers.get('Authorization') != f'Bearer {self.key}':
+            raise urllib.error.HTTPError(request.full_url, 401, 'Unauthorized', {}, None)
+        body = self.body if self.body is not None else json.dumps(
+            {'object': 'list', 'data': [{'id': name, 'object': 'model', 'owned_by': 'moonshot'}
+                                        for name in self.models]})
+        return contextlib.closing(io.BytesIO(body.encode('utf-8')))
+
+
+class ProviderKeyFileTests(unittest.TestCase):
+    """agent/.env: where the provider key lives, read the way Compose reads it and written back privately."""
+
+    KIMI = plow_agent.PROVIDERS['kimi']
+
+    @contextlib.contextmanager
+    def env_file(self, text=None):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / '.env'
+            if text is not None:
+                path.write_text(text, encoding='utf-8')
+            with patch.object(plow_agent, 'ENV_FILE', path):
+                yield path
+
+    def test_the_key_is_read_from_agent_env(self):
+        with self.env_file('COMPOSE_PROJECT_NAME=relay\nMOONSHOT_API_KEY=sk-fixture-moonshot-key\n') as path:
+            self.assertEqual(plow_agent.provider_key(self.KIMI), 'sk-fixture-moonshot-key')
+            self.assertTrue(private_files.is_private(path))  # reading it also locks it to this account
+
+    def test_comments_blank_lines_export_and_quotes_are_read_the_way_compose_reads_them(self):
+        text = ('# the provider key\n\nexport MOONSHOT_API_KEY="sk-quoted-key"\n'
+                "OTHER='single'\nCOMPOSE_PROJECT_NAME=relay\n")
+        with self.env_file(text):
+            self.assertEqual(plow_agent.read_env_file(),
+                             {'MOONSHOT_API_KEY': 'sk-quoted-key', 'OTHER': 'single',
+                              'COMPOSE_PROJECT_NAME': 'relay'})
+
+    def test_no_file_at_all_says_what_to_create(self):
+        with self.env_file():
+            with self.assertRaises(plow_agent.DecisionNeeded) as error:
+                plow_agent.provider_key(self.KIMI)
+            self.assertEqual(error.exception.code, 2)
+            self.assertIn('MOONSHOT_API_KEY', str(error.exception))
+            self.assertIn('agent/.env', str(error.exception))
+
+    def test_a_file_without_that_key_names_the_variable_to_add(self):
+        with self.env_file('COMPOSE_PROJECT_NAME=relay\n'):
+            with self.assertRaises(plow_agent.DecisionNeeded) as error:
+                plow_agent.provider_key(self.KIMI)
+            self.assertEqual(error.exception.code, 2)
+            self.assertIn('MOONSHOT_API_KEY', str(error.exception))
+
+    def test_a_line_that_is_not_name_value_is_refused_with_its_number(self):
+        with self.env_file('GOOD=1\nnot a variable line\n'):
+            with self.assertRaises(plow_agent.DecisionNeeded) as error:
+                plow_agent.read_env_file()
+            self.assertEqual(error.exception.code, 2)
+            self.assertIn('line 2', str(error.exception))
+
+    def test_a_hash_in_an_unquoted_value_is_refused_rather_than_read_two_ways(self):
+        with self.env_file('MOONSHOT_API_KEY=sk-with#hash\n'):
+            with self.assertRaises(plow_agent.DecisionNeeded) as error:
+                plow_agent.read_env_file()
+            self.assertIn('quotes', str(error.exception))
+
+    def test_writing_keeps_every_other_line_including_the_key(self):
+        with self.env_file('# mine\nCOMPOSE_PROJECT_NAME=relay\nMOONSHOT_API_KEY=sk-fixture-moonshot-key\n') as path:
+            plow_agent.write_env_values({plow_agent.PROVIDER_VARIABLE: 'kimi',
+                                         plow_agent.MODEL_VARIABLE: 'kimi-k2.7-code'})
+            self.assertEqual(path.read_text(),
+                             '# mine\nCOMPOSE_PROJECT_NAME=relay\nMOONSHOT_API_KEY=sk-fixture-moonshot-key\n'
+                             'HERMES_PROVIDER=kimi\nHERMES_MODEL=kimi-k2.7-code\n')
+            self.assertTrue(private_files.is_private(path))
+
+    def test_writing_a_variable_that_is_already_there_rewrites_it_where_it_is(self):
+        with self.env_file('HERMES_PROVIDER=kimi\nMOONSHOT_API_KEY=sk-fixture-moonshot-key\n') as path:
+            plow_agent.write_env_values({plow_agent.PROVIDER_VARIABLE: 'plow'})
+            self.assertEqual(path.read_text(), 'HERMES_PROVIDER=plow\nMOONSHOT_API_KEY=sk-fixture-moonshot-key\n')
+
+    def test_a_file_that_does_not_end_in_a_newline_still_gains_a_whole_line(self):
+        with self.env_file('COMPOSE_PROJECT_NAME=relay') as path:
+            plow_agent.write_env_values({plow_agent.PROVIDER_VARIABLE: 'kimi'})
+            self.assertEqual(path.read_text(), 'COMPOSE_PROJECT_NAME=relay\nHERMES_PROVIDER=kimi\n')
+
+    def test_writing_creates_the_file_privately_when_there_is_none(self):
+        with self.env_file() as path:
+            plow_agent.write_env_values({plow_agent.PROVIDER_VARIABLE: 'plow'})
+            self.assertEqual(path.read_text(), 'HERMES_PROVIDER=plow\n')
+            self.assertTrue(private_files.is_private(path))
+
+    def test_a_value_that_is_not_one_plain_word_is_never_written(self):
+        with self.env_file('HERMES_PROVIDER=plow\n') as path:
+            for value in ('two words', 'has"quote', ''):
+                with self.subTest(value=value), self.assertRaises(plow_agent.AgentError):
+                    plow_agent.write_env_values({plow_agent.PROVIDER_VARIABLE: value})
+            self.assertEqual(path.read_text(), 'HERMES_PROVIDER=plow\n')
+
+
+class ProviderModelListTests(unittest.TestCase):
+    """provider_models() and choose_model(): what the provider itself says this key can use."""
+
+    KIMI = plow_agent.PROVIDERS['kimi']
+
+    def test_it_asks_the_providers_own_models_url_with_the_key_as_a_bearer_token(self):
+        moonshot = FakeMoonshot()
+        models = plow_agent.provider_models(self.KIMI, moonshot.key, opener=moonshot)
+        url, headers, timeout = moonshot.requests[0]
+        self.assertEqual(url, 'https://api.moonshot.ai/v1/models')
+        self.assertEqual(headers['Authorization'], f'Bearer {moonshot.key}')
+        self.assertEqual(models, FakeMoonshot.MODELS)  # in the order the provider listed them
+        self.assertTrue(0 < timeout <= 60)
+
+    def test_a_rejected_key_is_a_decision_naming_the_variable_and_the_file(self):
+        for code in (401, 403):
+            with self.subTest(code=code):
+                moonshot = FakeMoonshot(error=urllib.error.HTTPError(
+                    'https://api.moonshot.ai/v1/models', code, 'Denied', {}, None))
+                with self.assertRaises(plow_agent.DecisionNeeded) as error:
+                    plow_agent.provider_models(self.KIMI, 'sk-wrong-key', opener=moonshot)
+                self.assertEqual(error.exception.code, 2)
+                self.assertIn('MOONSHOT_API_KEY', str(error.exception))
+                self.assertIn('agent/.env', str(error.exception))
+                self.assertNotIn('sk-wrong-key', str(error.exception))
+
+    def test_another_http_answer_is_a_failure_rather_than_a_decision(self):
+        for code in (404, 500):
+            with self.subTest(code=code):
+                moonshot = FakeMoonshot(error=urllib.error.HTTPError(
+                    'https://api.moonshot.ai/v1/models', code, 'Nope', {}, None))
+                with self.assertRaises(plow_agent.AgentError) as error:
+                    plow_agent.provider_models(self.KIMI, 'sk-fixture-moonshot-key', opener=moonshot)
+                self.assertNotIsInstance(error.exception, plow_agent.DecisionNeeded)
+                self.assertIn(str(code), str(error.exception))
+
+    def test_a_provider_that_cannot_be_reached_says_so_without_the_key(self):
+        moonshot = FakeMoonshot(error=urllib.error.URLError('Name or service not known'))
+        with self.assertRaises(plow_agent.AgentError) as error:
+            plow_agent.provider_models(self.KIMI, 'sk-fixture-moonshot-key', opener=moonshot)
+        self.assertIn('could not be reached', str(error.exception))
+        self.assertNotIn('sk-fixture-moonshot-key', str(error.exception))
+
+    def test_a_certificate_failure_gets_the_certificate_hint(self):
+        moonshot = FakeMoonshot(error=urllib.error.URLError(ssl.SSLCertVerificationError('unverified')))
+        with self.assertRaises(plow_agent.CertificateUnverified) as error:
+            plow_agent.provider_models(self.KIMI, 'sk-fixture-moonshot-key', opener=moonshot)
+        self.assertIn('certifi', str(error.exception))
+
+    def test_a_body_that_is_not_a_model_list_is_refused(self):
+        for body in ('{"error": "nope"}', 'not json at all', '{"data": []}', '{"data": [{"name": "kimi-k3"}]}'):
+            with self.subTest(body=body):
+                moonshot = FakeMoonshot(body=body)
+                with self.assertRaises(plow_agent.AgentError):
+                    plow_agent.provider_models(self.KIMI, moonshot.key, opener=moonshot)
+
+    def test_a_model_the_account_does_not_have_is_refused_naming_what_it_has(self):
+        # The exact 404 an owner would otherwise hit at the first real call: this account has no
+        # kimi-k2-0905-preview, and the model list is per account, so it is asked for rather than assumed.
+        moonshot = FakeMoonshot()
+        with self.assertRaises(plow_agent.DecisionNeeded) as error:
+            plow_agent.choose_model(self.KIMI, moonshot.key, 'kimi-k2-0905-preview', opener=moonshot)
+        self.assertEqual(error.exception.code, 2)
+        self.assertIn('kimi-k2-0905-preview', str(error.exception))
+        for model in FakeMoonshot.MODELS:
+            self.assertIn(model, str(error.exception))
+
+    def test_no_model_at_all_lists_what_the_key_can_use(self):
+        moonshot = FakeMoonshot()
+        with self.assertRaises(plow_agent.DecisionNeeded) as error:
+            plow_agent.choose_model(self.KIMI, moonshot.key, None, opener=moonshot)
+        self.assertEqual(error.exception.code, 2)
+        self.assertIn('--model', str(error.exception))
+        self.assertIn('kimi-k2.7-code', str(error.exception))
+
+    def test_a_model_the_account_has_passes_through_after_it_was_asked_for(self):
+        moonshot = FakeMoonshot()
+        self.assertEqual(plow_agent.choose_model(self.KIMI, moonshot.key, 'kimi-k2.7-code', opener=moonshot),
+                         'kimi-k2.7-code')
+        self.assertEqual(len(moonshot.requests), 1)  # the provider is asked every time, never assumed
+
+
 class ModelIdValidationTests(unittest.TestCase):
     def test_a_well_shaped_id_passes_through(self):
         self.assertEqual(plow_agent.validate_model_id('anthropic/claude-opus-4'), 'anthropic/claude-opus-4')

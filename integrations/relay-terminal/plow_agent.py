@@ -630,6 +630,188 @@ def compose(*arguments, capture=False, input=None, cwd=None):
                           timeout=1800, input=input)
 
 
+def read_env_file(path=None):
+    """agent/.env as a mapping of name to value, or a refusal naming the line that is not NAME=value.
+
+    Compose reads this file for the variables agent/compose.yml passes into the container, so it is read
+    the same way here: blank lines and comments ignored, an optional export, and quotes around a value
+    removed. Nothing in a value is interpreted, and no value is ever printed.
+    """
+    path = Path(ENV_FILE if path is None else path)
+    if not path.is_file():
+        return {}
+    try:
+        if path.stat().st_size > ENV_LIMIT:
+            raise DecisionNeeded(f'{ENV_LABEL} is larger than 64 KiB, which is not a file of variables. Point it at '
+                                 'the right file, then run this again. Nothing was changed.')
+        text = path.read_text(encoding='utf-8')
+    except UnicodeError:
+        raise DecisionNeeded(f'{ENV_LABEL} is not UTF-8 text, so neither this command nor Compose can read it. '
+                             'Nothing was changed.') from None
+    except OSError as error:
+        raise AgentError(f'{ENV_LABEL} could not be read: {error.strerror or error}.') from None
+    values = {}
+    for number, raw in enumerate(text.splitlines(), start=1):
+        entry = raw.strip()
+        if not entry or entry.startswith('#'):
+            continue
+        if entry.startswith('export '):
+            entry = entry[len('export '):].lstrip()
+        name, separator, value = entry.partition('=')
+        name = name.strip()
+        if not separator or not ENV_NAME.fullmatch(name):
+            raise DecisionNeeded(f'{ENV_LABEL} line {number} is not NAME=value, so Compose cannot read it either. '
+                                 'Fix that line, then run this again. Nothing was changed.')
+        value = value.strip()
+        quoted = len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'")
+        if quoted:
+            value = value[1:-1]
+        elif '#' in value:
+            # Compose reads what follows a # in an unquoted value as a comment. Rather than guess which of
+            # the two readings is the owner's, say so: a key read one way here and another way in the
+            # container is exactly the kind of quiet disagreement this command must not have.
+            raise DecisionNeeded(f'{ENV_LABEL} line {number} has a # in an unquoted value, which Compose reads as '
+                                 'the start of a comment. Put quotes around that value, then run this again. '
+                                 'Nothing was changed.')
+        values[name] = value
+    return values
+
+
+def env_text_with(text, values):
+    """The .env text with each name set to its value: the line that already defines it rewritten where it
+    is, a new line at the end otherwise, and every other line left exactly as it is."""
+    lines = text.splitlines(keepends=True)
+    for name, value in values.items():
+        for index, raw in enumerate(lines):
+            entry = raw.strip()
+            if entry.startswith('export '):
+                entry = entry[len('export '):].lstrip()
+            if not entry or entry.startswith('#') or '=' not in entry:
+                continue
+            if entry.partition('=')[0].strip() == name:
+                lines[index] = f'{name}={value}\n'
+                break
+        else:
+            if lines and not lines[-1].endswith('\n'):
+                lines[-1] += '\n'
+            lines.append(f'{name}={value}\n')
+    return ''.join(lines)
+
+
+def write_env_values(values, path=None):
+    """Set these variables in agent/.env, keeping everything else in it, and leave the file readable only by
+    this account.
+
+    Compose reads the file when the container is built again, which is how a provider chosen here outlives
+    the container it was chosen on. The owner's own lines, the provider key among them, are never touched.
+    """
+    path = Path(ENV_FILE if path is None else path)
+    for name, value in values.items():
+        if not ENV_NAME.fullmatch(name) or not SAFE_VALUE.fullmatch(str(value)):
+            raise AgentError(f'{name} could not be written to {ENV_LABEL} as one plain value. Nothing was changed.')
+    try:
+        text = path.read_text(encoding='utf-8') if path.is_file() else ''
+    except (OSError, UnicodeError) as error:
+        raise AgentError(f'{ENV_LABEL} could not be read to add {", ".join(values)} to it: {error}.') from None
+    write_env_file(path, env_text_with(text, values))
+
+
+def write_env_file(path, text):
+    """Replace agent/.env with text, through a file of its own beside it that is locked to this account
+    before anything is written into it, so a key is never briefly readable by another account and a write
+    that cannot be finished leaves the file that is there alone.
+
+    private_files does the locking and the replacement, because it is the one primitive that also works on
+    Windows, where mode bits decide nothing. The folder's own permissions are left as the owner has them.
+    """
+    descriptor, temporary = tempfile.mkstemp(dir=str(Path(path).parent), prefix='.env.', suffix='.new')
+    try:
+        with os.fdopen(descriptor, 'w', encoding='utf-8', newline='') as handle:
+            protect_or_stop(temporary)
+            handle.write(text)
+        private_files.replace_atomically(temporary, str(path))
+    except private_files.PrivacyError as error:
+        with contextlib.suppress(OSError):
+            os.unlink(temporary)
+        raise AgentError(str(error)) from None
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(temporary)
+        raise
+    protect_or_stop(path)
+
+
+def provider_key(entry):
+    """One provider's key, read from agent/.env. Never an argument, never printed, never in a tracked file.
+
+    The file is locked to this account before it is read, because that is where the key lives from now on.
+    """
+    path = Path(ENV_FILE)
+    if not path.is_file():
+        raise DecisionNeeded(f'There is no {ENV_LABEL}, so there is no key for {entry["name"]} to use. Create that '
+                             f'file with a line reading {entry["key_env"]}=your key. Git does not track it. Then '
+                             'run this again.')
+    protect_or_stop(path)
+    value = read_env_file(path).get(entry['key_env'], '')
+    if not value:
+        raise DecisionNeeded(f'{ENV_LABEL} has no {entry["key_env"]}, so {entry["name"]} cannot be asked what this '
+                             f'account has and the agent could not sign its calls. Add a line reading '
+                             f'{entry["key_env"]}=your key there, then run this again. Nothing was changed.')
+    return value
+
+
+def provider_models(entry, key, opener=None):
+    """Which models a provider says this key can use, asked of the provider itself.
+
+    The OpenAI shaped list these providers serve: GET <base_url>/models with the key as a bearer token,
+    answering {"data": [{"id": ...}, ...]}. Asking beats assuming, because the list is per account: a model
+    the account does not have answers 404 at the first real call, long after the switch, and reads as a
+    fault in this command rather than something to fix on the account.
+    """
+    url = entry['base_url'].rstrip('/') + '/models'
+    request = urllib.request.Request(url, headers={'Authorization': f'Bearer {key}', 'Accept': 'application/json'})
+    try:
+        with (opener or urllib.request.urlopen)(request, timeout=MODEL_LIST_TIMEOUT) as response:
+            payload = json.loads(response.read(1 << 20).decode('utf-8'))
+    except urllib.error.HTTPError as error:
+        if error.code in (401, 403):
+            raise DecisionNeeded(f'{entry["name"]} did not accept that key (HTTP {error.code}). Check that '
+                                 f'{entry["key_env"]} in {ENV_LABEL} is the key for the account you mean to use, '
+                                 'then run this again. Nothing was changed.') from None
+        raise AgentError(f'{entry["name"]} answered HTTP {error.code} when asked which models this key can use. '
+                         'Nothing was changed.') from None
+    except urllib.error.URLError as error:
+        reason = getattr(error, 'reason', None) or error
+        if isinstance(reason, ssl.SSLError):
+            raise CertificateUnverified(f'{entry["name"]} could not be asked which models this key can use because '
+                                        f'{certificate_hint(reason)}. Nothing was changed.') from None
+        raise AgentError(f'{entry["name"]} could not be reached to ask which models this key can use ({reason}). '
+                         'Nothing was changed.') from None
+    except (OSError, ValueError, UnicodeError) as error:
+        raise AgentError(f'{entry["name"]} did not answer with a model list this command could read ({error}). '
+                         'Nothing was changed.') from None
+    listed = payload.get('data') if isinstance(payload, dict) else None
+    models = [item['id'] for item in listed
+              if isinstance(item, dict) and isinstance(item.get('id'), str) and item['id']] \
+        if isinstance(listed, list) else []
+    if not models:
+        raise AgentError(f'{entry["name"]} listed no models for this key, so there is nothing to switch to. '
+                         'Nothing was changed.')
+    return models
+
+
+def choose_model(entry, key, model_id, opener=None):
+    """The model to switch to, checked against what the provider says this key can actually use."""
+    models = provider_models(entry, key, opener=opener)
+    if not model_id:
+        raise DecisionNeeded(f'No model was given. On {entry["name"]} this key can use {", ".join(models)}. Choose '
+                             'one with --model. Nothing was changed.')
+    if not SAFE_VALUE.fullmatch(model_id) or model_id not in models:
+        raise DecisionNeeded(f'{entry["name"]} does not have "{model_id}" on this account. It has '
+                             f'{", ".join(models)}. Choose one of those with --model. Nothing was changed.')
+    return model_id
+
+
 def identity(path):
     """Who a credential answers as, according to Plow. When Plow cannot say, an AgentError says why:
     CredentialRejected for a definitive 401, 403 or 404, CertificateUnverified when this Python cannot verify
