@@ -13,6 +13,21 @@ line that belongs to you.
   activation text to that phone.
 - **Git**, to copy the repository.
 
+## Testing it as a new person would see it
+
+Before installing to check what a stranger experiences, make sure the machine is
+not already carrying a previous install. A macOS user account of its own gives a
+clean home folder, but Docker is shared by everybody on the machine, so a
+container and a memory volume from an earlier install are still there.
+
+```sh
+sh agent/check-clean.sh
+```
+
+It only looks, changes nothing, and never prints a token. It reports what a
+fresh install would inherit, and a memory volume is somebody's agent memory, so
+check what it belongs to before removing anything.
+
 ## The line
 
 On macOS and Linux:
