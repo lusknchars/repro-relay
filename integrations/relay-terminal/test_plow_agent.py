@@ -3172,13 +3172,20 @@ class EveryCommandWeNameCanBeRun(unittest.TestCase):
 
     def test_no_line_at_all_names_a_runnable_client(self):
         said = self.refusal([])
-        self.assertIn('python3 .data/tools/plow-agents', said)
+        self.assertIn(f'python3 {plow_agent.CLIENT_PATH}', said)
         self.assertNotIn('`plow-agents', said)
 
     def test_every_line_taken_names_a_runnable_client(self):
         said = self.refusal([{'uid': 'ln_1', 'agent_uid': 'a1'}])
-        self.assertIn('python3 .data/tools/plow-agents', said)
+        self.assertIn(f'python3 {plow_agent.CLIENT_PATH}', said)
         self.assertNotIn('`plow-agents', said)
+
+    def test_the_path_it_names_is_typed_the_same_way_on_every_host(self):
+        """This is what broke it: the path was worked out at runtime, so Windows rendered
+        backslashes and a caller that had repointed the root raised instead. A constant is
+        the same string everywhere, and PowerShell takes forward slashes."""
+        self.assertNotIn('\\', plow_agent.CLIENT_PATH)
+        self.assertEqual(plow_agent.CLIENT, plow_agent.ROOT / plow_agent.CLIENT_PATH)
 
 
 class DocumentationTests(unittest.TestCase):

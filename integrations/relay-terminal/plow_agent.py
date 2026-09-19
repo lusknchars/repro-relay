@@ -32,7 +32,8 @@ from private_files import host_platform, relay_command
 ROOT = Path(__file__).resolve().parents[2]
 AGENT = ROOT / 'agent'
 CREDENTIAL = AGENT / 'plow-credentials'
-CLIENT = ROOT / '.data/tools/plow-agents'
+CLIENT_PATH = '.data/tools/plow-agents'  # how a person types it, forward slashes, which PowerShell takes too
+CLIENT = ROOT / CLIENT_PATH
 CLIENT_COMMIT = '8ce907e220ab67018d6857e8054a41eed4ecd279'
 CLIENT_SHA256 = 'f69dd0eae74d82f6d9b56b66389c942df35de2665f6d8c92a62ed7b26af223aa'
 CLIENT_URL = f'https://raw.githubusercontent.com/plow-pbc/plow-agents/{CLIENT_COMMIT}/bin/plow-agents'
@@ -283,7 +284,7 @@ def choose_line(lines, ask, wanted=None, interactive=True, command=None):
         # The client is a file this installer downloads, not something on anybody's PATH, so
         # name it the way a person can actually run it. Telling them `plow-agents ...` sends
         # them to a command not found, which is where this message used to leave people.
-        client = f'python3 {CLIENT.relative_to(ROOT)}'
+        client = f'python3 {CLIENT_PATH}'
         if held:
             raise DecisionNeeded(f'{held} line(s) already answer as an agent. Run '
                                  f'`{command} --new-line` to have Plow provision another, or see them with '
