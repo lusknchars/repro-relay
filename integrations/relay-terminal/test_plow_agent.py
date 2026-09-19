@@ -3141,6 +3141,30 @@ class CommandLineTests(unittest.TestCase):
         self.assertEqual([args.line for args in received], ['+1 (555) 000-0002', None])
 
 
+class EveryCommandWeNameCanBeRun(unittest.TestCase):
+    """A message that names a command has to name one the reader can actually type.
+
+    The line refusal used to say `plow-agents revoke <line>`. That client is a file this
+    installer downloads into .data/tools, never on anybody's PATH, so the advice ended at
+    command not found for the one person following it exactly.
+    """
+
+    def refusal(self, lines):
+        with self.assertRaises(plow_agent.DecisionNeeded) as stopped:
+            plow_agent.choose_line(lines, ask=None, command='./relay agent')
+        return str(stopped.exception)
+
+    def test_no_line_at_all_names_a_runnable_client(self):
+        said = self.refusal([])
+        self.assertIn('python3 .data/tools/plow-agents', said)
+        self.assertNotIn('`plow-agents', said)
+
+    def test_every_line_taken_names_a_runnable_client(self):
+        said = self.refusal([{'uid': 'ln_1', 'agent_uid': 'a1'}])
+        self.assertIn('python3 .data/tools/plow-agents', said)
+        self.assertNotIn('`plow-agents', said)
+
+
 class DocumentationTests(unittest.TestCase):
     def test_readme_teaches_the_command_and_never_pipes_a_download_into_a_shell(self):
         """The rule this protects is that nobody runs code they have not been given a chance to read.

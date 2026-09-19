@@ -280,9 +280,19 @@ def choose_line(lines, ask, wanted=None, interactive=True, command=None):
     free = sorted((line for line in lines if not line.get('agent_uid')), key=lambda line: line['uid'])
     if not free:
         held = len(lines) - len(free)
-        detail = f'{held} line(s) already answer as an agent. ' if held else 'This account holds no assistant line. '
-        raise DecisionNeeded(detail + f'Run `{command} --new-line` to have Plow provision one, '
-                             'or retire an existing agent with `plow-agents revoke <line>` first.')
+        # The client is a file this installer downloads, not something on anybody's PATH, so
+        # name it the way a person can actually run it. Telling them `plow-agents ...` sends
+        # them to a command not found, which is where this message used to leave people.
+        client = f'python3 {CLIENT.relative_to(ROOT)}'
+        if held:
+            raise DecisionNeeded(f'{held} line(s) already answer as an agent. Run '
+                                 f'`{command} --new-line` to have Plow provision another, or see them with '
+                                 f'`{client} lines` and retire one with `{client} revoke <line>` first.')
+        raise DecisionNeeded('This account holds no assistant line at all. Run '
+                             f'`{command} --new-line` to have Plow provision the first one. If that is '
+                             f'refused, the account itself cannot provision yet, which is Plow\'s to answer '
+                             f'rather than this installer: `{client} lines` shows what the account holds, and '
+                             f'`{client} login` signs it in if it is not.')
     if wanted is not None:
         chosen = find_line(free, wanted)
         if chosen is None:
