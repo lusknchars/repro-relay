@@ -72,6 +72,17 @@ will not create a second agent by accident.
 ./relay agent stop                # stop it, keeping memory and identity
 ```
 
+## When it stops and the reason is not obvious
+
+```sh
+sh agent/doctor.sh
+```
+
+One screen with everything needed to say why: what this machine has, the
+permission on each credential without its contents, what the account holds, the
+docker state every user on the machine shares, and the tail of the last failed
+install. It only looks, and it never prints a token or a key.
+
 ## When something is missing
 
 **"Docker is not running."** Open Docker Desktop and wait until it says it is
