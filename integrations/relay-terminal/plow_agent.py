@@ -1742,10 +1742,24 @@ def switch_provider(name, model_id, opener=None):
     # for a backup first and refuse over one that was never needed.
     settled = provider_summary(read_config())
     if settled['provider'] == entry['name'] and model_id in (None, settled['default']):
+        # The running agent is already there. That is not the whole job: agent/.env is what
+        # Compose reads when the container is built again, so a container switched by hand, or
+        # by a run that stopped before its last step, is on this provider only until something
+        # recreates it. Record it, then say which of the two was already true.
+        durable = read_env_file() if Path(ENV_FILE).is_file() else {}
+        recorded = durable.get(PROVIDER_VARIABLE) == entry['name'] and \
+            durable.get(MODEL_VARIABLE) == settled['default']
         print(status_line('Provider', f'{entry["name"]} already'), flush=True)
         print(status_line('Model', settled['default']), flush=True)
         print(status_line('Key', key_state(settled['key_env'])), flush=True)
-        print('Nothing was changed.', flush=True)
+        if recorded:
+            print('Nothing was changed.', flush=True)
+            return 0
+        write_env_values({PROVIDER_VARIABLE: entry['name'], MODEL_VARIABLE: settled['default']})
+        print(status_line('Recorded', ENV_LABEL), flush=True)
+        print(f'The running agent was already on {entry["name"]} and {ENV_LABEL} did not say so, which '
+              'would have sent it back to the default the next time the container was built. It does now.',
+              flush=True)
         return 0
     restore = plow_restore() if entry['name'] == DEFAULT_PROVIDER else None
     key = None

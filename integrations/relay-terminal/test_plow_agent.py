@@ -3010,13 +3010,29 @@ class ProviderCommandTests(unittest.TestCase):
         self.assertEqual(run.container.restarts, 0)
         self.assertIsNone(run.container_key())  # the half written file is removed, not left as a key
 
-    def test_switching_to_the_provider_it_is_already_on_changes_nothing(self):
-        run = ProviderRun()
+    def test_the_provider_it_is_already_on_and_already_recorded_changes_nothing(self):
+        run = ProviderRun(env='HERMES_PROVIDER=plow\nHERMES_MODEL=anthropic/claude-sonnet-5\n')
         code, out, err = run.run(name='plow')
         self.assertEqual((code, err), (0, ''))
         self.assertIn('Nothing was changed.', out)
         self.assertEqual(run.config(), LIVE_MODEL_CONFIG)
         self.assertEqual(run.container.restarts, 0)
+        self.assertEqual(run.spoken, [])
+
+    def test_a_container_on_this_provider_that_agent_env_does_not_record_is_recorded(self):
+        """The durable half is the point. A container switched by hand, or by a run that stopped
+        before its last step, is on this provider only until something builds it again: Compose
+        reads agent/.env, and an unrecorded provider sends the agent back to the default."""
+        run = ProviderRun(env='MOONSHOT_API_KEY=sk-fixture-moonshot-key\n')
+        code, out, err = run.run(name='plow')
+        self.assertEqual((code, err), (0, ''))
+        self.assertNotIn('Nothing was changed.', out)
+        self.assertIn('Recorded', out)
+        self.assertIn('HERMES_PROVIDER=plow', run.written)
+        self.assertIn('HERMES_MODEL=anthropic/claude-sonnet-5', run.written)
+        self.assertIn('MOONSHOT_API_KEY=', run.written)  # the owner's own line is kept
+        self.assertEqual(run.config(), LIVE_MODEL_CONFIG)  # the running agent was already right
+        self.assertEqual(run.container.restarts, 0)        # so it is not restarted for a file
         self.assertEqual(run.spoken, [])
 
     def test_plow_with_a_model_points_at_the_model_command_rather_than_guessing(self):
