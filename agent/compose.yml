@@ -11,6 +11,16 @@ services:
       # installer sets it; started any other way, or by an agent from before this existed,
       # it reads as unknown, which means not known rather than any particular computer.
       RELAY_OWNER_PLATFORM: ${RELAY_OWNER_PLATFORM:-unknown}
+      # Which model provider supplies the agent's inference, and which model of that provider's. Both come
+      # from agent/.env, which git does not track, and ./relay agent provider writes them there. An install
+      # that never chose a provider passes plow, which is what the image itself defaults to, so nothing
+      # about it changes.
+      HERMES_PROVIDER: ${HERMES_PROVIDER:-plow}
+      HERMES_MODEL: ${HERMES_MODEL:-}
+      # One line per provider that signs its own calls, holding the name of the variable that provider's
+      # block in the config points at. The key is in agent/.env beside the two above. Anyone who can run
+      # docker inspect on this machine can read a value passed in this way.
+      MOONSHOT_API_KEY: ${MOONSHOT_API_KEY:-}
     volumes:
       - type: bind
         source: ./plow-credentials

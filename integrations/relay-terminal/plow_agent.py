@@ -49,6 +49,24 @@ ERROR_INVALID_PARAMETER = 87  # what Windows reports for a process id that is no
 GATEWAY_SERVICE = '/run/service/hermes-gateway'
 MODEL_ID = re.compile(r'[^/\s]+/[^/\s]+')
 MODEL_CHECK_PROMPT = 'Reply in one short sentence: which model are you, and who made you?'
+ENV_FILE = AGENT / '.env'  # untracked, and the file Compose reads for the values compose.yml passes in
+ENV_LABEL = 'agent/.env'
+ENV_LIMIT = 65536
+ENV_NAME = re.compile(r'[A-Za-z_][A-Za-z0-9_]*')
+SAFE_VALUE = re.compile(r'[A-Za-z0-9][\w./:-]{0,127}')  # a provider name or a model id, on one line, unquoted
+CONTAINER_ENVIRONMENT = '/run/s6/container_environment'  # where the image keeps what with-contenv hands a service
+PROVIDER_VARIABLE = 'HERMES_PROVIDER'  # read by the image's own boot script; agent/compose.yml passes it in
+MODEL_VARIABLE = 'HERMES_MODEL'
+DEFAULT_PROVIDER = 'plow'  # what an install that says nothing about providers runs on, today and after this
+MODEL_LIST_TIMEOUT = 30
+# Every provider this command knows how to configure. Plow has no entry of its own beyond its name: its key
+# is the agent credential the install already mints, and the values its model block needs come back from a
+# backup that carried them rather than from anything written here. Adding a provider is one entry plus one
+# line in agent/compose.yml for its key.
+PROVIDERS = {
+    'plow': {'name': 'plow'},
+    'kimi': {'name': 'kimi', 'base_url': 'https://api.moonshot.ai/v1', 'key_env': 'MOONSHOT_API_KEY'},
+}
 
 
 class AgentError(Exception):
@@ -612,6 +630,188 @@ def compose(*arguments, capture=False, input=None, cwd=None):
                           timeout=1800, input=input)
 
 
+def read_env_file(path=None):
+    """agent/.env as a mapping of name to value, or a refusal naming the line that is not NAME=value.
+
+    Compose reads this file for the variables agent/compose.yml passes into the container, so it is read
+    the same way here: blank lines and comments ignored, an optional export, and quotes around a value
+    removed. Nothing in a value is interpreted, and no value is ever printed.
+    """
+    path = Path(ENV_FILE if path is None else path)
+    if not path.is_file():
+        return {}
+    try:
+        if path.stat().st_size > ENV_LIMIT:
+            raise DecisionNeeded(f'{ENV_LABEL} is larger than 64 KiB, which is not a file of variables. Point it at '
+                                 'the right file, then run this again. Nothing was changed.')
+        text = path.read_text(encoding='utf-8')
+    except UnicodeError:
+        raise DecisionNeeded(f'{ENV_LABEL} is not UTF-8 text, so neither this command nor Compose can read it. '
+                             'Nothing was changed.') from None
+    except OSError as error:
+        raise AgentError(f'{ENV_LABEL} could not be read: {error.strerror or error}.') from None
+    values = {}
+    for number, raw in enumerate(text.splitlines(), start=1):
+        entry = raw.strip()
+        if not entry or entry.startswith('#'):
+            continue
+        if entry.startswith('export '):
+            entry = entry[len('export '):].lstrip()
+        name, separator, value = entry.partition('=')
+        name = name.strip()
+        if not separator or not ENV_NAME.fullmatch(name):
+            raise DecisionNeeded(f'{ENV_LABEL} line {number} is not NAME=value, so Compose cannot read it either. '
+                                 'Fix that line, then run this again. Nothing was changed.')
+        value = value.strip()
+        quoted = len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'")
+        if quoted:
+            value = value[1:-1]
+        elif '#' in value:
+            # Compose reads what follows a # in an unquoted value as a comment. Rather than guess which of
+            # the two readings is the owner's, say so: a key read one way here and another way in the
+            # container is exactly the kind of quiet disagreement this command must not have.
+            raise DecisionNeeded(f'{ENV_LABEL} line {number} has a # in an unquoted value, which Compose reads as '
+                                 'the start of a comment. Put quotes around that value, then run this again. '
+                                 'Nothing was changed.')
+        values[name] = value
+    return values
+
+
+def env_text_with(text, values):
+    """The .env text with each name set to its value: the line that already defines it rewritten where it
+    is, a new line at the end otherwise, and every other line left exactly as it is."""
+    lines = text.splitlines(keepends=True)
+    for name, value in values.items():
+        for index, raw in enumerate(lines):
+            entry = raw.strip()
+            if entry.startswith('export '):
+                entry = entry[len('export '):].lstrip()
+            if not entry or entry.startswith('#') or '=' not in entry:
+                continue
+            if entry.partition('=')[0].strip() == name:
+                lines[index] = f'{name}={value}\n'
+                break
+        else:
+            if lines and not lines[-1].endswith('\n'):
+                lines[-1] += '\n'
+            lines.append(f'{name}={value}\n')
+    return ''.join(lines)
+
+
+def write_env_values(values, path=None):
+    """Set these variables in agent/.env, keeping everything else in it, and leave the file readable only by
+    this account.
+
+    Compose reads the file when the container is built again, which is how a provider chosen here outlives
+    the container it was chosen on. The owner's own lines, the provider key among them, are never touched.
+    """
+    path = Path(ENV_FILE if path is None else path)
+    for name, value in values.items():
+        if not ENV_NAME.fullmatch(name) or not SAFE_VALUE.fullmatch(str(value)):
+            raise AgentError(f'{name} could not be written to {ENV_LABEL} as one plain value. Nothing was changed.')
+    try:
+        text = path.read_text(encoding='utf-8') if path.is_file() else ''
+    except (OSError, UnicodeError) as error:
+        raise AgentError(f'{ENV_LABEL} could not be read to add {", ".join(values)} to it: {error}.') from None
+    write_env_file(path, env_text_with(text, values))
+
+
+def write_env_file(path, text):
+    """Replace agent/.env with text, through a file of its own beside it that is locked to this account
+    before anything is written into it, so a key is never briefly readable by another account and a write
+    that cannot be finished leaves the file that is there alone.
+
+    private_files does the locking and the replacement, because it is the one primitive that also works on
+    Windows, where mode bits decide nothing. The folder's own permissions are left as the owner has them.
+    """
+    descriptor, temporary = tempfile.mkstemp(dir=str(Path(path).parent), prefix='.env.', suffix='.new')
+    try:
+        with os.fdopen(descriptor, 'w', encoding='utf-8', newline='') as handle:
+            protect_or_stop(temporary)
+            handle.write(text)
+        private_files.replace_atomically(temporary, str(path))
+    except private_files.PrivacyError as error:
+        with contextlib.suppress(OSError):
+            os.unlink(temporary)
+        raise AgentError(str(error)) from None
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(temporary)
+        raise
+    protect_or_stop(path)
+
+
+def provider_key(entry):
+    """One provider's key, read from agent/.env. Never an argument, never printed, never in a tracked file.
+
+    The file is locked to this account before it is read, because that is where the key lives from now on.
+    """
+    path = Path(ENV_FILE)
+    if not path.is_file():
+        raise DecisionNeeded(f'There is no {ENV_LABEL}, so there is no key for {entry["name"]} to use. Create that '
+                             f'file with a line reading {entry["key_env"]}=your key. Git does not track it. Then '
+                             'run this again.')
+    protect_or_stop(path)
+    value = read_env_file(path).get(entry['key_env'], '')
+    if not value:
+        raise DecisionNeeded(f'{ENV_LABEL} has no {entry["key_env"]}, so {entry["name"]} cannot be asked what this '
+                             f'account has and the agent could not sign its calls. Add a line reading '
+                             f'{entry["key_env"]}=your key there, then run this again. Nothing was changed.')
+    return value
+
+
+def provider_models(entry, key, opener=None):
+    """Which models a provider says this key can use, asked of the provider itself.
+
+    The OpenAI shaped list these providers serve: GET <base_url>/models with the key as a bearer token,
+    answering {"data": [{"id": ...}, ...]}. Asking beats assuming, because the list is per account: a model
+    the account does not have answers 404 at the first real call, long after the switch, and reads as a
+    fault in this command rather than something to fix on the account.
+    """
+    url = entry['base_url'].rstrip('/') + '/models'
+    request = urllib.request.Request(url, headers={'Authorization': f'Bearer {key}', 'Accept': 'application/json'})
+    try:
+        with (opener or urllib.request.urlopen)(request, timeout=MODEL_LIST_TIMEOUT) as response:
+            payload = json.loads(response.read(1 << 20).decode('utf-8'))
+    except urllib.error.HTTPError as error:
+        if error.code in (401, 403):
+            raise DecisionNeeded(f'{entry["name"]} did not accept that key (HTTP {error.code}). Check that '
+                                 f'{entry["key_env"]} in {ENV_LABEL} is the key for the account you mean to use, '
+                                 'then run this again. Nothing was changed.') from None
+        raise AgentError(f'{entry["name"]} answered HTTP {error.code} when asked which models this key can use. '
+                         'Nothing was changed.') from None
+    except urllib.error.URLError as error:
+        reason = getattr(error, 'reason', None) or error
+        if isinstance(reason, ssl.SSLError):
+            raise CertificateUnverified(f'{entry["name"]} could not be asked which models this key can use because '
+                                        f'{certificate_hint(reason)}. Nothing was changed.') from None
+        raise AgentError(f'{entry["name"]} could not be reached to ask which models this key can use ({reason}). '
+                         'Nothing was changed.') from None
+    except (OSError, ValueError, UnicodeError) as error:
+        raise AgentError(f'{entry["name"]} did not answer with a model list this command could read ({error}). '
+                         'Nothing was changed.') from None
+    listed = payload.get('data') if isinstance(payload, dict) else None
+    models = [item['id'] for item in listed
+              if isinstance(item, dict) and isinstance(item.get('id'), str) and item['id']] \
+        if isinstance(listed, list) else []
+    if not models:
+        raise AgentError(f'{entry["name"]} listed no models for this key, so there is nothing to switch to. '
+                         'Nothing was changed.')
+    return models
+
+
+def choose_model(entry, key, model_id, opener=None):
+    """The model to switch to, checked against what the provider says this key can actually use."""
+    models = provider_models(entry, key, opener=opener)
+    if not model_id:
+        raise DecisionNeeded(f'No model was given. On {entry["name"]} this key can use {", ".join(models)}. Choose '
+                             'one with --model. Nothing was changed.')
+    if not SAFE_VALUE.fullmatch(model_id) or model_id not in models:
+        raise DecisionNeeded(f'{entry["name"]} does not have "{model_id}" on this account. It has '
+                             f'{", ".join(models)}. Choose one of those with --model. Nothing was changed.')
+    return model_id
+
+
 def identity(path):
     """Who a credential answers as, according to Plow. When Plow cannot say, an AgentError says why:
     CredentialRejected for a definitive 401, 403 or 404, CertificateUnverified when this Python cannot verify
@@ -821,30 +1021,63 @@ def _model_entry_line(indent, model_id, as_list):
 _TRAILING_COMMENT = re.compile(r'(\s+#.*)$')
 
 
+def _set_child_line(lines, parent, key, value, insert=True):
+    """lines with parent.key set to value, in place, keeping a trailing comment on that line if it has one.
+
+    When the key is not there at all it is added at the end of that block, unless insert is False, which is
+    how model.default says it must already exist.
+
+    Refuses (DecisionNeeded) when the parent block itself is written in flow style, the same unsupported
+    shape as its providers.* siblings, by name and with a remedy -- not the generic "Could not locate"
+    AgentError, which reads as an internal error rather than a decision about the owner's own config.
+    Raises plain AgentError only when the line genuinely cannot be located or added some other way.
+    """
+    parent_index = _top_key_line(lines, parent)
+    if parent_index is not None and _is_flow_style(lines[parent_index]):
+        raise DecisionNeeded(f'{parent} is written in flow style ({{...}} or [...]) in the agent config; changing '
+                             f'{parent}.{key} there is not supported. Edit it to block style yourself, then run '
+                             'this again. Nothing was changed.')
+    start, end = (None, None) if parent_index is None else _child_block(lines, parent_index)
+    at = None if parent_index is None else _child_key_line(lines, start, end, key)
+    if at is None:
+        if parent_index is None or not insert:
+            raise AgentError(f'Could not locate {parent}.{key} in the config text to edit it. Nothing was changed.')
+        indent = _first_child_indent(lines, start, end, _line_indent(lines[parent_index]) + _indent_step(lines))
+        while end > start and not lines[end - 1].strip():  # a blank line at the end of the block stays at the end
+            end -= 1
+        lines[end:end] = [f'{" " * indent}{key}: {value}\n']
+        return lines
+    comment_match = _TRAILING_COMMENT.search(lines[at])
+    comment = comment_match.group(1) if comment_match else ''
+    lines[at] = re.sub(rf'^([ \t]*{re.escape(key)}:).*$', lambda m: f'{m.group(1)} {value}{comment}',
+                       lines[at], count=1)
+    return lines
+
+
+def _remove_child_line(lines, parent, key):
+    """lines with parent.key, and anything written under it, removed in place. Absent already: unchanged.
+
+    Blank lines after the removed block are kept: they belong to whatever follows, not to the key going
+    away, and this edit changes as little of the owner's file as it can.
+    """
+    parent_index = _top_key_line(lines, parent)
+    if parent_index is None or _is_flow_style(lines[parent_index]):
+        return lines
+    start, end = _child_block(lines, parent_index)
+    at = _child_key_line(lines, start, end, key)
+    if at is None:
+        return lines
+    _, last = _child_block(lines, at)
+    while last > at + 1 and not lines[last - 1].strip():
+        last -= 1
+    del lines[at:last]
+    return lines
+
+
 def _set_default_line(lines, model_id):
     """lines with model.default's value replaced, in place, keeping a trailing comment on that line if it
-    has one.
-
-    Refuses (DecisionNeeded) when model: itself is written in flow style, the same unsupported shape as its
-    providers.* siblings, by name and with a remedy -- not the generic "Could not locate model.default"
-    AgentError, which reads as an internal error rather than a decision about the owner's own config.
-    Raises plain AgentError only when the default: line genuinely cannot be located some other way.
-    """
-    model_index = _top_key_line(lines, 'model')
-    if model_index is not None and _is_flow_style(lines[model_index]):
-        raise DecisionNeeded('model is written in flow style ({...} or [...]) in the agent config; switching '
-                             'the default there is not supported. Edit it to block style yourself, then run '
-                             'this again. Nothing was changed.')
-    start, end = (None, None) if model_index is None else _child_block(lines, model_index)
-    default_index = None if model_index is None else _child_key_line(lines, start, end, 'default')
-    if default_index is None:
-        raise AgentError('Could not locate model.default in the config text to edit it. Nothing was changed.')
-    line = lines[default_index]
-    comment_match = _TRAILING_COMMENT.search(line)
-    comment = comment_match.group(1) if comment_match else ''
-    lines[default_index] = re.sub(r'^([ \t]*default:).*$', lambda m: f'{m.group(1)} {model_id}{comment}',
-                                  line, count=1)
-    return lines
+    has one. The default: line must already exist; nothing here creates a model block."""
+    return _set_child_line(lines, 'model', 'default', model_id, insert=False)
 
 
 def _is_flow_style(line):
@@ -963,6 +1196,181 @@ def set_default_model(text, model_id):
     lines = text.splitlines(keepends=True)
     lines = _set_default_line(lines, model_id)
     lines = _ensure_model_id(lines, provider, model_id, original)
+    new_text = ''.join(lines)
+
+    try:
+        reparsed = yaml.safe_load(new_text)
+    except yaml.YAMLError as error:
+        raise AgentError(f'The edited config did not parse ({yaml_problem(error)}). Nothing was written.') from None
+    if reparsed != expected:
+        raise AgentError('The edited config would not match the intended change exactly. Nothing was written.')
+    return new_text
+
+
+def provider_entry(name):
+    """One provider this command knows how to configure, or a refusal naming the ones it does."""
+    if not name:
+        raise DecisionNeeded(f'No provider was given. This command knows {", ".join(PROVIDERS)}.')
+    entry = PROVIDERS.get(name)
+    if entry is None:
+        raise DecisionNeeded(f'"{name}" is not a provider this command knows how to set up. It knows '
+                             f'{", ".join(PROVIDERS)}. Nothing was changed.')
+    return entry
+
+
+def provider_summary(text):
+    """The provider the agent is configured to call, the model it defaults to, the variable that holds that
+    provider's key, and every provider the config knows about, from the raw config text.
+
+    The key variable is the provider's own when its block names one, and the model block's otherwise, which
+    is where Plow keeps it.
+    """
+    config = load_model_config(text)
+    model = config['model']
+    providers = config.get('providers') if isinstance(config.get('providers'), dict) else {}
+    block = providers.get(model['provider'])
+    block = block if isinstance(block, dict) else {}
+    return {'provider': model['provider'], 'default': model['default'],
+            'key_env': block.get('key_env') or model.get('key_env'), 'known': list(providers)}
+
+
+def _scalar(value):
+    """One value as YAML text on a single line, quoted only where YAML itself needs the quotes.
+
+    safe_dump ends a bare scalar document with an explicit ... marker, which is not part of the value.
+    """
+    yaml = yaml_module()
+    text = yaml.safe_dump(value, default_flow_style=True, width=10 ** 6).strip()
+    if text.endswith('\n...'):
+        text = text[:-len('\n...')].strip()
+    if not text or '\n' in text:
+        raise AgentError('A value for the agent config could not be written on one line. Nothing was changed.')
+    return text
+
+
+def _provider_lines(entry, model_id, indent, step):
+    """The block one provider is written as: its name, where its calls go, which variable holds its key, and
+    the model this switch is for."""
+    inner = indent + step
+    return [f'{" " * indent}{_scalar(entry["name"])}:\n',
+            f'{" " * inner}name: {_scalar(entry["name"])}\n',
+            f'{" " * inner}base_url: {_scalar(entry["base_url"])}\n',
+            f'{" " * inner}key_env: {_scalar(entry["key_env"])}\n',
+            f'{" " * inner}models:\n',
+            f'{" " * (inner + step)}{_scalar(model_id)}: {{}}\n']
+
+
+def _ensure_provider_block(lines, entry, model_id, original):
+    """lines with providers.<provider> present and carrying model_id, in place.
+
+    A provider that is not in the config yet is written whole. One that is already there is left exactly as
+    the owner has it and only gains the model id, so a base_url or key_env they changed themselves survives
+    the switch. The shapes this cannot write into are refused by name in _expected_provider first; the flow
+    style ones, which only the text can show, are refused here.
+    """
+    name = entry['name']
+    providers = original.get('providers')
+    if isinstance(providers, dict) and isinstance(providers.get(name), dict):
+        return _ensure_model_id(lines, name, model_id, original)
+    step = _indent_step(lines)
+    providers_index = _top_key_line(lines, 'providers')
+    if providers_index is None:
+        if lines and not lines[-1].endswith('\n'):
+            lines[-1] += '\n'
+        return lines + ['providers:\n'] + _provider_lines(entry, model_id, step, step)
+    if _is_flow_style(lines[providers_index]):
+        raise DecisionNeeded('providers is written in flow style ({...} or [...]) in the agent config; adding a '
+                             'provider there is not supported. Edit it to block style yourself, then run this '
+                             'again. Nothing was changed.')
+    start, end = _child_block(lines, providers_index)
+    indent = _first_child_indent(lines, start, end, step)
+    while end > start and not lines[end - 1].strip():
+        end -= 1
+    lines[end:end] = _provider_lines(entry, model_id, indent, step)
+    return lines
+
+
+def _expected_provider(config, entry, model_id, restore):
+    """The dict a correct switch must reparse to: config with model.provider, model.default, that provider's
+    block and the Plow only model.base_url/model.key_env pair changed, and nothing else.
+
+    restore is None for a provider other than Plow, and the pair is then removed, which is what the image's
+    own boot script does so that no call can fall back to Plow. Switching back to Plow passes the pair its
+    config actually carried, read from a backup.
+    """
+    name = entry['name']
+    config = copy.deepcopy(config)
+    model = config['model']
+    model['provider'] = name
+    model['default'] = model_id
+    if restore is None:
+        model.pop('base_url', None)
+        model.pop('key_env', None)
+    else:
+        model['base_url'] = restore['base_url']
+        model['key_env'] = restore['key_env']
+    if 'providers' in config and config['providers'] is None:
+        raise DecisionNeeded('providers is empty in the agent config; give it a provider with a models: '
+                             'mapping yourself, or remove the providers: line so it can be created fresh, '
+                             'then run this again. Nothing was changed.')
+    providers = config.setdefault('providers', {})
+    block = providers.get(name)
+    if name in providers and not isinstance(block, dict):
+        raise DecisionNeeded(f'providers.{name} in the agent config is not a block of settings. Remove that line '
+                             'so this command can write the provider itself, or fix it yourself, then run this '
+                             'again. Nothing was changed.')
+    if block is None:
+        if 'base_url' not in entry:
+            raise DecisionNeeded(f'The agent config has no providers.{name} block, and this command does not carry '
+                                 f'{name} settings of its own to write one. Start the agent again with '
+                                 f'{relay_command()} agent, which writes that block at boot, then run this again. '
+                                 'Nothing was changed.')
+        providers[name] = {'name': name, 'base_url': entry['base_url'], 'key_env': entry['key_env'],
+                           'models': {model_id: {}}}
+        return config
+    if restore is None:
+        missing = [key for key in ('base_url', 'key_env') if not block.get(key)]
+        if missing:
+            raise DecisionNeeded(f'providers.{name} in the agent config has no ' + ' and no '.join(missing) +
+                                 f', so the agent would not know where to send its calls. Give it those, or remove '
+                                 f'the providers.{name} block so this command writes it, then run this again. '
+                                 'Nothing was changed.')
+    models = block.get('models')
+    if models is None:
+        block['models'] = {model_id: {}}
+    elif isinstance(models, dict):
+        models.setdefault(model_id, {})
+    elif isinstance(models, list):
+        if model_id not in models:
+            models.append(model_id)
+    else:
+        raise DecisionNeeded(f"The agent config's providers.{name}.models is neither a mapping nor a list. "
+                             'Nothing was changed.')
+    return config
+
+
+def set_provider(text, entry, model_id, restore=None):
+    """Config text switched to one provider: model.provider and model.default, that provider's own block,
+    and the model.base_url and model.key_env pair that only Plow uses.
+
+    A minimal text edit for the same reason set_default_model is one: everything the owner wrote elsewhere
+    survives untouched. The result is re-parsed and compared against the original parse with only the
+    intended changes applied; anything else differing refuses, writing nothing.
+    """
+    yaml = yaml_module()
+    original = load_model_config(text)
+    expected = _expected_provider(original, entry, model_id, restore)
+
+    lines = text.splitlines(keepends=True)
+    lines = _set_default_line(lines, _scalar(model_id))
+    lines = _set_child_line(lines, 'model', 'provider', _scalar(entry['name']))
+    if restore is None:
+        lines = _remove_child_line(lines, 'model', 'base_url')
+        lines = _remove_child_line(lines, 'model', 'key_env')
+    else:
+        lines = _set_child_line(lines, 'model', 'base_url', _scalar(restore['base_url']))
+        lines = _set_child_line(lines, 'model', 'key_env', _scalar(restore['key_env']))
+    lines = _ensure_provider_block(lines, entry, model_id, original)
     new_text = ''.join(lines)
 
     try:
@@ -1221,6 +1629,164 @@ def model_command(args):
     return switch_model(args.id, args.check)
 
 
+def container_key_path(name):
+    """Where the image keeps one variable for the services that read it with with-contenv."""
+    if not ENV_NAME.fullmatch(name or ''):
+        raise AgentError(f'"{name}" is not a name an environment variable can have. Nothing was changed.')
+    return f'{CONTAINER_ENVIRONMENT}/{name}'
+
+
+def write_container_key(name, value):
+    """Put one provider key into the running container's own environment, so the gateway can use it as soon
+    as it restarts, without the container having to be built again.
+
+    The value goes in on standard input, never as an argument, so it is in no process list, and the file is
+    created under umask 077 and then verified by byte count the way the config is: a truncated stream must
+    not pass as a key. This runs as the container's own user rather than as hermes, like the gateway
+    restart beside it, because that directory belongs to the image.
+    """
+    path = container_key_path(name)
+    written = compose('exec', '-T', '-e', 'PATH=' + CONTAINER_PATH, 'agent', 'sh', '-c',
+                      f'umask 077; cat > {path} && chmod 600 {path}', capture=True, input=value)
+    size = compose('exec', '-T', '-e', 'PATH=' + CONTAINER_PATH, 'agent', 'wc', '-c', path, capture=True)
+    actual = size.stdout.split()[0] if size.returncode == 0 and size.stdout.split() else None
+    if written.returncode or actual != str(len(value.encode('utf-8'))):
+        compose('exec', '-T', '-e', 'PATH=' + CONTAINER_PATH, 'agent', 'rm', '-f', path, capture=True)
+        raise AgentError(f'{name} could not be written into the running agent, so nothing was switched and the '
+                         'config was left as it is. Check `docker compose logs agent` in agent/.')
+
+
+def container_key_present(name):
+    """Whether the running container has a value for one variable, asked of the container itself.
+
+    Never the value: the shell it runs prints the word set, or nothing at all. None means the container
+    could not be asked, which is not the same as a key that is not there.
+    """
+    if not ENV_NAME.fullmatch(name or ''):
+        return None
+    result = compose('exec', '-T', '-e', 'PATH=' + CONTAINER_PATH, 'agent', 'with-contenv', 'sh', '-c',
+                     f'printf %s "${{{name}:+set}}"', capture=True)
+    return None if result.returncode else result.stdout.strip() == 'set'
+
+
+def key_state(name):
+    """One line about a provider key in the running container, with nothing of the key itself in it."""
+    if not name:
+        return 'this provider names no key variable'
+    present = container_key_present(name)
+    if present is None:
+        return f'{name} could not be read in the container'
+    return f'{name} is set in the container' if present else f'{name} is not set in the container'
+
+
+def plow_restore():
+    """What Plow needs in the model block, taken from the newest config backup that actually ran on Plow.
+
+    The image's own boot script removes model.base_url and model.key_env while another provider is
+    selected, and puts them back from its seed at the next boot. A switch back here restarts the gateway
+    rather than the container, so it restores them itself, from values this agent's config carried rather
+    than from values made up here.
+    """
+    for backup in reversed(list_backups()):
+        with contextlib.suppress(AgentError):
+            model = load_model_config(read_config(backup))['model']
+            if model.get('provider') == DEFAULT_PROVIDER and model.get('base_url') and model.get('key_env'):
+                return {'base_url': model['base_url'], 'key_env': model['key_env'],
+                        'default': model['default'], 'backup': backup}
+    raise DecisionNeeded('No config backup beside the agent config still shows what Plow needs, so switching back '
+                         'would have to invent it. Put HERMES_PROVIDER=plow in agent/.env and start the agent '
+                         f'again with {relay_command()} agent, which restores those settings at boot. Nothing was '
+                         'changed.')
+
+
+def show_provider():
+    """Print the provider the agent is configured to call, its model, whether the container holds that
+    provider's key, and every provider the config knows about.
+
+    All of it is read back from the running container, never from what this command last wrote, and no key
+    is ever printed.
+    """
+    require_agent_running()
+    summary = provider_summary(read_config())
+    print(status_line('Provider', summary['provider']), flush=True)
+    print(status_line('Model', summary['default']), flush=True)
+    print(status_line('Key', key_state(summary['key_env'])), flush=True)
+    print(status_line('Known', ', '.join(summary['known']) or '(none)'), flush=True)
+    print(f'To hear the agent itself, run {relay_command()} agent test "hello".', flush=True)
+    return 0
+
+
+def switch_provider(name, model_id, opener=None):
+    """Switch the running agent to another model provider, and report what the agent itself then said.
+
+    The order is what makes this safe to run again after it stops. The key reaches the container before
+    anything is edited, so a key that cannot be written leaves the config alone. The config is backed up
+    before it is replaced, the way a model switch backs it up, and every failure from here on names that
+    backup. agent/.env, which is what the container reads when it is built again, is written last, only
+    after the restarted agent has actually answered, so the durable choice never records a switch that was
+    not observed working.
+    """
+    entry = provider_entry(name)
+    require_agent_running()
+    # Asked for the provider it is already on, nothing has to be restored, so do not go looking
+    # for a backup first and refuse over one that was never needed.
+    settled = provider_summary(read_config())
+    if settled['provider'] == entry['name'] and model_id in (None, settled['default']):
+        print(status_line('Provider', f'{entry["name"]} already'), flush=True)
+        print(status_line('Model', settled['default']), flush=True)
+        print(status_line('Key', key_state(settled['key_env'])), flush=True)
+        print('Nothing was changed.', flush=True)
+        return 0
+    restore = plow_restore() if entry['name'] == DEFAULT_PROVIDER else None
+    key = None
+    if 'key_env' in entry:
+        key = provider_key(entry)
+        model_id = choose_model(entry, key, model_id, opener=opener)
+    elif model_id:
+        raise DecisionNeeded(f'This command cannot ask {entry["name"]} which models the account has, so it does not '
+                             f'choose one for it. Switch back first, then run {relay_command()} agent model '
+                             f'{model_id}. Nothing was changed.')
+    else:
+        model_id = restore['default']
+    text = read_config()
+    before = provider_summary(text)
+    if before['provider'] == entry['name'] and before['default'] == model_id:
+        print(status_line('Provider', f'{entry["name"]} already'), flush=True)
+        print(status_line('Model', model_id), flush=True)
+        print(status_line('Key', key_state(before['key_env'])), flush=True)
+        print('Nothing was changed.', flush=True)
+        return 0
+    new_text = set_provider(text, entry, model_id, restore)
+    if key is not None:
+        write_container_key(entry['key_env'], key)
+    backup = backup_config()
+    write_config(new_text)
+    restart_and_wait(backup)
+    reply = ''
+    with contextlib.suppress(Exception):
+        reply = speak(MODEL_CHECK_PROMPT)
+    if not reply.strip():
+        raise AgentError(f'The config now names {entry["name"]} and the gateway restarted, but the agent did not '
+                         f'answer when it was asked, so nothing here says it is working. The previous config is '
+                         f'backed up at {backup}; restore it with {relay_command()} agent model --revert. '
+                         f'{ENV_LABEL} was left alone, so the container comes back on {before["provider"]} when it '
+                         'is built again.')
+    write_env_values({PROVIDER_VARIABLE: entry['name'], MODEL_VARIABLE: model_id})
+    print(status_line('Provider', f'{before["provider"]} -> {entry["name"]}'), flush=True)
+    print(status_line('Model', f'{before["default"]} -> {model_id}'), flush=True)
+    print(reply, flush=True)
+    print(f'The previous config is backed up at {backup}; {relay_command()} agent model --revert restores it.',
+          flush=True)
+    return 0
+
+
+def provider_command(args):
+    """./relay agent provider: show the provider the agent runs on, or switch it to another one."""
+    if getattr(args, 'name', None) is None:
+        return show_provider()
+    return switch_provider(args.name, getattr(args, 'model', None))
+
+
 def signin_path():
     """The full-access account sign-in, resolved exactly as the pinned client's account_token resolves it."""
     config = os.environ.get('XDG_CONFIG_HOME') or os.path.join(os.path.expanduser('~'), '.config')
@@ -1387,6 +1953,14 @@ def plow_tokens():
     return [token for token in tokens if token]
 
 
+def provider_keys():
+    """Every provider key agent/.env holds, read only to keep it out of the log."""
+    names = {entry['key_env'] for entry in PROVIDERS.values() if 'key_env' in entry}
+    with contextlib.suppress(Exception):
+        return [value for name, value in read_env_file().items() if name in names and value]
+    return []
+
+
 def record_failure(error, path):
     """Append the full traceback to the install log under a UTC timestamp, with any Plow token removed.
 
@@ -1396,7 +1970,7 @@ def record_failure(error, path):
     while a file holding them is sitting on disk for anyone who can read the folder.
     """
     text = ''.join(traceback.format_exception(type(error), error, error.__traceback__))
-    for token in plow_tokens():
+    for token in plow_tokens() + provider_keys():
         text = text.replace(token, '[token removed]')
     path.parent.mkdir(parents=True, exist_ok=True)
     created = not path.exists()
@@ -1434,6 +2008,8 @@ def run_agent(args):
             return 0
         if action == 'model':
             return model_command(args)
+        if action == 'provider':
+            return provider_command(args)
         state = ROOT / '.data/agent'
         state.mkdir(parents=True, exist_ok=True)
         with exit_on_sigterm(), installation_lock(state / 'install.lock'):
