@@ -136,7 +136,7 @@ docker compose logs agent | grep transport-watchdog:
 
 To build without it, delete `image/s6-overlay/s6-rc.d/transport-watchdog`, its
 entry in `image/s6-overlay/s6-rc.d/user/contents.d/`, its path in the
-Dockerfile's `chmod` line, the image check in `.github/workflows/agent.yml`, and
+`cloud/Dockerfile`'s `chmod` line, the image check in `.github/workflows/agent.yml`, and
 `tests/test_watchdog.py`.
 
 ## Restart and update

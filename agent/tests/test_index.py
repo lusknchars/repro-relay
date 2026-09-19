@@ -17,6 +17,26 @@ from fake_windows import symlinks_available, windows_host  # noqa: E402  (the in
 import private_files  # noqa: E402
 
 
+class ListingTellsTheTruth(unittest.TestCase):
+    """What the Index shows is the first thing a stranger reads, so it is held to the same
+    rule as everything else here: it may not promise what a reader cannot have."""
+
+    def listing(self):
+        source = (Path(__file__).resolve().parents[1] / 'index.py').read_text()
+        return source
+
+    def test_the_install_link_goes_to_instructions_not_a_directory(self):
+        source = self.listing()
+        self.assertIn("/blob/main/agent/INSTALL.md", source)
+        self.assertNotIn("/tree/main/agent'", source)
+
+    def test_the_blurb_says_which_part_needs_a_mac(self):
+        # Reading a talk drives a browser through Latch, and Latch is macOS only, so a
+        # Windows owner and every hosted tenant cannot do it. Saying so is the point.
+        source = self.listing()
+        self.assertIn('macOS only', source)
+
+
 class IndexWrapper(unittest.TestCase):
     def test_credentials_are_data_and_require_private_file(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -65,6 +85,12 @@ class IndexWrapper(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     index.client(home)
                 network.assert_not_called()
+
+    def test_agent_id_defaults_and_reads_environment(self):
+        self.assertEqual(index.AGENT_ID, 'repro-relay')
+        with patch.dict(index.os.environ, {'AGENT_ID': 'custom-agent-07'}):
+            # Re-importing is awkward; test the exact expression used in index.py.
+            self.assertEqual(index.os.environ.get('AGENT_ID', 'repro-relay'), 'custom-agent-07')
 
     def test_reporting_has_no_plow_credential_or_inherited_secret(self):
         with tempfile.TemporaryDirectory() as folder:

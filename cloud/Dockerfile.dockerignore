@@ -1,0 +1,9 @@
+*
+!agent/LICENSE
+!agent/NOTICE
+!agent/runtime/**
+!agent/skills/**
+!agent/vendor/**
+!agent/image/**
+**/__pycache__
+**/*.pyc
