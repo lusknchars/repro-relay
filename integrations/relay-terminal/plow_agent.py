@@ -1629,6 +1629,164 @@ def model_command(args):
     return switch_model(args.id, args.check)
 
 
+def container_key_path(name):
+    """Where the image keeps one variable for the services that read it with with-contenv."""
+    if not ENV_NAME.fullmatch(name or ''):
+        raise AgentError(f'"{name}" is not a name an environment variable can have. Nothing was changed.')
+    return f'{CONTAINER_ENVIRONMENT}/{name}'
+
+
+def write_container_key(name, value):
+    """Put one provider key into the running container's own environment, so the gateway can use it as soon
+    as it restarts, without the container having to be built again.
+
+    The value goes in on standard input, never as an argument, so it is in no process list, and the file is
+    created under umask 077 and then verified by byte count the way the config is: a truncated stream must
+    not pass as a key. This runs as the container's own user rather than as hermes, like the gateway
+    restart beside it, because that directory belongs to the image.
+    """
+    path = container_key_path(name)
+    written = compose('exec', '-T', '-e', 'PATH=' + CONTAINER_PATH, 'agent', 'sh', '-c',
+                      f'umask 077; cat > {path} && chmod 600 {path}', capture=True, input=value)
+    size = compose('exec', '-T', '-e', 'PATH=' + CONTAINER_PATH, 'agent', 'wc', '-c', path, capture=True)
+    actual = size.stdout.split()[0] if size.returncode == 0 and size.stdout.split() else None
+    if written.returncode or actual != str(len(value.encode('utf-8'))):
+        compose('exec', '-T', '-e', 'PATH=' + CONTAINER_PATH, 'agent', 'rm', '-f', path, capture=True)
+        raise AgentError(f'{name} could not be written into the running agent, so nothing was switched and the '
+                         'config was left as it is. Check `docker compose logs agent` in agent/.')
+
+
+def container_key_present(name):
+    """Whether the running container has a value for one variable, asked of the container itself.
+
+    Never the value: the shell it runs prints the word set, or nothing at all. None means the container
+    could not be asked, which is not the same as a key that is not there.
+    """
+    if not ENV_NAME.fullmatch(name or ''):
+        return None
+    result = compose('exec', '-T', '-e', 'PATH=' + CONTAINER_PATH, 'agent', 'with-contenv', 'sh', '-c',
+                     f'printf %s "${{{name}:+set}}"', capture=True)
+    return None if result.returncode else result.stdout.strip() == 'set'
+
+
+def key_state(name):
+    """One line about a provider key in the running container, with nothing of the key itself in it."""
+    if not name:
+        return 'this provider names no key variable'
+    present = container_key_present(name)
+    if present is None:
+        return f'{name} could not be read in the container'
+    return f'{name} is set in the container' if present else f'{name} is not set in the container'
+
+
+def plow_restore():
+    """What Plow needs in the model block, taken from the newest config backup that actually ran on Plow.
+
+    The image's own boot script removes model.base_url and model.key_env while another provider is
+    selected, and puts them back from its seed at the next boot. A switch back here restarts the gateway
+    rather than the container, so it restores them itself, from values this agent's config carried rather
+    than from values made up here.
+    """
+    for backup in reversed(list_backups()):
+        with contextlib.suppress(AgentError):
+            model = load_model_config(read_config(backup))['model']
+            if model.get('provider') == DEFAULT_PROVIDER and model.get('base_url') and model.get('key_env'):
+                return {'base_url': model['base_url'], 'key_env': model['key_env'],
+                        'default': model['default'], 'backup': backup}
+    raise DecisionNeeded('No config backup beside the agent config still shows what Plow needs, so switching back '
+                         'would have to invent it. Put HERMES_PROVIDER=plow in agent/.env and start the agent '
+                         f'again with {relay_command()} agent, which restores those settings at boot. Nothing was '
+                         'changed.')
+
+
+def show_provider():
+    """Print the provider the agent is configured to call, its model, whether the container holds that
+    provider's key, and every provider the config knows about.
+
+    All of it is read back from the running container, never from what this command last wrote, and no key
+    is ever printed.
+    """
+    require_agent_running()
+    summary = provider_summary(read_config())
+    print(status_line('Provider', summary['provider']), flush=True)
+    print(status_line('Model', summary['default']), flush=True)
+    print(status_line('Key', key_state(summary['key_env'])), flush=True)
+    print(status_line('Known', ', '.join(summary['known']) or '(none)'), flush=True)
+    print(f'To hear the agent itself, run {relay_command()} agent test "hello".', flush=True)
+    return 0
+
+
+def switch_provider(name, model_id, opener=None):
+    """Switch the running agent to another model provider, and report what the agent itself then said.
+
+    The order is what makes this safe to run again after it stops. The key reaches the container before
+    anything is edited, so a key that cannot be written leaves the config alone. The config is backed up
+    before it is replaced, the way a model switch backs it up, and every failure from here on names that
+    backup. agent/.env, which is what the container reads when it is built again, is written last, only
+    after the restarted agent has actually answered, so the durable choice never records a switch that was
+    not observed working.
+    """
+    entry = provider_entry(name)
+    require_agent_running()
+    # Asked for the provider it is already on, nothing has to be restored, so do not go looking
+    # for a backup first and refuse over one that was never needed.
+    settled = provider_summary(read_config())
+    if settled['provider'] == entry['name'] and model_id in (None, settled['default']):
+        print(status_line('Provider', f'{entry["name"]} already'), flush=True)
+        print(status_line('Model', settled['default']), flush=True)
+        print(status_line('Key', key_state(settled['key_env'])), flush=True)
+        print('Nothing was changed.', flush=True)
+        return 0
+    restore = plow_restore() if entry['name'] == DEFAULT_PROVIDER else None
+    key = None
+    if 'key_env' in entry:
+        key = provider_key(entry)
+        model_id = choose_model(entry, key, model_id, opener=opener)
+    elif model_id:
+        raise DecisionNeeded(f'This command cannot ask {entry["name"]} which models the account has, so it does not '
+                             f'choose one for it. Switch back first, then run {relay_command()} agent model '
+                             f'{model_id}. Nothing was changed.')
+    else:
+        model_id = restore['default']
+    text = read_config()
+    before = provider_summary(text)
+    if before['provider'] == entry['name'] and before['default'] == model_id:
+        print(status_line('Provider', f'{entry["name"]} already'), flush=True)
+        print(status_line('Model', model_id), flush=True)
+        print(status_line('Key', key_state(before['key_env'])), flush=True)
+        print('Nothing was changed.', flush=True)
+        return 0
+    new_text = set_provider(text, entry, model_id, restore)
+    if key is not None:
+        write_container_key(entry['key_env'], key)
+    backup = backup_config()
+    write_config(new_text)
+    restart_and_wait(backup)
+    reply = ''
+    with contextlib.suppress(Exception):
+        reply = speak(MODEL_CHECK_PROMPT)
+    if not reply.strip():
+        raise AgentError(f'The config now names {entry["name"]} and the gateway restarted, but the agent did not '
+                         f'answer when it was asked, so nothing here says it is working. The previous config is '
+                         f'backed up at {backup}; restore it with {relay_command()} agent model --revert. '
+                         f'{ENV_LABEL} was left alone, so the container comes back on {before["provider"]} when it '
+                         'is built again.')
+    write_env_values({PROVIDER_VARIABLE: entry['name'], MODEL_VARIABLE: model_id})
+    print(status_line('Provider', f'{before["provider"]} -> {entry["name"]}'), flush=True)
+    print(status_line('Model', f'{before["default"]} -> {model_id}'), flush=True)
+    print(reply, flush=True)
+    print(f'The previous config is backed up at {backup}; {relay_command()} agent model --revert restores it.',
+          flush=True)
+    return 0
+
+
+def provider_command(args):
+    """./relay agent provider: show the provider the agent runs on, or switch it to another one."""
+    if getattr(args, 'name', None) is None:
+        return show_provider()
+    return switch_provider(args.name, getattr(args, 'model', None))
+
+
 def signin_path():
     """The full-access account sign-in, resolved exactly as the pinned client's account_token resolves it."""
     config = os.environ.get('XDG_CONFIG_HOME') or os.path.join(os.path.expanduser('~'), '.config')
@@ -1795,6 +1953,14 @@ def plow_tokens():
     return [token for token in tokens if token]
 
 
+def provider_keys():
+    """Every provider key agent/.env holds, read only to keep it out of the log."""
+    names = {entry['key_env'] for entry in PROVIDERS.values() if 'key_env' in entry}
+    with contextlib.suppress(Exception):
+        return [value for name, value in read_env_file().items() if name in names and value]
+    return []
+
+
 def record_failure(error, path):
     """Append the full traceback to the install log under a UTC timestamp, with any Plow token removed.
 
@@ -1804,7 +1970,7 @@ def record_failure(error, path):
     while a file holding them is sitting on disk for anyone who can read the folder.
     """
     text = ''.join(traceback.format_exception(type(error), error, error.__traceback__))
-    for token in plow_tokens():
+    for token in plow_tokens() + provider_keys():
         text = text.replace(token, '[token removed]')
     path.parent.mkdir(parents=True, exist_ok=True)
     created = not path.exists()
@@ -1842,6 +2008,8 @@ def run_agent(args):
             return 0
         if action == 'model':
             return model_command(args)
+        if action == 'provider':
+            return provider_command(args)
         state = ROOT / '.data/agent'
         state.mkdir(parents=True, exist_ok=True)
         with exit_on_sigterm(), installation_lock(state / 'install.lock'):

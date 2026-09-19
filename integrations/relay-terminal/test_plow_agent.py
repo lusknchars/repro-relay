@@ -2176,6 +2176,7 @@ class FakeContainer:
     def __init__(self, config=SAMPLE_MODEL_CONFIG, running=True, gateway_pid=1000):
         self.running = running
         self.files = {plow_agent.CONFIG_PATH: config}
+        self.modes = {}  # what a file was left at, so a key written under umask 077 can be checked
         self.restarts = 0
         self.gateway_pid = gateway_pid
         self.gateway_up = True
@@ -2211,6 +2212,14 @@ class FakeContainer:
                 return SimpleNamespace(returncode=1, stdout='')
             self.gateway_pid += 1
             return SimpleNamespace(returncode=0, stdout='')
+        # The container's own user rather than hermes, which is what the provider key write and the key
+        # check run as: the environment directory belongs to the image, the way s6's control files do.
+        service = next((i for i, part in enumerate(arguments) if part == 'agent'), None)
+        tail = () if service is None else arguments[service + 1:]
+        if tail[:1] == ('with-contenv',) and tail[1:3] != ('s6-setuidgid', 'hermes'):
+            return self._contenv(tail[1:])
+        if tail and tail[0] in ('sh', 'wc', 'rm'):
+            return self._root(tail, input)
         # The exact consecutive wrapper, not "with-contenv and hermes are present somewhere": dropping
         # s6-setuidgid (e.g. replacing it with env) would run every config read, write and backup as
         # whatever user docker exec defaults to -- root -- instead of hermes, so that step is pinned too,
@@ -2220,6 +2229,30 @@ class FakeContainer:
         if wrap_at is None:
             raise AssertionError(f'unexpected exec call, not run as hermes via with-contenv + s6-setuidgid: {arguments}')
         return self._hermes(arguments[wrap_at + 3:], input)
+
+    def _root(self, tail, input):
+        """What runs as the container's own user: the key write, and the two calls that check or undo it."""
+        if tail[:2] == ('sh', '-c'):
+            return self._shell(tail[2], input)
+        if tail[:2] == ('wc', '-c'):
+            return self._wc(tail[2])
+        if tail[0] == 'rm':
+            return self._remove(tail[-1])
+        raise AssertionError(f'unexpected command as the container user: {tail}')
+
+    def _contenv(self, tail):
+        """with-contenv: a process that can see the container's environment, which is what the key check asks.
+
+        It answers from the environment directory this container actually holds, so it can never report a
+        key as set that nothing wrote.
+        """
+        if tail[:2] != ('sh', '-c'):
+            raise AssertionError(f'unexpected with-contenv command: {tail}')
+        match = re.fullmatch(r'printf %s "\$\{(\w+):\+set\}"', tail[2])
+        if match is None:
+            raise AssertionError(f'unexpected with-contenv script: {tail[2]}')
+        value = self.files.get(f'{plow_agent.CONTAINER_ENVIRONMENT}/{match.group(1)}', '')
+        return SimpleNamespace(returncode=0, stdout='set' if value else '')
 
     def _hermes(self, tail, input):
         if tail[0] == 'cat':
@@ -2292,7 +2325,33 @@ class FakeContainer:
             target = script[len('cat > '):]
             self.files[target] = input[:-5] if self.corrupt_write and input else input
             return SimpleNamespace(returncode=0, stdout='')
+        if script.startswith('umask '):
+            return self._sequence(script, input)
         raise AssertionError(f'unexpected shell script: {script}')
+
+    def _sequence(self, script, input):
+        """The umask, redirect and chmod the provider key write uses, carried out in order like a shell.
+
+        It reads the script the command actually produced rather than matching one fixed string, so a
+        change to that script is carried out here too instead of being answered as though it were fine.
+        """
+        mode = None
+        for part in re.split(r'\s*(?:;|&&)\s*', script.strip()):
+            words = part.split()
+            if not words:
+                continue
+            if words[0] == 'umask' and len(words) == 2:
+                mode = 0o666 & ~int(words[1], 8)
+            elif words[:2] == ['cat', '>'] and len(words) == 3:
+                self.files[words[2]] = input[:-5] if self.corrupt_write and input else (input or '')
+                self.modes[words[2]] = mode
+            elif words[0] == 'chmod' and len(words) == 3:
+                if words[2] not in self.files:
+                    return SimpleNamespace(returncode=1, stdout='')
+                self.modes[words[2]] = int(words[1], 8)
+            else:
+                raise AssertionError(f'unexpected shell command: {part}')
+        return SimpleNamespace(returncode=0, stdout='')
 
 
 def run_model(container, **options):
@@ -2751,6 +2810,259 @@ class ModelCommandTests(unittest.TestCase):
         code, out, err = run_model(container, revert=True)
         self.assertEqual(code, 0)
         self.assertIn(plow_agent.status_line('Model', 'unknown -> anthropic/claude-sonnet-5'), out)
+
+
+class ProviderRun:
+    """./relay agent provider against a fake container, a fake Moonshot and a temporary agent/.env.
+
+    Nothing here reaches docker, the network or the owner's own agent/.env, and time.sleep is patched the
+    way run_model patches it, because even a successful restart waits once for real.
+    """
+
+    KEY = 'sk-fixture-moonshot-key'
+
+    def __init__(self, container=None, env=f'MOONSHOT_API_KEY={KEY}\n',
+                 reply='I am Kimi, a model made by Moonshot AI.', moonshot=None):
+        self.container = FakeContainer(config=LIVE_MODEL_CONFIG) if container is None else container
+        self.env = env
+        self.reply = reply
+        self.moonshot = FakeMoonshot(key=self.KEY) if moonshot is None else moonshot
+        self.spoken = []
+        self.written = None
+
+    def speak(self, prompt):
+        self.spoken.append(prompt)
+        if isinstance(self.reply, BaseException):
+            raise self.reply
+        return self.reply
+
+    def run(self, name=None, model=None):
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as stack:
+            env_path = Path(directory) / '.env'
+            if self.env is not None:
+                env_path.write_text(self.env, encoding='utf-8')
+            stack.enter_context(patch.object(plow_agent, 'ENV_FILE', env_path))
+            stack.enter_context(patch.object(plow_agent, 'compose', self.container))
+            stack.enter_context(patch.object(plow_agent, 'speak', self.speak))
+            stack.enter_context(patch.object(urllib.request, 'urlopen', self.moonshot))
+            stack.enter_context(patch.dict(os.environ, {}))
+            stack.enter_context(patch('builtins.input',
+                                      side_effect=AssertionError('the provider command asked a question.')))
+            stack.enter_context(patch('sys.stdin', SimpleNamespace(isatty=lambda: False)))
+            stack.enter_context(patch('time.sleep', lambda seconds: None))
+            stack.enter_context(contextlib.redirect_stdout(out))
+            stack.enter_context(contextlib.redirect_stderr(err))
+            code = plow_agent.run_agent(SimpleNamespace(agent_action='provider', name=name, model=model))
+            self.written = env_path.read_text() if env_path.is_file() else None
+            self.env = self.written  # so a second run through the same container reads what the first wrote
+        return code, out.getvalue(), err.getvalue()
+
+    def config(self):
+        return self.container.files[plow_agent.CONFIG_PATH]
+
+    def container_key(self, name='MOONSHOT_API_KEY'):
+        return self.container.files.get(f'{plow_agent.CONTAINER_ENVIRONMENT}/{name}')
+
+    def backups(self):
+        return [name for name in self.container.files if '.backup-' in name]
+
+
+@unittest.skipUnless(HAVE_YAML, 'PyYAML is not installed')
+class ProviderCommandTests(unittest.TestCase):
+    """./relay agent provider: what it shows, what it switches, and what it refuses to claim."""
+
+    PLOW_KEY = f'{plow_agent.CONTAINER_ENVIRONMENT}/HERMES_CUSTOM_PLOW_API_KEY'
+    KIMI_KEY = f'{plow_agent.CONTAINER_ENVIRONMENT}/MOONSHOT_API_KEY'
+
+    def test_show_reads_the_provider_model_and_key_from_the_running_container(self):
+        run = ProviderRun()
+        run.container.files[self.PLOW_KEY] = 'plow-key-inside-the-container'
+        code, out, err = run.run()
+        self.assertEqual((code, err), (0, ''))
+        self.assertIn(plow_agent.status_line('Provider', 'plow'), out)
+        self.assertIn(plow_agent.status_line('Model', 'anthropic/claude-sonnet-5'), out)
+        self.assertIn(plow_agent.status_line('Key', 'HERMES_CUSTOM_PLOW_API_KEY is set in the container'), out)
+        self.assertIn(plow_agent.status_line('Known', 'plow'), out)
+        self.assertNotIn('plow-key-inside-the-container', out)  # the name of the variable, never its value
+
+    def test_show_says_when_the_container_does_not_have_that_key(self):
+        code, out, err = ProviderRun().run()
+        self.assertEqual(code, 0)
+        self.assertIn('HERMES_CUSTOM_PLOW_API_KEY is not set in the container', out)
+
+    def test_a_container_that_is_not_running_refuses_with_exit_2_before_anything_else(self):
+        for arguments in ({}, {'name': 'kimi', 'model': 'kimi-k2.7-code'}, {'name': 'plow'}):
+            with self.subTest(**arguments):
+                run = ProviderRun(container=FakeContainer(config=LIVE_MODEL_CONFIG, running=False))
+                code, out, err = run.run(**arguments)
+                self.assertEqual(code, 2)
+                self.assertIn('not running', err)
+                self.assertEqual(run.container.calls, [('ps', '--status', 'running', '--quiet')])
+                self.assertEqual(run.moonshot.requests, [])
+
+    def test_a_provider_it_does_not_know_is_refused_before_touching_docker(self):
+        run = ProviderRun()
+        code, out, err = run.run(name='openai', model='gpt-5')
+        self.assertEqual(code, 2)
+        self.assertIn('kimi', err)
+        self.assertEqual(run.container.calls, [])
+
+    def test_a_missing_key_is_refused_before_the_provider_is_asked_or_anything_is_written(self):
+        run = ProviderRun(env='COMPOSE_PROJECT_NAME=relay\n')
+        code, out, err = run.run(name='kimi', model='kimi-k2.7-code')
+        self.assertEqual(code, 2)
+        self.assertIn('MOONSHOT_API_KEY', err)
+        self.assertIn('agent/.env', err)
+        self.assertEqual(run.moonshot.requests, [])
+        self.assertEqual(run.config(), LIVE_MODEL_CONFIG)
+        self.assertEqual(run.container.restarts, 0)
+
+    def test_a_model_the_account_does_not_have_stops_before_the_config_is_touched(self):
+        run = ProviderRun()
+        code, out, err = run.run(name='kimi', model='kimi-k2-0905-preview')
+        self.assertEqual(code, 2)
+        self.assertIn('kimi-k2-0905-preview', err)
+        self.assertIn('kimi-k2.7-code', err)  # what the account does have
+        self.assertEqual(len(run.moonshot.requests), 1)
+        self.assertEqual(run.config(), LIVE_MODEL_CONFIG)
+        self.assertEqual(run.container.restarts, 0)
+        self.assertIsNone(run.container_key())
+
+    def test_no_model_lists_what_the_key_can_use_and_changes_nothing(self):
+        run = ProviderRun()
+        code, out, err = run.run(name='kimi')
+        self.assertEqual(code, 2)
+        self.assertIn('--model', err)
+        for model in FakeMoonshot.MODELS:
+            self.assertIn(model, err)
+        self.assertEqual(run.config(), LIVE_MODEL_CONFIG)
+
+    def test_a_switch_writes_the_key_then_the_config_then_restarts_and_asks_the_agent(self):
+        run = ProviderRun()
+        code, out, err = run.run(name='kimi', model='kimi-k2.7-code')
+        self.assertEqual((code, err), (0, ''))
+        self.assertEqual(run.container_key(), run.KEY)
+        self.assertEqual(run.container.modes[self.KIMI_KEY], 0o600)
+        summary = plow_agent.provider_summary(run.config())
+        self.assertEqual((summary['provider'], summary['default']), ('kimi', 'kimi-k2.7-code'))
+        self.assertEqual(run.container.restarts, 1)
+        self.assertEqual(len(run.spoken), 1)
+        self.assertIn(plow_agent.status_line('Provider', 'plow -> kimi'), out)
+        self.assertIn(plow_agent.status_line('Model', 'anthropic/claude-sonnet-5 -> kimi-k2.7-code'), out)
+        self.assertIn('I am Kimi, a model made by Moonshot AI.', out)
+        self.assertEqual(len(run.backups()), 1)
+        self.assertIn(run.backups()[0], out)  # the switch names its backup, and so how to undo it
+
+    def test_the_key_reaches_the_container_before_the_config_is_replaced(self):
+        run = ProviderRun()
+        run.run(name='kimi', model='kimi-k2.7-code')
+        wrote_key = next(i for i, call in enumerate(run.container.calls) if self.KIMI_KEY in ' '.join(call))
+        replaced = next(i for i, call in enumerate(run.container.calls)
+                        if 'mv' in call and call[-1] == plow_agent.CONFIG_PATH)
+        self.assertLess(wrote_key, replaced)
+
+    def test_the_key_is_never_an_argument_and_never_printed(self):
+        run = ProviderRun()
+        code, out, err = run.run(name='kimi', model='kimi-k2.7-code')
+        self.assertEqual(code, 0)
+        self.assertNotIn(run.KEY, out)
+        self.assertNotIn(run.KEY, err)
+        for call in run.container.calls:
+            self.assertNotIn(run.KEY, ' '.join(str(part) for part in call))
+
+    def test_agent_env_records_the_choice_only_after_the_agent_answered(self):
+        run = ProviderRun()
+        run.run(name='kimi', model='kimi-k2.7-code')
+        self.assertEqual(run.written, f'MOONSHOT_API_KEY={run.KEY}\nHERMES_PROVIDER=kimi\n'
+                                      'HERMES_MODEL=kimi-k2.7-code\n')
+
+    def test_an_agent_that_does_not_answer_is_a_failure_that_names_the_backup_and_the_undo(self):
+        for reply in ('', '   ', plow_agent.AgentError('did not answer'), RuntimeError('unexpected')):
+            with self.subTest(reply=reply):
+                run = ProviderRun(reply=reply)
+                code, out, err = run.run(name='kimi', model='kimi-k2.7-code')
+                self.assertEqual(code, 1)
+                self.assertIn('did not answer', err)
+                self.assertIn('--revert', err)
+                self.assertIn(run.backups()[0], err)
+                self.assertEqual(run.written, f'MOONSHOT_API_KEY={run.KEY}\n')  # the choice was not recorded
+                self.assertNotIn('HERMES_PROVIDER', run.written)
+
+    def test_a_restart_that_fails_leaves_agent_env_alone_and_names_the_backup(self):
+        run = ProviderRun()
+        run.container.restart_fails = True
+        code, out, err = run.run(name='kimi', model='kimi-k2.7-code')
+        self.assertEqual(code, 1)
+        self.assertIn('could not be restarted', err)
+        self.assertIn(run.backups()[0], err)
+        self.assertEqual(run.written, f'MOONSHOT_API_KEY={run.KEY}\n')
+        self.assertEqual(run.spoken, [])
+
+    def test_a_key_that_cannot_be_written_whole_stops_before_the_config_is_touched(self):
+        run = ProviderRun()
+        run.container.corrupt_write = True
+        code, out, err = run.run(name='kimi', model='kimi-k2.7-code')
+        self.assertEqual(code, 1)
+        self.assertIn('MOONSHOT_API_KEY could not be written', err)
+        self.assertEqual(run.config(), LIVE_MODEL_CONFIG)
+        self.assertEqual(run.backups(), [])
+        self.assertEqual(run.container.restarts, 0)
+        self.assertIsNone(run.container_key())  # the half written file is removed, not left as a key
+
+    def test_switching_to_the_provider_it_is_already_on_changes_nothing(self):
+        run = ProviderRun()
+        code, out, err = run.run(name='plow')
+        self.assertEqual((code, err), (0, ''))
+        self.assertIn('Nothing was changed.', out)
+        self.assertEqual(run.config(), LIVE_MODEL_CONFIG)
+        self.assertEqual(run.container.restarts, 0)
+        self.assertEqual(run.spoken, [])
+
+    def test_plow_with_a_model_points_at_the_model_command_rather_than_guessing(self):
+        run = ProviderRun(container=FakeContainer(config=LIVE_MODEL_CONFIG))
+        run.run(name='kimi', model='kimi-k2.7-code')
+        code, out, err = run.run(name='plow', model='anthropic/claude-haiku-4')
+        self.assertEqual(code, 2)
+        self.assertIn(f'{RELAY} agent model', err)
+
+    def test_switching_back_to_plow_restores_what_plow_needs_and_keeps_the_new_block(self):
+        run = ProviderRun()
+        self.assertEqual(run.run(name='kimi', model='kimi-k2.7-code')[0], 0)
+        code, out, err = run.run(name='plow')
+        self.assertEqual((code, err), (0, ''))
+        self.assertIn(plow_agent.status_line('Provider', 'kimi -> plow'), out)
+        self.assertEqual(run.config(), LIVE_MODEL_CONFIG +
+                         '  kimi:\n    name: kimi\n    base_url: https://api.moonshot.ai/v1\n'
+                         '    key_env: MOONSHOT_API_KEY\n    models:\n      kimi-k2.7-code: {}\n')
+        self.assertEqual(run.written, f'MOONSHOT_API_KEY={run.KEY}\nHERMES_PROVIDER=plow\n'
+                                      'HERMES_MODEL=anthropic/claude-sonnet-5\n')
+        self.assertEqual(run.container.restarts, 2)
+
+    def test_switching_back_with_no_backup_of_plows_own_settings_says_what_restores_them(self):
+        config = plow_agent.set_provider(LIVE_MODEL_CONFIG, plow_agent.PROVIDERS['kimi'], 'kimi-k2.7-code')
+        run = ProviderRun(container=FakeContainer(config=config))
+        code, out, err = run.run(name='plow')
+        self.assertEqual(code, 2)
+        self.assertIn('HERMES_PROVIDER=plow', err)
+        self.assertIn(f'{RELAY} agent', err)
+        self.assertEqual(run.container.restarts, 0)
+
+    def test_show_after_a_switch_reports_what_the_container_holds(self):
+        run = ProviderRun()
+        run.run(name='kimi', model='kimi-k2.7-code')
+        code, out, err = run.run()
+        self.assertEqual((code, err), (0, ''))
+        self.assertIn(plow_agent.status_line('Provider', 'kimi'), out)
+        self.assertIn(plow_agent.status_line('Model', 'kimi-k2.7-code'), out)
+        self.assertIn('MOONSHOT_API_KEY is set in the container', out)
+        self.assertIn(plow_agent.status_line('Known', 'plow, kimi'), out)
+
+    def test_a_config_that_will_not_parse_is_refused_with_exit_2(self):
+        run = ProviderRun(container=FakeContainer(config='not: valid: yaml: ['))
+        code, out, err = run.run()
+        self.assertEqual(code, 2)
+        self.assertIn('could not be parsed', err)
 
 
 class AnotherFolderTests(unittest.TestCase):

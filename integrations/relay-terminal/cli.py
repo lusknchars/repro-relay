@@ -269,6 +269,11 @@ def main(argv=None):
                              help='After switching, send one prompt through the agent and print the reply (spends Plow credits)')
     agent_model.add_argument('--revert', action='store_true',
                              help='Restore the config from the newest backup and restart the gateway')
+    agent_provider = agent_actions.add_parser('provider', help='See or change the model provider the agent runs on')
+    agent_provider.add_argument('name', nargs='?',
+                                help='A provider to switch to, such as kimi or plow; omit to show the current one')
+    agent_provider.add_argument('--model', metavar='ID',
+                                help="A model id that provider's own account has; it is asked for and checked first")
     hosted = sub.add_parser('hosted', help='Run agents on this machine for other people, one container each')
     hosted_actions = hosted.add_subparsers(dest='hosted_action', required=True)
     hosted_create = hosted_actions.add_parser('create', help='Give one person an agent on its own Plow line')
