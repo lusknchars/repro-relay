@@ -84,9 +84,8 @@ docker compose exec --user hermes agent /opt/hermes/.venv/bin/python3 \
   /opt/plow/agent-index-client.py --agent repro-relay --dry-run
 ```
 
-The image contains reporting as part of its behavior. To run a private edition
-without publication, build a separate image without the `agent-index` s6 service.
-That edition does not satisfy the competition's usage-reporting requirement.
+Reporting ships in the Plow base image as its `agent-index` s6 service, so it
+is part of this image's behavior.
 
 ## Transport watchdog
 
