@@ -106,8 +106,11 @@ def main(argv=None):
                 raise ValueError('register requires --credentials pointing to your private Plow file')
             env.update(credentials(args.credentials))
             command += ['--register', '--agent', AGENT_ID, '--name', 'Repro Relay',
-                        '--blurb', 'An engineering agent on your own Plow line: saves tasks with owners and source quotes from meeting notes, and digests technical talks in your browser.',
-                        '--repo', REPO, '--runtime', 'Hermes', '--install-url', REPO + '/tree/main/agent',
+                        '--blurb', 'An engineering agent on your own Plow line: saves tasks with owners and source \n'
+                        'quotes from meeting notes, and reads a technical talk and reports what it \n'
+                        'teaches. Reading a talk drives a browser through Plow Latch, which runs on \n'
+                        'macOS only; everything else works on Windows and Linux too.',
+                        '--repo', REPO, '--runtime', 'Hermes', '--install-url', REPO + '/blob/main/agent/INSTALL.md',
                         '--video', VIDEO]
         elif args.action == 'status':
             command += ['status']
