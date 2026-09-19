@@ -7,9 +7,17 @@ than from documentation. Every quote below is from
 base `cloud/Dockerfile` builds on.
 
 The short version: the agent is now **buildable** by Plow's one click builder,
-and it is not yet **deployable** by it. Two things have to be true that are not
-in this repository's control, and one deploy attempt would tell us whether Plow
-already provides them.
+and one click deployment is something Plow switches on, not something this
+repository can finish alone.
+
+Corrected September 19, 2026. An earlier draft of this document treated the
+credential as an open question. `docs/research/PLOW-ONE-CLICK-BENCHMARK.md`
+already answered it from first party sources: "The provisioner supplies the
+tenant credential file." The image's refusal of the environment stands, and Plow
+provides the file it wants. What follows on the credential is therefore
+background on what the image requires, not a gap.
+
+The real gap is admission, and it is first below.
 
 ## What is done
 
@@ -23,7 +31,28 @@ at the repository root, and the base is pinned by digest so it cannot drift. CI
 builds the image and then runs it to confirm the Agent Index reporter and the
 transport watchdog are inside. All five workflows are green on main.
 
-## Gap 1: the credential, which the image takes only as a file
+## Gap 0: Plow has to admit this agent, and that is not a commit
+
+From `docs/research/PLOW-ONE-CLICK-BENCHMARK.md`, checked against first party
+sources on September 15, 2026:
+
+> Plow's private `plow-pbc/plow` repository owns `api/cloud-agents/agents.json`
+> and the image publishing workflow. That registry selects the revision tenants
+> boot; publishing an image alone does not select it.
+
+> The Agent Index explicitly directs builders to coordinate with the Plow team
+> through `danedelattre` on its Discord to enable one click deployment.
+> Registering a community entry does not enable hosting.
+
+So a correct `cloud/Dockerfile` is necessary and not sufficient. Until this agent
+is in that registry, there is no deploy action to press, however good the image
+is. The contact named is Daniel Delattre, who wrote the pull request that made
+this repository buildable in the first place.
+
+**What to ask for:** admission of `repro-relay` to `api/cloud-agents/agents.json`,
+and which image revision that entry should select.
+
+## Background: the credential, which the image takes only as a file
 
 The image refuses to take its credential from the environment. This is
 deliberate and, in our reading, correct:
@@ -56,13 +85,13 @@ Locally, `agent/compose.yml` bind mounts `./plow-credentials` to
 so unless the platform writes that file, the container builds, starts, waits a
 minute and parks.
 
-**The question for Plow:** how does a one click deployed agent receive its
-credential file? A secret file mount, a provisioner that writes
-`credentials.host` before or shortly after boot, or something else? The image's
-own comment refers to "a provisioner that has drifted ahead of this image",
-which suggests one exists.
+Plow's provisioner supplies this file to a hosted tenant, which is what the
+image's own reference to "a provisioner that has drifted ahead of this image"
+points at. So this is not a gap for a Plow hosted deploy. It is a gap for
+anywhere else: any other host has to write that file, root owned at 0600, before
+the sixty seconds run out, and cannot pass a token by environment variable.
 
-## Gap 2: storage that outlives a deploy
+## Gap 1: storage that outlives a deploy
 
 `agent/compose.yml` declares a named volume for `/var/lib/hermes`, which holds
 the agent's memory, its task store and its identity. Without equivalent
